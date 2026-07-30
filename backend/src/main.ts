@@ -8,6 +8,11 @@ import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 async function bootstrap() {
   const logger = new Logger('Bootstrap');
 
+  // Diagnostic env (noms seulement, jamais les valeurs) — pour vérifier que
+  // Render passe bien les variables au process.
+  const requiredEnv = ['SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY', 'SUPABASE_JWT_SECRET', 'DATABASE_URL', 'DIRECT_URL'];
+  logger.log('[env check] ' + requiredEnv.map((k) => `${k}=${process.env[k] ? 'OK' : 'MANQUANT'}`).join('  '));
+
   // Cast needed: NestFastifyApplication.enableCors uses FastifyCorsOptions
   // which is structurally incompatible with INestApplication's CorsOptions (Express type)
   // FastifyAdapter.enableCors uses FastifyCorsOptions vs AbstractHttpAdapter's Express CorsOptions
