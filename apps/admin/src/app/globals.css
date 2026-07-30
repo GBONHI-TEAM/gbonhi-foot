@@ -1,0 +1,16 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --primary: #1E7A3A;
+  --accent: #F7921E;
+  --sidebar-bg: #1E7A3A;
+  --sidebar-active: rgba(255, 255, 255, 0.15);
+  --sidebar-active-border: #F7921E;
+}
+
+body {
+  background-color: #F9FAFB;
+  color: #111827;
+}

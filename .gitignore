@@ -1,0 +1,51 @@
+# ── Environnement ────────────────────────────────────────────────────────
+.env
+.env.local
+.env.production
+.env.*.local
+
+# ── Node ──────────────────────────────────────────────────────────────────
+node_modules/
+npm-debug.log*
+yarn-error.log
+
+# ── React Native / Expo ───────────────────────────────────────────────────
+apps/mobile/.expo/
+apps/mobile/dist/
+apps/mobile/android/
+apps/mobile/ios/
+apps/mobile/build/
+context/
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+
+# ── Next.js ───────────────────────────────────────────────────────────────
+apps/admin/.next/
+apps/admin/out/
+apps/partner/.next/
+apps/partner/out/
+
+# ── NestJS ────────────────────────────────────────────────────────────────
+backend/dist/
+
+# ── Turborepo ─────────────────────────────────────────────────────────────
+.turbo/
+
+# ── macOS ─────────────────────────────────────────────────────────────────
+.DS_Store
+**/.DS_Store
+
+# ── IDE ───────────────────────────────────────────────────────────────────
+.idea/
+.vscode/settings.json
+*.swp
+
+# ── Tests ─────────────────────────────────────────────────────────────────
+coverage/
+
+# ── Logs ──────────────────────────────────────────────────────────────────
+*.log
+logs/

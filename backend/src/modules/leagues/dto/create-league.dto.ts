@@ -1,0 +1,72 @@
+import {
+  IsString,
+  IsOptional,
+  IsInt,
+  Min,
+  Max,
+  IsDateString,
+  MinLength,
+  MaxLength,
+  IsNumber,
+} from 'class-validator';
+
+export class CreateLeagueDto {
+  @IsString()
+  @MinLength(3)
+  @MaxLength(100)
+  name: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(5000)
+  description?: string;
+
+  @IsString()
+  level: string;
+
+  @IsString()
+  format: string;
+
+  @IsInt()
+  @Min(4)
+  @Max(32)
+  max_teams: number;
+
+  @IsDateString()
+  start_date: string;
+
+  @IsDateString()
+  end_date: string;
+
+  @IsOptional()
+  @IsNumber()
+  registration_fee?: number;
+
+  @IsOptional()
+  @IsString()
+  prize_info?: string;
+
+  @IsOptional()
+  @IsString()
+  banner_url?: string;
+
+  @IsOptional()
+  @IsString()
+  location?: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(60)
+  matches_per_team?: number;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(20000)
+  rules?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(5000)
+  rewards?: string;
+}

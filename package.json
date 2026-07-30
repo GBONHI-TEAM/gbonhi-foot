@@ -1,0 +1,41 @@
+{
+  "name": "gbonhi-foot",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "backend",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "turbo dev",
+    "build": "turbo build",
+    "lint": "turbo lint",
+    "type-check": "turbo type-check",
+    "dev:mobile": "turbo dev --filter=mobile",
+    "dev:admin": "turbo dev --filter=admin",
+    "dev:partner": "turbo dev --filter=partner",
+    "dev:backend": "turbo dev --filter=backend"
+  },
+  "devDependencies": {
+    "turbo": "^2.0.0",
+    "typescript": "^5.4.0"
+  },
+  "overrides": {
+    "@types/react": "~18.3.0",
+    "@nestjs/common": "^11.0.0",
+    "@nestjs/core": "^11.0.0",
+    "@nestjs/config": "^3.3.0",
+    "@nestjs/jwt": "^10.2.0",
+    "@nestjs/platform-fastify": "^11.0.0",
+    "@nestjs/swagger": "^8.1.0",
+    "@nestjs/throttler": "^6.2.0",
+    "ajv": "^8.17.1"
+  },
+  "engines": {
+    "node": ">=20.0.0",
+    "npm": ">=10.0.0"
+  },
+  "dependencies": {
+    "@fastify/static": "^9.3.0"
+  }
+}

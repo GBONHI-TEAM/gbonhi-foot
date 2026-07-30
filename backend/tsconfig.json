@@ -1,0 +1,43 @@
+{
+  "compilerOptions": {
+    "module": "CommonJS",
+    "declaration": true,
+    "removeComments": true,
+    "emitDecoratorMetadata": true,
+    "experimentalDecorators": true,
+    "allowSyntheticDefaultImports": true,
+    "target": "ES2021",
+    "sourceMap": true,
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "baseUrl": ".",
+    "skipLibCheck": true,
+    "strictNullChecks": true,
+    "noImplicitAny": true,
+    "strictBindCallApply": true,
+    "forceConsistentCasingInFileNames": true,
+    "noFallthroughCasesInSwitch": true,
+    "paths": {
+      "@nestjs/common": ["../node_modules/@nestjs/common"],
+      "@nestjs/common/*": ["../node_modules/@nestjs/common/*"],
+      "@nestjs/core": ["../node_modules/@nestjs/core"],
+      "@nestjs/core/*": ["../node_modules/@nestjs/core/*"],
+      "@nestjs/config": ["../node_modules/@nestjs/config"],
+      "@nestjs/config/*": ["../node_modules/@nestjs/config/*"],
+      "@nestjs/platform-fastify": ["../node_modules/@nestjs/platform-fastify"],
+      "@nestjs/platform-fastify/*": ["../node_modules/@nestjs/platform-fastify/*"],
+      "@nestjs/swagger": ["../node_modules/@nestjs/swagger"],
+      "@nestjs/swagger/*": ["../node_modules/@nestjs/swagger/*"],
+      "@nestjs/throttler": ["../node_modules/@nestjs/throttler"],
+      "@nestjs/throttler/*": ["../node_modules/@nestjs/throttler/*"],
+      "@nestjs/jwt": ["../node_modules/@nestjs/jwt"],
+      "@nestjs/jwt/*": ["../node_modules/@nestjs/jwt/*"],
+      "@prisma/client": ["../node_modules/@prisma/client"],
+      "@prisma/client/*": ["../node_modules/@prisma/client/*"],
+      "@modules/*": ["src/modules/*"],
+      "@common/*": ["src/common/*"],
+      "@config/*": ["src/config/*"],
+      "@prisma/*": ["src/prisma/*"]
+    }
+  }
+}

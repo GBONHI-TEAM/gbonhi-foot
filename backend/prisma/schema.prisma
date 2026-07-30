@@ -1,0 +1,362 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model Profile {
+  id         String   @id @db.Uuid
+  full_name  String?
+  username   String?  @unique
+  avatar_url String?
+  role       String   @default("fan")
+  position   String?
+  city       String?
+  bio        String?
+  fcm_token  String?
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  updated_at DateTime @default(now()) @db.Timestamptz(6)
+
+  teams_coached    Team[]         @relation("CoachRelation")
+  team_members     TeamMember[]
+  tournaments_org  Tournament[]   @relation("OrganizerRelation")
+  matches_refereed Match[]        @relation("RefereeRelation")
+  match_events     MatchEvent[]
+  terrains         Terrain[]      @relation("PartnerRelation")
+  reservations     Reservation[]
+  payments         Payment[]
+  posts            CommunityPost[]
+  reactions        PostReaction[]
+  comments         PostComment[]
+  notifications    Notification[]
+  terrain_reviews  TerrainReview[] @relation("ReviewAuthorRelation")
+
+  @@map("profiles")
+}
+
+model Team {
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name            String
+  description     String?
+  logo_url        String?
+  coach_id        String?  @db.Uuid
+  city            String?
+  primary_color   String?  @default("#1E7A3A")
+  secondary_color String?  @default("#F7921E")
+  home_terrain_id String?  @db.Uuid
+  invitation_code String?  @unique
+  status          String   @default("active")
+  created_at      DateTime @default(now()) @db.Timestamptz(6)
+  updated_at      DateTime @default(now()) @db.Timestamptz(6)
+
+  coach        Profile?         @relation("CoachRelation", fields: [coach_id], references: [id])
+  home_terrain Terrain?         @relation("HomeTerrainRelation", fields: [home_terrain_id], references: [id])
+  members      TeamMember[]
+  home_matches Match[]          @relation("HomeTeamRelation")
+  away_matches Match[]          @relation("AwayTeamRelation")
+  events       MatchEvent[]
+  tournaments  TournamentTeam[]
+  posts        CommunityPost[]
+
+  @@map("teams")
+}
+
+model TeamMember {
+  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  team_id    String    @db.Uuid
+  user_id    String    @db.Uuid
+  role       String    @default("player")
+  status     String    @default("pending")
+  jersey_num Int?
+  joined_at  DateTime? @db.Timestamptz(6)
+  created_at DateTime  @default(now()) @db.Timestamptz(6)
+
+  team Team    @relation(fields: [team_id], references: [id], onDelete: Cascade)
+  user Profile @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@unique([team_id, user_id])
+  @@map("team_members")
+}
+
+model Tournament {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name         String
+  description  String?
+  organizer_id String   @db.Uuid
+  format       String   @default("single_elimination")
+  status       String   @default("registration")
+  max_teams    Int      @default(16)
+  start_date   DateTime @db.Date
+  end_date     DateTime @db.Date
+  location     String?
+  banner_url   String?
+  prize_info   String?
+  level            String?
+  registration_fee Int     @default(0)
+  matches_per_team Int?
+  rules            String?
+  rewards          String?
+  created_at   DateTime @default(now()) @db.Timestamptz(6)
+  updated_at   DateTime @default(now()) @db.Timestamptz(6)
+
+  organizer Profile          @relation("OrganizerRelation", fields: [organizer_id], references: [id])
+  teams     TournamentTeam[]
+  matches   Match[]
+
+  @@map("tournaments")
+}
+
+model TournamentTeam {
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tournament_id   String   @db.Uuid
+  team_id         String   @db.Uuid
+  registration_at DateTime @default(now()) @db.Timestamptz(6)
+  status          String   @default("registered")
+
+  tournament Tournament @relation(fields: [tournament_id], references: [id], onDelete: Cascade)
+  team       Team       @relation(fields: [team_id], references: [id], onDelete: Cascade)
+
+  @@unique([tournament_id, team_id])
+  @@map("tournament_teams")
+}
+
+model Match {
+  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tournament_id String?   @db.Uuid
+  home_team_id  String    @db.Uuid
+  away_team_id  String    @db.Uuid
+  home_score    Int       @default(0)
+  away_score    Int       @default(0)
+  status        String    @default("upcoming")
+  round         Int?
+  scheduled_at  DateTime  @db.Timestamptz(6)
+  started_at    DateTime? @db.Timestamptz(6)
+  finished_at   DateTime? @db.Timestamptz(6)
+  venue         String?
+  referee_id    String?   @db.Uuid
+  created_at    DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at    DateTime  @default(now()) @db.Timestamptz(6)
+
+  tournament Tournament? @relation(fields: [tournament_id], references: [id])
+  home_team  Team        @relation("HomeTeamRelation", fields: [home_team_id], references: [id])
+  away_team  Team        @relation("AwayTeamRelation", fields: [away_team_id], references: [id])
+  referee    Profile?    @relation("RefereeRelation", fields: [referee_id], references: [id])
+  events     MatchEvent[]
+
+  @@map("matches")
+}
+
+model MatchEvent {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  match_id   String   @db.Uuid
+  team_id    String   @db.Uuid
+  player_id  String?  @db.Uuid
+  type       String
+  minute     Int
+  note       String?
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+
+  match  Match    @relation(fields: [match_id], references: [id], onDelete: Cascade)
+  team   Team     @relation(fields: [team_id], references: [id])
+  player Profile? @relation(fields: [player_id], references: [id])
+
+  @@map("match_events")
+}
+
+model Terrain {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  partner_id     String   @db.Uuid
+  name           String
+  address        String
+  city           String   @default("Abidjan")
+  latitude       Decimal? @db.Decimal(9, 6)
+  longitude      Decimal? @db.Decimal(9, 6)
+  surface        String
+  format         String
+  capacity       Int
+  price_per_hour Int
+  photos         String[] @default([])
+  amenities      String[] @default([])
+  description    String?
+  phone_contact  String?
+  is_active      Boolean  @default(true)
+  created_at     DateTime @default(now()) @db.Timestamptz(6)
+  updated_at     DateTime @default(now()) @db.Timestamptz(6)
+
+  partner      Profile         @relation("PartnerRelation", fields: [partner_id], references: [id], onDelete: Cascade)
+  slots        TerrainSlot[]
+  blocks       TerrainBlock[]
+  reservations Reservation[]
+  home_teams   Team[]          @relation("HomeTerrainRelation")
+  reviews      TerrainReview[]
+
+  @@map("terrains")
+}
+
+model TerrainReview {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  terrain_id String   @db.Uuid
+  user_id    String   @db.Uuid
+  rating     Int
+  comment    String?
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+
+  terrain Terrain @relation(fields: [terrain_id], references: [id], onDelete: Cascade)
+  user    Profile @relation("ReviewAuthorRelation", fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@unique([terrain_id, user_id])
+  @@map("terrain_reviews")
+}
+
+model TerrainSlot {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  terrain_id  String   @db.Uuid
+  day_of_week Int
+  start_hour  Int
+  end_hour    Int
+  is_active   Boolean  @default(true)
+  created_at  DateTime @default(now()) @db.Timestamptz(6)
+
+  terrain Terrain @relation(fields: [terrain_id], references: [id], onDelete: Cascade)
+
+  @@unique([terrain_id, day_of_week, start_hour])
+  @@map("terrain_slots")
+}
+
+model TerrainBlock {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  terrain_id   String   @db.Uuid
+  blocked_date DateTime @db.Date
+  start_hour   Int?
+  end_hour     Int?
+  reason       String?
+  created_at   DateTime @default(now()) @db.Timestamptz(6)
+
+  terrain Terrain @relation(fields: [terrain_id], references: [id], onDelete: Cascade)
+
+  @@map("terrain_blocks")
+}
+
+model Reservation {
+  id               String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  terrain_id       String   @db.Uuid
+  user_id          String   @db.Uuid
+  reservation_date DateTime @db.Date
+  start_hour       Int
+  end_hour         Int
+  duration_hours   Int      @default(dbgenerated("(end_hour - start_hour)"))
+  unit_price       Int
+  total_price      Int
+  platform_fee     Int
+  partner_amount   Int
+  status           String   @default("pending")
+  cancel_reason    String?
+  notes            String?
+  created_at       DateTime @default(now()) @db.Timestamptz(6)
+  updated_at       DateTime @default(now()) @db.Timestamptz(6)
+
+  terrain Terrain  @relation(fields: [terrain_id], references: [id])
+  user    Profile  @relation(fields: [user_id], references: [id])
+  payment Payment?
+
+  @@unique([terrain_id, reservation_date, start_hour])
+  @@map("reservations")
+}
+
+model Payment {
+  id                  String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  reservation_id      String    @unique @db.Uuid
+  user_id             String    @db.Uuid
+  transaction_id      String    @unique
+  amount              Int
+  currency            String    @default("XOF")
+  status              String    @default("pending")
+  payment_method      String?
+  cinetpay_data       Json?
+  payment_url         String?
+  webhook_received_at DateTime? @db.Timestamptz(6)
+  created_at          DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at          DateTime  @default(now()) @db.Timestamptz(6)
+
+  reservation Reservation @relation(fields: [reservation_id], references: [id])
+  user        Profile     @relation(fields: [user_id], references: [id])
+
+  @@map("payments")
+}
+
+model CommunityPost {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  author_id      String   @db.Uuid
+  team_id        String?  @db.Uuid
+  content        String
+  image_url      String?
+  likes_count    Int      @default(0)
+  comments_count Int      @default(0)
+  created_at     DateTime @default(now()) @db.Timestamptz(6)
+  updated_at     DateTime @default(now()) @db.Timestamptz(6)
+
+  author   Profile       @relation(fields: [author_id], references: [id], onDelete: Cascade)
+  team     Team?         @relation(fields: [team_id], references: [id], onDelete: SetNull)
+  reactions PostReaction[]
+  comments  PostComment[]
+
+  @@map("community_posts")
+}
+
+model PostReaction {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  post_id    String   @db.Uuid
+  user_id    String   @db.Uuid
+  type       String   @default("goal")
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+
+  post CommunityPost @relation(fields: [post_id], references: [id], onDelete: Cascade)
+  user Profile       @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@unique([post_id, user_id, type])
+  @@map("post_reactions")
+}
+
+model PostComment {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  post_id    String   @db.Uuid
+  author_id  String   @db.Uuid
+  content    String
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+
+  post   CommunityPost @relation(fields: [post_id], references: [id], onDelete: Cascade)
+  author Profile       @relation(fields: [author_id], references: [id], onDelete: Cascade)
+
+  @@map("post_comments")
+}
+
+model Notification {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id    String   @db.Uuid
+  type       String
+  title      String
+  body       String
+  data       Json?
+  read       Boolean  @default(false)
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+
+  user Profile @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@map("notifications")
+}
+
+model FinanceCost {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  label       String
+  category    String   @default("AUTRE")
+  amount      Int
+  incurred_on DateTime @db.Date
+  created_by  String?  @db.Uuid
+  created_at  DateTime @default(now()) @db.Timestamptz(6)
+
+  @@map("finance_costs")
+}

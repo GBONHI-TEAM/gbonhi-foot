@@ -1,0 +1,83 @@
+{
+  "expo": {
+    "name": "Gbonhi Foot",
+    "slug": "gbonhi-foot",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/icon.png",
+    "scheme": "gbonhi",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/images/splash.png",
+      "resizeMode": "cover",
+      "backgroundColor": "#0D1F0D"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.gbonhifoot.app",
+      "buildNumber": "1",
+      "infoPlist": {
+        "NSLocalNetworkUsageDescription": "GBONHI FOOT communique avec le serveur de développement sur ton réseau local.",
+        "NSAppTransportSecurity": {
+          "NSAllowsLocalNetworking": true,
+          "NSAllowsArbitraryLoads": true
+        }
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/images/adaptive-icon.png",
+        "backgroundColor": "#1E7A3A"
+      },
+      "package": "com.gbonhifoot.app",
+      "versionCode": 1,
+      "permissions": [
+        "android.permission.NOTIFICATIONS",
+        "android.permission.CAMERA",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.RECORD_AUDIO"
+      ]
+    },
+    "web": {
+      "bundler": "metro"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-font",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/notification-icon.png",
+          "color": "#1E7A3A"
+        }
+      ],
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#1E7A3A"
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "GBONHI FOOT accède à tes photos pour ta photo de profil joueur.",
+          "cameraPermission": "GBONHI FOOT utilise l'appareil photo pour ta photo de profil joueur."
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true
+    },
+    "extra": {
+      "router": {
+        "origin": false
+      },
+      "eas": {
+        "projectId": "fc79255f-9744-4303-9ff2-8bd3a66244e1"
+      }
+    },
+    "owner": "genius21"
+  }
+}

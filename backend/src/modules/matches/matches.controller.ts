@@ -1,0 +1,108 @@
+import {
+  Controller,
+  Get,
+  Post,
+  Patch,
+  Delete,
+  Body,
+  Param,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
+import { MatchesService } from './matches.service';
+import { CreateMatchDto } from './dto/create-match.dto';
+import { UpdateMatchDto } from './dto/update-match.dto';
+import { ChangeMatchStatusDto } from './dto/change-status.dto';
+import { CreateEventDto } from './dto/create-event.dto';
+import { SupabaseAuthGuard } from '../auth/supabase-auth.guard';
+import { IsString, MaxLength } from 'class-validator';
+
+class SetControllerDto {
+  @IsString()
+  @MaxLength(60)
+  first_name: string;
+
+  @IsString()
+  @MaxLength(60)
+  last_name: string;
+}
+
+class SetPhaseDto {
+  @IsString()
+  phase: string;
+}
+
+@UseGuards(SupabaseAuthGuard)
+@Controller('matches')
+export class MatchesController {
+  constructor(private readonly matchesService: MatchesService) {}
+
+  @Get()
+  findAll(
+    @Query('tournament_id') tournamentId?: string,
+    @Query('status') status?: string,
+    @Query('date') date?: string,
+  ) {
+    return this.matchesService.findAll({ tournament_id: tournamentId, status, date });
+  }
+
+  @Get('scorers')
+  topScorers(@Query('tournament_id') tournamentId: string) {
+    return this.matchesService.topScorers(tournamentId);
+  }
+
+  @Get(':id')
+  findOne(@Param('id') id: string) {
+    return this.matchesService.findOne(id);
+  }
+
+  @Post()
+  create(@Body() dto: CreateMatchDto) {
+    return this.matchesService.create(dto);
+  }
+
+  @Patch(':id')
+  update(@Param('id') id: string, @Body() dto: UpdateMatchDto) {
+    return this.matchesService.update(id, dto);
+  }
+
+  @Patch(':id/status')
+  changeStatus(@Param('id') id: string, @Body() dto: ChangeMatchStatusDto) {
+    return this.matchesService.changeStatus(id, dto);
+  }
+
+  @Get(':id/control')
+  getControl(@Param('id') id: string) {
+    return this.matchesService.getControl(id);
+  }
+
+  @Patch(':id/controller')
+  setController(@Param('id') id: string, @Body() dto: SetControllerDto) {
+    return this.matchesService.setController(id, dto.first_name, dto.last_name);
+  }
+
+  @Patch(':id/phase')
+  setPhase(@Param('id') id: string, @Body() dto: SetPhaseDto) {
+    return this.matchesService.setPhase(id, dto.phase);
+  }
+
+  @Delete(':id')
+  remove(@Param('id') id: string) {
+    return this.matchesService.remove(id);
+  }
+
+  @Get(':id/events')
+  getEvents(@Param('id') id: string) {
+    return this.matchesService.getEvents(id);
+  }
+
+  @Post(':id/events')
+  addEvent(@Param('id') id: string, @Body() dto: CreateEventDto) {
+    return this.matchesService.addEvent(id, dto);
+  }
+
+  @Delete(':id/events/:eventId')
+  removeEvent(@Param('id') id: string, @Param('eventId') eventId: string) {
+    return this.matchesService.removeEvent(id, eventId);
+  }
+}
