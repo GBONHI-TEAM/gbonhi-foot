@@ -1,0 +1,33 @@
+# Render Blueprint — API GBONHI FOOT (NestJS)
+# Déploie le dossier `backend`. Les secrets (sync:false) se renseignent dans
+# le dashboard Render → Environment. NE JAMAIS mettre de valeurs de secret ici.
+services:
+  - type: web
+    name: gbonhi-foot-api
+    runtime: node
+    plan: free
+    rootDir: backend
+    autoDeploy: true
+    buildCommand: npm install && npx prisma generate && npm run build
+    startCommand: npm run start:prod
+    healthCheckPath: /api/v1/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      # ── Base de données (Supabase → Settings → Database) ──
+      - key: DATABASE_URL          # pooler (port 6543, ?pgbouncer=true)
+        sync: false
+      - key: DIRECT_URL            # connexion directe (port 5432)
+        sync: false
+      # ── Supabase (Settings → API) ──
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: SUPABASE_JWT_SECRET
+        sync: false
+      # ── CORS (URLs des portails web, quand déployés) ──
+      - key: ADMIN_URL
+        sync: false
+      - key: PARTNER_URL
+        sync: false
