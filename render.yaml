@@ -31,3 +31,46 @@ services:
         sync: false
       - key: PARTNER_URL
         sync: false
+      # ── Lien de téléchargement de l'app (optionnel, affiché sur /join) ──
+      - key: MOBILE_APP_DOWNLOAD_URL
+        sync: false
+
+  # ── Back-office Admin (Next.js 15) ──
+  - type: web
+    name: gbonhi-foot-admin
+    runtime: node
+    plan: free
+    rootDir: apps/admin
+    autoDeploy: true
+    # `npx next …` : trouve le binaire même hoisté à la racine du monorepo.
+    # `-p $PORT` : Render impose le port d'écoute ; sans ça le service est injoignable.
+    buildCommand: npm install && npx next build
+    startCommand: npx next start -p $PORT
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NEXT_PUBLIC_SUPABASE_URL
+        sync: false
+      - key: NEXT_PUBLIC_SUPABASE_ANON_KEY
+        sync: false
+      - key: NEXT_PUBLIC_API_URL       # https://gbonhi-foot-api.onrender.com
+        sync: false
+
+  # ── Portail Partenaire (Next.js 15) ──
+  - type: web
+    name: gbonhi-foot-partner
+    runtime: node
+    plan: free
+    rootDir: apps/partner
+    autoDeploy: true
+    buildCommand: npm install && npx next build
+    startCommand: npx next start -p $PORT
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NEXT_PUBLIC_SUPABASE_URL
+        sync: false
+      - key: NEXT_PUBLIC_SUPABASE_ANON_KEY
+        sync: false
+      - key: NEXT_PUBLIC_API_URL       # https://gbonhi-foot-api.onrender.com
+        sync: false
