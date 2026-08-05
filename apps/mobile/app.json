@@ -17,19 +17,20 @@
       "supportsTablet": false,
       "bundleIdentifier": "com.gbonhifoot.app",
       "buildNumber": "1",
+      "usesAppleSignIn": true,
       "infoPlist": {
         "NSLocalNetworkUsageDescription": "GBONHI FOOT communique avec le serveur de développement sur ton réseau local.",
         "NSAppTransportSecurity": {
-          "NSAllowsLocalNetworking": true,
-          "NSAllowsArbitraryLoads": true
+          "NSAllowsLocalNetworking": true
         },
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "LSApplicationQueriesSchemes": ["whatsapp"]
       }
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
-        "backgroundColor": "#1E7A3A"
+        "backgroundColor": "#0D1F0D"
       },
       "package": "com.gbonhifoot.app",
       "versionCode": 1,
@@ -45,8 +46,10 @@
       "bundler": "metro"
     },
     "plugins": [
+      "./plugins/withFmtConstevalFix",
       "expo-router",
       "expo-font",
+      "expo-apple-authentication",
       [
         "expo-notifications",
         {

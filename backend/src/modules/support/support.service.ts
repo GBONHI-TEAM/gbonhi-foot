@@ -26,8 +26,8 @@ export interface TicketRow {
   reporter_avatar?: string | null;
 }
 
-function isStaff(user: UserPayload): boolean {
-  return !['player', 'fan'].includes((user.role ?? '').toLowerCase());
+function isAdminStaff(user: UserPayload): boolean {
+  return ['SUPER_ADMIN', 'ADMIN', 'CONTROLEUR', 'SUPPORT', 'OPERATEUR'].includes((user.role ?? '').toUpperCase());
 }
 
 @Injectable()
@@ -52,7 +52,15 @@ export class SupportService {
 
   /** Liste (admin) filtrable par kind et status. */
   async list(user: UserPayload, kind?: string, status?: string) {
-    if (!isStaff(user)) throw new ForbiddenException('Accès réservé à l\'administration');
+    // Un partenaire peut consulter ses propres demandes depuis son portail,
+    // jamais les tickets de l'ensemble de la plateforme.
+    if (!isAdminStaff(user)) {
+      return this.prisma.supportTicket.findMany({
+        where: { user_id: user.id, ...(kind ? { kind } : {}), ...(status ? { status } : {}) },
+        orderBy: { created_at: 'desc' },
+        take: 100,
+      });
+    }
 
     const conditions: Prisma.Sql[] = [];
     if (kind) conditions.push(Prisma.sql`t.kind = ${kind}`);
@@ -75,7 +83,16 @@ export class SupportService {
 
   /** Compteurs par statut (badges BO). */
   async counts(user: UserPayload, kind?: string) {
-    if (!isStaff(user)) throw new ForbiddenException('Accès réservé à l\'administration');
+    if (!isAdminStaff(user)) {
+      const rows = await this.prisma.supportTicket.groupBy({
+        by: ['status'],
+        where: { user_id: user.id, ...(kind ? { kind } : {}) },
+        _count: { _all: true },
+      });
+      const out: Record<string, number> = { ouvert: 0, en_cours: 0, resolu: 0, ferme: 0 };
+      for (const row of rows) out[row.status] = row._count._all;
+      return out;
+    }
     const where = kind ? Prisma.sql`WHERE kind = ${kind}` : Prisma.empty;
     const rows = await this.prisma.$queryRaw<{ status: string; count: bigint }[]>`
       SELECT status, COUNT(*)::bigint AS count FROM support_tickets ${where} GROUP BY status`;
@@ -97,7 +114,7 @@ export class SupportService {
       WHERE t.id = ${id}::uuid`;
     const ticket = rows[0];
     if (!ticket) throw new NotFoundException('Ticket introuvable');
-    if (!isStaff(user) && ticket.user_id !== user.id) {
+    if (!isAdminStaff(user) && ticket.user_id !== user.id) {
       throw new ForbiddenException('Accès refusé');
     }
     return ticket;
@@ -105,7 +122,7 @@ export class SupportService {
 
   /** Mise à jour (admin) : statut, priorité, réponse. Notifie l'auteur. */
   async update(user: UserPayload, id: string, dto: UpdateTicketDto) {
-    if (!isStaff(user)) throw new ForbiddenException('Accès réservé à l\'administration');
+    if (!isAdminStaff(user)) throw new ForbiddenException('Accès réservé à l\'administration');
 
     const existingRows = await this.prisma.$queryRaw<TicketRow[]>`
       SELECT * FROM support_tickets WHERE id = ${id}::uuid`;

@@ -3,24 +3,68 @@ import {
   View,
   Text,
   Image,
+  ImageBackground,
   ScrollView,
   Pressable,
   KeyboardAvoidingView,
   Platform,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import { RemoteImage } from '../../components/ui/remote-image';
 import * as ImagePicker from 'expo-image-picker';
 import { Input } from '../../components/ui/input';
 import { Button } from '../../components/ui/button';
-import { MotifsBackground } from '../../components/ui/motifs-background';
 import { useAuthStore } from '../../store/auth.store';
 import { useUserModeStore } from '../../store/user-mode.store';
 import { supabase } from '../../lib/supabase';
 import { apiClient } from '../../lib/api';
 
+// Décodage base64 → Uint8Array (upload fiable vers Supabase Storage en RN, sans dépendance).
+function base64ToBytes(base64: string): Uint8Array {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+  const lookup = new Uint8Array(256);
+  for (let i = 0; i < chars.length; i++) lookup[chars.charCodeAt(i)] = i;
+  let len = base64.length * 0.75;
+  if (base64[base64.length - 1] === '=') { len--; if (base64[base64.length - 2] === '=') len--; }
+  const bytes = new Uint8Array(len);
+  let p = 0;
+  for (let i = 0; i < base64.length; i += 4) {
+    const e1 = lookup[base64.charCodeAt(i)];
+    const e2 = lookup[base64.charCodeAt(i + 1)];
+    const e3 = lookup[base64.charCodeAt(i + 2)];
+    const e4 = lookup[base64.charCodeAt(i + 3)];
+    bytes[p++] = (e1 << 2) | (e2 >> 4);
+    if (base64.charCodeAt(i + 2) !== 61) bytes[p++] = ((e2 & 15) << 4) | (e3 >> 2);
+    if (base64.charCodeAt(i + 3) !== 61) bytes[p++] = ((e3 & 3) << 6) | e4;
+  }
+  return bytes;
+}
+
+function waitForRetry(delayMs: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, delayMs));
+}
+
+function uploadErrorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (typeof error === 'object' && error !== null && 'message' in error && typeof error.message === 'string') {
+    return error.message;
+  }
+  return 'Erreur inconnue côté stockage.';
+}
+
 const PIED_FORT = ['Droit', 'Gauche'];
-const POSTES = ['Gardien', 'Défenseur', 'Milieu', 'Attaquant'];
+const POSTES = [
+  'Gardien',
+  'Défenseur central',
+  'Latéral droit',
+  'Latéral gauche',
+  'Milieu',
+  'Ailier droit',
+  'Ailier gauche',
+  'Attaquant',
+];
 const NIVEAUX = ['Débutant', 'Intermédiaire', 'Avancé', 'Semi-pro'];
 
 function SectionLabel({ children }: { children: string }) {
@@ -77,19 +121,9 @@ export default function PlayerProfileScreen() {
   const router = useRouter();
   const { user } = useAuthStore();
   const [photoUri, setPhotoUri] = useState('');
+  const [uploading, setUploading] = useState(false);
   const [prenom, setPrenom] = useState('');
   const [nom, setNom] = useState('');
-
-  // Pré-remplir Prénom / Nom avec le VRAI nom du compte connecté (saisi à
-  // l'inscription, stocké dans user_metadata.full_name). N'écrase pas une
-  // saisie déjà faite par l'utilisateur.
-  useEffect(() => {
-    const fullName = (user?.user_metadata?.full_name as string | undefined)?.trim();
-    if (!fullName) return;
-    const parts = fullName.split(/\s+/);
-    setPrenom((p) => p || parts[0] || '');
-    setNom((n) => n || parts.slice(1).join(' '));
-  }, [user]);
   const [dateNaissance, setDateNaissance] = useState('');
   const [taille, setTaille] = useState('');
   const [poids, setPoids] = useState('');
@@ -99,6 +133,90 @@ export default function PlayerProfileScreen() {
   const [niveau, setNiveau] = useState('');
   const [infos, setInfos] = useState('');
   const [loading, setLoading] = useState(false);
+
+  // Pré-remplir la fiche depuis le compte connecté :
+  //  - Prénom / Nom depuis full_name (saisi à l'inscription).
+  //  - En ÉDITION, tous les champs déjà enregistrés dans user_metadata, pour
+  //    que l'utilisateur retrouve et modifie sa fiche existante.
+  // N'écrase jamais une saisie déjà faite par l'utilisateur dans l'écran.
+  useEffect(() => {
+    const meta = user?.user_metadata ?? {};
+    const str = (v: unknown) => (typeof v === 'string' ? v : '');
+    const fullName = str(meta.full_name).trim();
+    if (fullName) {
+      const parts = fullName.split(/\s+/);
+      setPrenom((p) => p || parts[0] || '');
+      setNom((n) => n || parts.slice(1).join(' '));
+    }
+    const existingPhoto = str(meta.photo_url).trim();
+    if (existingPhoto.startsWith('http')) setPhotoUri((p) => p || existingPhoto);
+    setDateNaissance((v) => v || str(meta.birth_date));
+    setTaille((v) => v || str(meta.height_cm));
+    setPoids((v) => v || str(meta.weight_kg));
+    setPiedFort((v) => v || str(meta.preferred_foot));
+    setPoste((v) => v || str(meta.position));
+    setPosteSecondaire((v) => v || str(meta.secondary_position));
+    setNiveau((v) => v || str(meta.level));
+    setInfos((v) => v || str(meta.extra_info));
+  }, [user]);
+
+  // Upload de la photo choisie vers Supabase Storage (bucket `avatars`, public)
+  // puis on conserve l'URL PUBLIQUE (pas l'URI locale) → elle s'affiche partout.
+  async function uploadAvatar(asset: ImagePicker.ImagePickerAsset) {
+    if (!asset.base64) {
+      Alert.alert('Photo indisponible', 'La photo sélectionnée ne peut pas être lue. Réessaie avec une autre image.');
+      return;
+    }
+    setUploading(true);
+    try {
+      const bytes = base64ToBytes(asset.base64);
+      const rawExt = (asset.uri.split('.').pop() || 'jpg').toLowerCase();
+      const ext = rawExt === 'png' ? 'png' : 'jpg';
+      const contentType = ext === 'png' ? 'image/png' : 'image/jpeg';
+      const path = `${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+
+      const { data: sess } = await supabase.auth.getSession();
+      if (!sess.session) {
+        Alert.alert('Session expirée', 'Reconnecte-toi puis réessaie l\'envoi de la photo.');
+        return;
+      }
+
+      let uploadError: unknown;
+      for (let attempt = 1; attempt <= 3; attempt += 1) {
+        try {
+          const { error } = await supabase.storage
+            .from('avatars')
+            .upload(path, bytes.buffer as ArrayBuffer, { contentType, upsert: true });
+          if (!error) {
+            const { data } = supabase.storage.from('avatars').getPublicUrl(path);
+            if (data?.publicUrl) setPhotoUri(data.publicUrl);
+            return;
+          }
+          uploadError = error;
+        } catch (error: unknown) {
+          uploadError = error;
+        }
+
+        if (attempt < 3) await waitForRetry(attempt * 900);
+      }
+
+      const message = uploadErrorMessage(uploadError);
+      console.log('[avatar upload] error =', message);
+      const isNetworkFailure = /network request failed|network|timeout/i.test(message);
+      Alert.alert(
+        isNetworkFailure ? 'Connexion au stockage impossible' : 'Échec de l\'envoi de la photo',
+        isNetworkFailure
+          ? 'Vérifie la connexion Internet puis réessaie. Si le problème persiste, relance l’application.'
+          : message,
+      );
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Erreur réseau pendant l\'envoi.';
+      console.log('[avatar upload] exception =', msg);
+      Alert.alert('Échec de l\'envoi de la photo', msg);
+    } finally {
+      setUploading(false);
+    }
+  }
 
   async function launchGallery() {
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -111,8 +229,9 @@ export default function PlayerProfileScreen() {
       allowsEditing: true,
       aspect: [1, 1],
       quality: 0.8,
+      base64: true,
     });
-    if (!result.canceled && result.assets?.[0]?.uri) setPhotoUri(result.assets[0].uri);
+    if (!result.canceled && result.assets?.[0]) await uploadAvatar(result.assets[0]);
   }
 
   async function launchCamera() {
@@ -125,8 +244,9 @@ export default function PlayerProfileScreen() {
       allowsEditing: true,
       aspect: [1, 1],
       quality: 0.8,
+      base64: true,
     });
-    if (!result.canceled && result.assets?.[0]?.uri) setPhotoUri(result.assets[0].uri);
+    if (!result.canceled && result.assets?.[0]) await uploadAvatar(result.assets[0]);
   }
 
   function pickPhoto() {
@@ -141,8 +261,30 @@ export default function PlayerProfileScreen() {
   const { setMode } = useUserModeStore();
 
   async function handleSave() {
-    if (!prenom || !nom || !dateNaissance || !taille || !poids || !piedFort || !poste || !niveau) {
-      Alert.alert('Erreur', 'Tous les champs obligatoires (*) doivent être remplis');
+    const dateMatch = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(dateNaissance);
+    const birthDate = dateMatch
+      ? new Date(Number(dateMatch[3]), Number(dateMatch[2]) - 1, Number(dateMatch[1]))
+      : null;
+    const validBirthDate = Boolean(
+      birthDate
+      && birthDate.getFullYear() === Number(dateMatch?.[3])
+      && birthDate.getMonth() === Number(dateMatch?.[2]) - 1
+      && birthDate.getDate() === Number(dateMatch?.[1])
+      && birthDate <= new Date(),
+    );
+    const height = Number(taille);
+    const weight = Number(poids);
+
+    if (!photoUri || !prenom.trim() || !nom.trim() || !dateNaissance || !taille || !poids || !piedFort || !poste || !niveau) {
+      Alert.alert('Fiche incomplète', 'Ajoute la photo et renseigne tous les champs obligatoires (*).');
+      return;
+    }
+    if (!validBirthDate) {
+      Alert.alert('Fiche incomplète', 'La date de naissance doit respecter le format jj/mm/aaaa et être valide.');
+      return;
+    }
+    if (!Number.isInteger(height) || height < 100 || height > 250 || !Number.isInteger(weight) || weight < 25 || weight > 250) {
+      Alert.alert('Fiche incomplète', 'Renseigne une taille (100–250 cm) et un poids (25–250 kg) valides.');
       return;
     }
     setLoading(true);
@@ -172,7 +314,11 @@ export default function PlayerProfileScreen() {
 
     // 2) Miroir des champs de base vers le profil BO (best-effort).
     try {
-      await apiClient.patch('/api/v1/users/me', { full_name: fullName, position: poste });
+      await apiClient.patch('/api/v1/users/me', {
+        full_name: fullName,
+        position: poste,
+        avatar_url: photoUri,
+      });
     } catch {
       // non bloquant
     }
@@ -193,27 +339,33 @@ export default function PlayerProfileScreen() {
       className="flex-1 bg-primary-deep"
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
-      {/* Filigrane Variante B — motifs géométriques ivoiriens officiels */}
-      <MotifsBackground opacity={0.5} />
-
-      <ScrollView
-        className="flex-1 px-6"
-        contentContainerStyle={{ paddingTop: 56, paddingBottom: 48 }}
-        keyboardShouldPersistTaps="handled"
+      <ImageBackground
+        source={require('../../../assets/images/kente-tile.png')}
+        resizeMode="repeat"
+        style={{ flex: 1 }}
+        imageStyle={{ opacity: 0.62 }}
       >
-        {/* Logo centré avec halo doux */}
+        <ScrollView
+          className="flex-1 px-6"
+          contentContainerStyle={{ paddingTop: 56, paddingBottom: 48 }}
+          keyboardShouldPersistTaps="handled"
+        >
+        {/* Logo officiel GBONHI FOOT centré avec halo doré (maquette s07) */}
         <View className="items-center mb-3">
           <View
-            className="w-14 h-14 rounded-full bg-primary items-center justify-center border-2 border-accent-gold"
             style={{
               shadowColor: '#FFB830',
               shadowOffset: { width: 0, height: 0 },
-              shadowOpacity: 0.6,
-              shadowRadius: 20,
+              shadowOpacity: 0.7,
+              shadowRadius: 22,
               elevation: 12,
             }}
           >
-            <Text style={{ fontSize: 24 }}>⚽</Text>
+            <Image
+              source={require('../../../assets/images/logo.png')}
+              resizeMode="contain"
+              style={{ width: 92, height: 72 }}
+            />
           </View>
         </View>
 
@@ -225,14 +377,16 @@ export default function PlayerProfileScreen() {
             className="w-28 h-28 rounded-full border-2 border-dashed border-white/40 items-center justify-center overflow-hidden"
             style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}
           >
-            {photoUri ? (
-              <Image source={{ uri: photoUri }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
+            {uploading ? (
+              <ActivityIndicator color="#F7921E" />
+            ) : photoUri ? (
+              <RemoteImage uri={photoUri} contentFit="cover" style={{ width: '100%', height: '100%' }} />
             ) : (
               <Text style={{ fontSize: 34 }}>📷</Text>
             )}
           </View>
           <Text className="text-white/70 text-sm mt-2">
-            {photoUri ? 'Modifier la photo' : 'Ajouter une photo'} <Text className="text-accent">*</Text>
+            {uploading ? 'Envoi en cours…' : photoUri ? 'Modifier la photo' : 'Ajouter une photo'} <Text className="text-accent">*</Text>
           </Text>
         </Pressable>
 
@@ -285,7 +439,8 @@ export default function PlayerProfileScreen() {
         <View className="mt-6">
           <Button label="Enregistrer ma fiche" loading={loading} onPress={handleSave} />
         </View>
-      </ScrollView>
+        </ScrollView>
+      </ImageBackground>
     </KeyboardAvoidingView>
   );
 }

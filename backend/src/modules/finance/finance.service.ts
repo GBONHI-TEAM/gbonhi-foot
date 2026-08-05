@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 
 export interface CostRow {
@@ -15,9 +15,11 @@ export class FinanceService {
   constructor(private readonly prisma: PrismaService) {}
 
   /** Synthèse financière globale : CA, commission, reversé, coûts, marge nette. */
-  async summary() {
+  async summary(from?: string, to?: string) {
+    const period = this.period(from, to);
     const reservations = await this.prisma.reservation.findMany({
-      select: { total_price: true, platform_fee: true, partner_amount: true, status: true },
+      where: { reservation_date: period, status: { in: ['confirmed', 'completed'] } },
+      select: { total_price: true, platform_fee: true, partner_amount: true },
     });
 
     const ca = reservations.reduce((s, r) => s + (r.total_price ?? 0), 0);
@@ -25,10 +27,7 @@ export class FinanceService {
     const reverse = reservations.reduce((s, r) => s + (r.partner_amount ?? 0), 0);
     const transactions = reservations.length;
 
-    const costRows = await this.prisma.$queryRaw<{ total: number }[]>`
-      SELECT COALESCE(SUM(amount), 0)::int AS total FROM finance_costs
-    `;
-    const costs = costRows[0]?.total ?? 0;
+    const costs = (await this.prisma.financeCost.aggregate({ where: { incurred_on: period }, _sum: { amount: true } }))._sum.amount ?? 0;
 
     return {
       ca,
@@ -41,8 +40,10 @@ export class FinanceService {
   }
 
   /** Montants dus par partenaire (regroupés depuis les réservations). */
-  async partners() {
+  async partners(from?: string, to?: string) {
+    const period = this.period(from, to);
     const reservations = await this.prisma.reservation.findMany({
+      where: { reservation_date: period, status: { in: ['confirmed', 'completed'] } },
       select: {
         partner_amount: true,
         status: true,
@@ -81,29 +82,56 @@ export class FinanceService {
       .sort((a, b) => b.amountOwed - a.amountOwed);
   }
 
-  async listCosts(): Promise<CostRow[]> {
-    return this.prisma.$queryRaw<CostRow[]>`
-      SELECT id, label, category, amount,
-             to_char(incurred_on, 'YYYY-MM-DD') AS incurred_on,
-             created_at
-      FROM finance_costs
-      ORDER BY incurred_on DESC, created_at DESC
-    `;
+  async listCosts(from?: string, to?: string): Promise<CostRow[]> {
+    const period = this.period(from, to);
+    const costs = await this.prisma.financeCost.findMany({
+      where: { incurred_on: period },
+      orderBy: [{ incurred_on: 'desc' }, { created_at: 'desc' }],
+    });
+    return costs.map((cost) => ({
+      id: cost.id,
+      label: cost.label,
+      category: cost.category,
+      amount: cost.amount,
+      incurred_on: cost.incurred_on.toISOString().slice(0, 10),
+      created_at: cost.created_at.toISOString(),
+    }));
   }
 
   async createCost(input: { label: string; category?: string; amount: number; incurred_on?: string }, userId?: string) {
     const category = input.category?.trim() || 'AUTRE';
-    const date = input.incurred_on?.trim() || new Date().toISOString().slice(0, 10);
-    const rows = await this.prisma.$queryRaw<CostRow[]>`
-      INSERT INTO finance_costs (label, category, amount, incurred_on, created_by)
-      VALUES (${input.label}, ${category}, ${input.amount}, ${date}::date, ${userId ?? null}::uuid)
-      RETURNING id, label, category, amount, to_char(incurred_on, 'YYYY-MM-DD') AS incurred_on, created_at
-    `;
-    return rows[0];
+    const date = this.parseDate(input.incurred_on) ?? new Date();
+    const cost = await this.prisma.financeCost.create({
+      data: { label: input.label, category, amount: input.amount, incurred_on: date, created_by: userId },
+    });
+    return {
+      id: cost.id,
+      label: cost.label,
+      category: cost.category,
+      amount: cost.amount,
+      incurred_on: cost.incurred_on.toISOString().slice(0, 10),
+      created_at: cost.created_at.toISOString(),
+    };
   }
 
   async deleteCost(id: string) {
-    await this.prisma.$executeRaw`DELETE FROM finance_costs WHERE id = ${id}::uuid`;
+    await this.prisma.financeCost.delete({ where: { id } });
     return { success: true };
+  }
+
+  private period(from?: string, to?: string): { gte?: Date; lte?: Date } {
+    const start = this.parseDate(from);
+    const end = this.parseDate(to);
+    if (from && !start) throw new BadRequestException('La date de début est invalide');
+    if (to && !end) throw new BadRequestException('La date de fin est invalide');
+    if (start && end && start > end) throw new BadRequestException('La période sélectionnée est invalide');
+    if (end) end.setHours(23, 59, 59, 999);
+    return { ...(start ? { gte: start } : {}), ...(end ? { lte: end } : {}) };
+  }
+
+  private parseDate(value?: string): Date | null {
+    if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+    const parsed = new Date(`${value}T00:00:00.000Z`);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
   }
 }

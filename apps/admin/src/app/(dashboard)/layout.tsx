@@ -1,6 +1,8 @@
 import { redirect } from 'next/navigation';
 import { createSupabaseServerClient } from '../../lib/supabase/server';
 import { Sidebar } from '../../components/layout/sidebar';
+import { isAdminRole, normalizeAdminRole, type AdminRole } from '../../lib/admin-access';
+import { PeriodRefreshBoundary } from '../../components/layout/period-refresh-boundary';
 
 /** Bandeau décoratif or/orange en dents de scie — motifs ivoiriens officiels GBONHI FOOT. */
 function GoldSawtooth() {
@@ -25,17 +27,29 @@ function GoldSawtooth() {
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createSupabaseServerClient();
   const {
-    data: { user },
-  } = await supabase.auth.getUser();
+    data: { session },
+  } = await supabase.auth.getSession();
+  if (!session?.access_token) redirect('/login');
 
-  if (!user) redirect('/login');
+  const profileResponse = await fetch(
+    `${process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001'}/api/v1/users/me`,
+    {
+      headers: { Authorization: `Bearer ${session.access_token}` },
+      cache: 'no-store',
+    },
+  );
+
+  if (!profileResponse.ok) redirect('/login');
+  const profile = (await profileResponse.json()) as { role?: string };
+  const role = normalizeAdminRole(profile.role);
+  if (!isAdminRole(role)) redirect('/login');
 
   return (
     <div className="min-h-screen" style={{ backgroundColor: '#F9FAFB' }}>
-      <Sidebar />
+      <Sidebar role={role as AdminRole} />
       <GoldSawtooth />
       <div className="ml-60" style={{ paddingTop: '72px' }}>
-        <main className="p-8">{children}</main>
+        <main className="p-8"><PeriodRefreshBoundary>{children}</PeriodRefreshBoundary></main>
       </div>
     </div>
   );

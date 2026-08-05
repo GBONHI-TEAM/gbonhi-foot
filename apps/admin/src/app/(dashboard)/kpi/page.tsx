@@ -1,167 +1,63 @@
 'use client';
+
 import { useEffect, useMemo, useState } from 'react';
+import { CalendarCheck, FileDown, FileText, MapPin, Sheet, Trophy, Users } from 'lucide-react';
+import { useSearchParams } from 'next/navigation';
 import { Header } from '../../../components/layout/header';
 import { apiFetch } from '../../../lib/api';
+import { createPdfBlob, createXlsxBlob, downloadBlob, type ExportCell } from '../../../lib/file-export';
 
-/* ---------- types ---------- */
 type Tab = 'acquisition' | 'ligues' | 'reservations';
+interface AdminUser { id: string; position?: string | null; created_at?: string | null; }
+interface League { id: string; status: string; created_at?: string | null; _count?: { teams: number; matches: number }; registration_fee?: number | null; prize_info?: string | null; }
+interface Team { id: string; }
+interface Terrain { id: string; name?: string; is_active?: boolean; partner?: { full_name?: string | null } | null; }
+interface Match { id: string; status: string; scheduled_at?: string | null; }
+interface Reservation { id: string; status?: string | null; reservation_date?: string | null; total_price?: number | null; platform_fee?: number | null; terrain?: { id: string; name: string; partner?: { full_name?: string | null } | null } | null; }
+interface JourneyOverview { funnel: { registered: number; playerProfiles: number; inTeam: number; inLeague: number; madeReservation: number }; sessions: { total: number; leagues: number; reservation: number }; }
 
-interface AdminUser { id: string; role?: string | null; position?: string | null; created_at?: string | null }
-interface League { id: string; status: string; created_at?: string | null; _count?: { teams: number; matches: number } }
-interface Team { id: string }
-interface Terrain { id: string; is_active?: boolean }
-interface Match { id: string; status: string; scheduled_at?: string | null }
-interface Reservation { id: string; status?: string | null; reservation_date?: string | null; total_price?: number | null; platform_fee?: number | null; partner_amount?: number | null }
-
-const FILTERS = ["Aujourd'hui", '7 jours', '30 jours', 'Ce mois', 'Tout'];
 const ACTIVE_LEAGUE = ['INSCRIPTIONS_OUVERTES', 'INSCRIPTIONS_CLOSES', 'EN_COURS'];
+const up = (value?: string | null) => (value ?? '').toUpperCase();
+const confirmed = (value?: string | null) => /CONFIRM|VALID|COMPLET/.test(up(value));
+const cancelled = (value?: string | null) => /CANCEL|ANNUL|REFUS/.test(up(value));
+const fcfa = (value: number) => `${value.toLocaleString('fr-FR')} F`;
 
-function periodStart(filter: string): Date | null {
-  const now = new Date();
-  switch (filter) {
-    case "Aujourd'hui": return new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    case '7 jours': return new Date(Date.now() - 7 * 864e5);
-    case '30 jours': return new Date(Date.now() - 30 * 864e5);
-    case 'Ce mois': return new Date(now.getFullYear(), now.getMonth(), 1);
-    default: return null; // Tout
-  }
+function periodStart(filter: string) {
+  const date = new Date();
+  if (filter === 'Jour') return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  if (filter === 'Semaine') return new Date(Date.now() - 7 * 86_400_000);
+  if (filter === 'Mois') return new Date(date.getFullYear(), date.getMonth(), 1);
+  return null;
 }
-function inPeriod(iso: string | null | undefined, start: Date | null): boolean {
-  if (!start) return true;
-  if (!iso) return false;
-  const t = new Date(iso).getTime();
-  return !Number.isNaN(t) && t >= start.getTime();
-}
-const up = (s?: string | null) => (s ?? '').toUpperCase();
-const isConfirmed = (s?: string | null) => /CONFIRM|VALID/.test(up(s));
-const isCancelled = (s?: string | null) => /CANCEL|ANNUL|REFUS/.test(up(s));
-const fcfa = (n: number) => `${n.toLocaleString('fr-FR')} F`;
+function inPeriod(value: string | null | undefined, start: Date | null, end: Date | null) { if (!start || !value) return !start; const time = new Date(value).getTime(); return !Number.isNaN(time) && time >= start.getTime() && (!end || time <= end.getTime()); }
 
-/* ---------- UI ---------- */
-function KpiCard({ label, value, accent, soon }: { label: string; value: string; accent?: boolean; soon?: boolean }) {
-  return (
-    <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-100">
-      <p className="text-gray-500 text-sm">{label}</p>
-      <p className="text-3xl font-black mt-1" style={{ color: soon ? '#9CA3AF' : accent ? '#F7921E' : '#111827' }}>{value}</p>
-      {soon ? <p className="text-[11px] text-gray-400 mt-1">Bientôt disponible</p> : null}
-    </div>
-  );
-}
+function Sparkline({ color = '#16B978' }: { color?: string }) { return <svg viewBox="0 0 80 30" className="h-8 w-20" aria-hidden><path d="M2 24 L17 19 L31 21 L45 13 L60 10 L78 4" fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" /></svg>; }
+function Donut({ percent, color = '#24883F' }: { percent: number; color?: string }) { const safe = Math.max(0, Math.min(100, percent)); return <div className="h-28 w-28 rounded-full" style={{ background: `conic-gradient(${color} 0 ${safe}%, #E5E7EB ${safe}% 100%)`, maskImage: 'radial-gradient(circle, transparent 53%, black 54%)' }} />; }
+function KpiCard({ label, value, delta, color, icon: Icon }: { label: string; value: string; delta?: string; color?: string; icon?: typeof Users }) { return <article className="min-h-28 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"><div className="flex justify-between gap-3"><div><p className="text-sm text-slate-500">{label}</p><p className="mt-1 text-3xl font-black leading-none" style={{ color: color ?? '#102A18' }}>{value}</p>{delta && <p className="mt-2 text-xs font-bold text-emerald-500">↑ {delta}</p>}</div>{Icon ? <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[#E8F3EA] text-[#24883F]"><Icon size={18} /></span> : <Sparkline color={color === '#F7921E' ? '#F7921E' : color === '#EF4444' ? '#EF4444' : '#16B978'} />}</div></article>; }
+function SectionTitle({ children }: { children: React.ReactNode }) { return <h2 className="mb-3 text-sm font-black uppercase tracking-wide text-[#102A18]">{children}</h2>; }
 
 export default function KpiPage() {
+  const searchParams = useSearchParams();
   const [tab, setTab] = useState<Tab>('acquisition');
-  const [filter, setFilter] = useState('30 jours');
-  const [users, setUsers] = useState<AdminUser[]>([]);
-  const [leagues, setLeagues] = useState<League[]>([]);
-  const [teams, setTeams] = useState<Team[]>([]);
-  const [terrains, setTerrains] = useState<Terrain[]>([]);
-  const [matches, setMatches] = useState<Match[]>([]);
-  const [reservations, setReservations] = useState<Reservation[]>([]);
-  const [loaded, setLoaded] = useState(false);
+  const [filter, setFilter] = useState('Mois');
+  const [users, setUsers] = useState<AdminUser[]>([]); const [leagues, setLeagues] = useState<League[]>([]); const [teams, setTeams] = useState<Team[]>([]); const [terrains, setTerrains] = useState<Terrain[]>([]); const [matches, setMatches] = useState<Match[]>([]); const [reservations, setReservations] = useState<Reservation[]>([]); const [journeys, setJourneys] = useState<JourneyOverview | null>(null); const [loaded, setLoaded] = useState(false);
 
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      const [u, l, t, te, m, r] = await Promise.all([
-        apiFetch<AdminUser[]>('/users').catch(() => []),
-        apiFetch<League[]>('/leagues').catch(() => []),
-        apiFetch<Team[]>('/teams').catch(() => []),
-        apiFetch<Terrain[]>('/terrains').catch(() => []),
-        apiFetch<Match[]>('/matches').catch(() => []),
-        apiFetch<Reservation[]>('/reservations/all').catch(() => []),
-      ]);
-      if (cancelled) return;
-      setUsers(u); setLeagues(l); setTeams(t); setTerrains(te); setMatches(m); setReservations(r);
-      setLoaded(true);
-    })();
-    return () => { cancelled = true; };
-  }, []);
+  useEffect(() => { let closed = false; void Promise.all([apiFetch<AdminUser[]>('/users').catch(() => []), apiFetch<League[]>('/leagues').catch(() => []), apiFetch<Team[]>('/teams').catch(() => []), apiFetch<Terrain[]>('/terrains/admin').catch(() => []), apiFetch<Match[]>('/matches').catch(() => []), apiFetch<Reservation[]>('/reservations/all').catch(() => []), apiFetch<JourneyOverview>('/analytics/user-journeys').catch(() => null)]).then(([u, l, t, te, m, r, j]) => { if (closed) return; setUsers(u); setLeagues(l); setTeams(t); setTerrains(te); setMatches(m); setReservations(r); setJourneys(j); setLoaded(true); }); return () => { closed = true; }; }, [searchParams]);
+  const start = useMemo(() => searchParams.get('from') ? new Date(`${searchParams.get('from')}T00:00:00.000Z`) : periodStart(filter), [filter, searchParams]);
+  const end = useMemo(() => searchParams.get('to') ? new Date(`${searchParams.get('to')}T23:59:59.999Z`) : null, [searchParams]);
+  const data = useMemo(() => { const scopedReservations = reservations.filter((item) => inPeriod(item.reservation_date, start, end)); const paid = scopedReservations.filter((item) => confirmed(item.status)); const resAmount = paid.reduce((sum, item) => sum + (item.total_price ?? 0), 0); const teamsInLeagues = leagues.reduce((sum, item) => sum + (item._count?.teams ?? 0), 0); const matchesPlayed = matches.filter((item) => /TERMIN|VALID/.test(up(item.status))).length; const top = new Map<string, { name: string; partner: string; count: number; revenue: number }>(); paid.forEach((reservation) => { const key = reservation.terrain?.id ?? 'unknown'; const current = top.get(key) ?? { name: reservation.terrain?.name ?? 'Terrain', partner: reservation.terrain?.partner?.full_name ?? '—', count: 0, revenue: 0 }; current.count += 1; current.revenue += reservation.total_price ?? 0; top.set(key, current); }); return { newUsers: users.filter((item) => inPeriod(item.created_at, start, end)).length, profiles: users.filter((item) => Boolean(item.position)).length, activeLeagues: leagues.filter((item) => ACTIVE_LEAGUE.includes(up(item.status))).length, teamsInLeagues, matchesPlayed, reservations: scopedReservations.length, paid: paid.length, cancelled: scopedReservations.filter((item) => cancelled(item.status)).length, revenue: resAmount, commission: paid.reduce((sum, item) => sum + (item.platform_fee ?? 0), 0), activeTerrains: terrains.filter((item) => item.is_active !== false).length, topTerrains: [...top.values()].sort((a, b) => b.count - a.count).slice(0, 5), leagueFees: leagues.reduce((sum, item) => sum + (item.registration_fee ?? 0) * (item._count?.teams ?? 0), 0) }; }, [users, leagues, matches, reservations, terrains, start, end]);
+  const nb = (value: number) => loaded ? value.toLocaleString('fr-FR') : '—';
+  const title = tab === 'acquisition' ? 'KPI — Acquisition & Fidélisation' : tab === 'ligues' ? 'KPI — Leagues' : 'KPI — Réservations';
+  const period = searchParams.get('from') || searchParams.get('to') ? `${searchParams.get('from') ?? 'Début'} au ${searchParams.get('to') ?? 'aujourd’hui'}` : filter;
+  const exportRows: Array<[string, ExportCell]> = tab === 'acquisition' ? [['Nouveaux inscrits', data.newUsers], ['Fiches joueurs', data.profiles], ['Sessions Leagues', journeys?.sessions.leagues ?? 0], ['Sessions Réservation', journeys?.sessions.reservation ?? 0]] : tab === 'ligues' ? [['Ligues actives', data.activeLeagues], ['Équipes inscrites', data.teamsInLeagues], ['Matchs joués', data.matchesPlayed], ['Revenus inscriptions', data.leagueFees]] : [['Réservations', data.reservations], ['Confirmées', data.paid], ['Annulées', data.cancelled], ['Revenus', data.revenue], ['Commission', data.commission]];
+  const fileName = `gbonhi-foot-kpi-${tab}-${new Date().toISOString().slice(0, 10)}`;
 
-  const start = useMemo(() => periodStart(filter), [filter]);
-
-  const k = useMemo(() => {
-    const newUsers = users.filter((x) => inPeriod(x.created_at, start)).length;
-    const fiches = users.filter((x) => !!x.position).length;
-    const leaguesActive = leagues.filter((l) => ACTIVE_LEAGUE.includes(l.status)).length;
-    const matchsJoues = matches.filter((mm) => ['TERMINÉ', 'VALIDÉ'].includes(up(mm.status))).length;
-    const resP = reservations.filter((x) => inPeriod(x.reservation_date, start));
-    const confirmed = resP.filter((x) => isConfirmed(x.status)).length;
-    const cancelled = resP.filter((x) => isCancelled(x.status)).length;
-    const montant = resP.reduce((s, x) => s + (x.total_price ?? 0), 0);
-    const commission = resP.reduce((s, x) => s + (x.platform_fee ?? 0), 0);
-    return {
-      totalUsers: users.length, newUsers, fiches,
-      leaguesActive, totalLeagues: leagues.length, teams: teams.length, matchsJoues,
-      terrains: terrains.filter((x) => x.is_active !== false).length,
-      resTotal: resP.length, confirmed, cancelled, montant, commission,
-    };
-  }, [users, leagues, teams, terrains, matches, reservations, start]);
-
-  const nb = (v: number) => (loaded ? v.toLocaleString('fr-FR') : '—');
-
-  return (
-    <>
-      <Header title="KPI & Analytics" />
-
-      {/* Sous-onglets */}
-      <div className="flex items-center gap-2 mb-5 flex-wrap">
-        {([['acquisition', 'Acquisition & Fidélisation'], ['ligues', 'Ligues'], ['reservations', 'Réservations']] as [Tab, string][]).map(([id, label]) => (
-          <button key={id} onClick={() => setTab(id)}
-            className="px-4 py-2 rounded-lg text-sm font-semibold border transition"
-            style={{ backgroundColor: tab === id ? '#1E7A3A' : 'white', color: tab === id ? 'white' : '#374151', borderColor: tab === id ? '#1E7A3A' : '#E5E7EB' }}>
-            {label}
-          </button>
-        ))}
-      </div>
-
-      {/* Filtre période */}
-      <div className="flex items-center gap-2 mb-6 flex-wrap">
-        {FILTERS.map((label) => {
-          const active = filter === label;
-          return (
-            <button key={label} onClick={() => setFilter(label)}
-              className="px-4 py-1.5 rounded-full text-sm font-medium border transition"
-              style={{ backgroundColor: active ? '#F7921E' : 'white', color: active ? 'white' : '#374151', borderColor: active ? '#F7921E' : '#E5E7EB' }}>
-              {label}
-            </button>
-          );
-        })}
-      </div>
-
-      {tab === 'acquisition' && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <KpiCard label="Nouveaux inscrits (période)" value={nb(k.newUsers)} accent />
-          <KpiCard label="Utilisateurs (total)" value={nb(k.totalUsers)} />
-          <KpiCard label="Fiches joueurs créées" value={nb(k.fiches)} />
-          <KpiCard label="Taux de conversion" value="—" soon />
-          <KpiCard label="Sessions totales" value="—" soon />
-          <KpiCard label="Sessions Leagues" value="—" soon />
-          <KpiCard label="Sessions Réservation" value="—" soon />
-        </div>
-      )}
-
-      {tab === 'ligues' && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <KpiCard label="Ligues actives" value={nb(k.leaguesActive)} accent />
-          <KpiCard label="Ligues (total)" value={nb(k.totalLeagues)} />
-          <KpiCard label="Équipes inscrites" value={nb(k.teams)} />
-          <KpiCard label="Matchs joués" value={nb(k.matchsJoues)} />
-          <KpiCard label="Fiches joueurs créées" value={nb(k.fiches)} />
-          <KpiCard label="Taux de remplissage" value="—" soon />
-        </div>
-      )}
-
-      {tab === 'reservations' && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <KpiCard label="Réservations (période)" value={nb(k.resTotal)} accent />
-          <KpiCard label="Confirmées" value={nb(k.confirmed)} />
-          <KpiCard label="Annulées" value={nb(k.cancelled)} />
-          <KpiCard label="Montant total" value={loaded ? fcfa(k.montant) : '—'} />
-          <KpiCard label="Commission GBONHI" value={loaded ? fcfa(k.commission) : '—'} />
-          <KpiCard label="Terrains actifs" value={nb(k.terrains)} />
-          <KpiCard label="Taux d'occupation" value="—" soon />
-        </div>
-      )}
-    </>
-  );
+  return <>
+    <Header title={title} />
+    <nav className="mb-4 flex gap-7 border-b border-slate-200 px-1"><button onClick={() => setTab('acquisition')} className={`border-b-2 pb-3 text-sm font-bold ${tab === 'acquisition' ? 'border-[#24883F] text-[#24883F]' : 'border-transparent text-slate-500'}`}>Acquisition</button><button onClick={() => setTab('ligues')} className={`border-b-2 pb-3 text-sm font-bold ${tab === 'ligues' ? 'border-[#24883F] text-[#24883F]' : 'border-transparent text-slate-500'}`}>Leagues</button><button onClick={() => setTab('reservations')} className={`border-b-2 pb-3 text-sm font-bold ${tab === 'reservations' ? 'border-[#24883F] text-[#24883F]' : 'border-transparent text-slate-500'}`}>Réservations</button></nav>
+    <div className="mb-5 flex flex-wrap items-center justify-between gap-3"><div className="flex flex-wrap gap-2">{['Jour', 'Semaine', 'Mois', 'Période'].map((label) => <button key={label} onClick={() => setFilter(label)} className="h-10 rounded-lg border px-4 text-sm font-semibold" style={{ backgroundColor: filter === label ? (tab === 'reservations' ? '#F7921E' : '#24883F') : 'white', borderColor: filter === label ? (tab === 'reservations' ? '#F7921E' : '#24883F') : '#E2E8F0', color: filter === label ? 'white' : '#64748B' }}>{label}</button>)}</div><div className="flex gap-2"><button onClick={() => downloadBlob(createXlsxBlob(title, [['Indicateur', 'Valeur'], ...exportRows]), `${fileName}.xlsx`)} className="inline-flex h-10 items-center gap-1.5 rounded-lg border border-[#24883F] px-3 text-sm font-bold text-[#24883F]"><Sheet size={15} /> XLSX</button><button onClick={() => downloadBlob(createPdfBlob(title, period, exportRows), `${fileName}.pdf`)} className="inline-flex h-10 items-center gap-1.5 rounded-lg bg-[#24883F] px-3 text-sm font-bold text-white"><FileDown size={15} /> PDF</button></div></div>
+    {tab === 'acquisition' && <><SectionTitle>Acquisition</SectionTitle><div className="grid grid-cols-1 gap-4 md:grid-cols-2"><KpiCard label="Téléchargements / utilisateurs" value={nb(users.length)} delta={`${data.newUsers} sur la période`} /><KpiCard label="Inscriptions" value={nb(data.newUsers)} delta="Période active" /><KpiCard label="Comptes avec fiche joueur" value={nb(data.profiles)} /><KpiCard label="Sessions Leagues" value={nb(journeys?.sessions.leagues ?? 0)} color="#24883F" /><KpiCard label="Sessions Réservation" value={nb(journeys?.sessions.reservation ?? 0)} color="#F7921E" /><KpiCard label="Sessions totales" value={nb(journeys?.sessions.total ?? 0)} /><KpiCard label="Utilisateurs actifs (parcours)" value={nb(journeys?.funnel.registered ?? users.length)} /></div><section className="mt-5 grid grid-cols-1 gap-4 xl:grid-cols-[minmax(300px,.8fr)_minmax(0,1.2fr)]"><article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><h2 className="font-bold text-slate-900">Mode utilisateurs</h2><div className="mt-8 flex items-center gap-7"><Donut percent={journeys?.sessions.total ? Math.round(((journeys.sessions.leagues ?? 0) / journeys.sessions.total) * 100) : 0} /><div className="space-y-3 text-sm"><p className="flex items-center gap-2 text-slate-600"><span className="h-3 w-3 rounded-sm bg-[#24883F]" />Leagues — {nb(journeys?.sessions.leagues ?? 0)}</p><p className="flex items-center gap-2 text-slate-600"><span className="h-3 w-3 rounded-sm bg-[#F7921E]" />Réservation — {nb(journeys?.sessions.reservation ?? 0)}</p></div></div></article><article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><h2 className="font-bold text-slate-900">Parcours utilisateurs</h2><p className="mt-1 text-sm text-slate-400">Étapes atteintes par les utilisateurs enregistrés.</p><div className="mt-8 grid grid-cols-2 gap-3 sm:grid-cols-5">{[['Inscrits', journeys?.funnel.registered ?? 0], ['Fiches', journeys?.funnel.playerProfiles ?? 0], ['Équipes', journeys?.funnel.inTeam ?? 0], ['Ligues', journeys?.funnel.inLeague ?? 0], ['Réservations', journeys?.funnel.madeReservation ?? 0]].map(([label, value]) => <div key={String(label)} className="rounded-xl bg-slate-50 p-3"><p className="text-xs text-slate-500">{label}</p><p className="mt-1 text-2xl font-black text-[#24883F]">{nb(Number(value))}</p></div>)}</div></article></section></>}
+    {tab === 'ligues' && <><div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3"><KpiCard label="Leagues actives" value={nb(data.activeLeagues)} icon={Trophy} /><KpiCard label="Équipes inscrites" value={nb(data.teamsInLeagues)} icon={Users} /><KpiCard label="Matchs joués" value={nb(data.matchesPlayed)} color="#F7921E" icon={CalendarCheck} /><KpiCard label="Revenus générés par les leagues" value={loaded ? fcfa(data.leagueFees) : '—'} color="#F7921E" /><article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><p className="text-sm text-slate-500">Taux moyen de remplissage</p><div className="mt-6 flex items-center gap-5"><Donut percent={data.activeLeagues ? Math.min(100, Math.round((data.teamsInLeagues / Math.max(1, data.activeLeagues * 10)) * 100)) : 0} /><p className="text-sm text-slate-500">Calculé sur les équipes inscrites disponibles.</p></div></article><article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><p className="text-sm text-slate-500">Fiches joueurs créées</p><p className="mt-2 text-3xl font-black text-[#24883F]">{nb(data.profiles)}</p></article></div></>}
+    {tab === 'reservations' && <><div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5"><KpiCard label="Total des réservations" value={nb(data.reservations)} icon={CalendarCheck} /><KpiCard label="Réservations confirmées" value={nb(data.paid)} color="#16B978" /><KpiCard label="Réservations annulées" value={nb(data.cancelled)} color="#EF4444" /><KpiCard label="Revenus générés" value={loaded ? fcfa(data.revenue) : '—'} color="#F7921E" /><KpiCard label="Taux de confirmation" value={data.reservations ? `${Math.round((data.paid / data.reservations) * 100)}%` : '—'} icon={MapPin} /></div><section className="mt-5 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm"><div className="border-b border-slate-100 px-5 py-4"><h2 className="font-bold text-slate-900">Top 5 terrains les plus réservés</h2></div><div className="overflow-x-auto"><table className="min-w-[760px] w-full text-left text-sm"><thead className="bg-slate-50 text-xs font-semibold text-slate-500"><tr><th className="px-5 py-3">Terrain</th><th className="px-4 py-3">Partenaire</th><th className="px-4 py-3">Nb rés.</th><th className="px-4 py-3">Part du top</th><th className="px-4 py-3">CA généré</th></tr></thead><tbody className="divide-y divide-slate-100">{data.topTerrains.length === 0 ? <tr><td colSpan={5} className="px-5 py-10 text-center text-slate-400">Aucune réservation confirmée sur cette période.</td></tr> : data.topTerrains.map((terrain) => <tr key={terrain.name}><td className="px-5 py-3 font-semibold text-slate-900">{terrain.name}</td><td className="px-4 py-3 text-slate-600">{terrain.partner}</td><td className="px-4 py-3">{terrain.count}</td><td className="px-4 py-3 font-bold text-[#16B978]">{data.paid ? `${Math.round((terrain.count / data.paid) * 100)}%` : '—'}</td><td className="px-4 py-3 font-bold text-slate-800">{fcfa(terrain.revenue)}</td></tr>)}</tbody></table></div></section></>}
+  </>;
 }

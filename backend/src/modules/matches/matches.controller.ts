@@ -16,6 +16,8 @@ import { ChangeMatchStatusDto } from './dto/change-status.dto';
 import { CreateEventDto } from './dto/create-event.dto';
 import { SupabaseAuthGuard } from '../auth/supabase-auth.guard';
 import { IsString, MaxLength } from 'class-validator';
+import { RolesGuard } from '../../common/access/roles.guard';
+import { Roles } from '../../common/access/roles.decorator';
 
 class SetControllerDto {
   @IsString()
@@ -32,7 +34,7 @@ class SetPhaseDto {
   phase: string;
 }
 
-@UseGuards(SupabaseAuthGuard)
+@UseGuards(SupabaseAuthGuard, RolesGuard)
 @Controller('matches')
 export class MatchesController {
   constructor(private readonly matchesService: MatchesService) {}
@@ -57,16 +59,19 @@ export class MatchesController {
   }
 
   @Post()
+  @Roles('SUPER_ADMIN', 'ADMIN', 'OPERATEUR')
   create(@Body() dto: CreateMatchDto) {
     return this.matchesService.create(dto);
   }
 
   @Patch(':id')
+  @Roles('SUPER_ADMIN', 'ADMIN', 'OPERATEUR')
   update(@Param('id') id: string, @Body() dto: UpdateMatchDto) {
     return this.matchesService.update(id, dto);
   }
 
   @Patch(':id/status')
+  @Roles('SUPER_ADMIN', 'ADMIN', 'CONTROLEUR')
   changeStatus(@Param('id') id: string, @Body() dto: ChangeMatchStatusDto) {
     return this.matchesService.changeStatus(id, dto);
   }
@@ -77,16 +82,19 @@ export class MatchesController {
   }
 
   @Patch(':id/controller')
+  @Roles('SUPER_ADMIN', 'ADMIN', 'CONTROLEUR')
   setController(@Param('id') id: string, @Body() dto: SetControllerDto) {
     return this.matchesService.setController(id, dto.first_name, dto.last_name);
   }
 
   @Patch(':id/phase')
+  @Roles('SUPER_ADMIN', 'ADMIN', 'CONTROLEUR')
   setPhase(@Param('id') id: string, @Body() dto: SetPhaseDto) {
     return this.matchesService.setPhase(id, dto.phase);
   }
 
   @Delete(':id')
+  @Roles('SUPER_ADMIN', 'ADMIN')
   remove(@Param('id') id: string) {
     return this.matchesService.remove(id);
   }
@@ -97,11 +105,13 @@ export class MatchesController {
   }
 
   @Post(':id/events')
+  @Roles('SUPER_ADMIN', 'ADMIN', 'CONTROLEUR')
   addEvent(@Param('id') id: string, @Body() dto: CreateEventDto) {
     return this.matchesService.addEvent(id, dto);
   }
 
   @Delete(':id/events/:eventId')
+  @Roles('SUPER_ADMIN', 'ADMIN', 'CONTROLEUR')
   removeEvent(@Param('id') id: string, @Param('eventId') eventId: string) {
     return this.matchesService.removeEvent(id, eventId);
   }

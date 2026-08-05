@@ -6,6 +6,7 @@ import { supabase } from '../lib/supabase';
 import { apiClient } from '../lib/api';
 import { useAuthStore } from '../store/auth.store';
 import { ScreenBackground } from '../components/ui/screen-background';
+import { AppHeader } from '../components/ui/app-header';
 
 function Row({ icon, label, right, onPress, isLast }: { icon: string; label: string; right?: React.ReactNode; onPress?: () => void; isLast?: boolean }) {
   return (
@@ -72,6 +73,7 @@ export default function SettingsScreen() {
   const [savingPhone, setSavingPhone] = useState(false);
   const [langModal, setLangModal] = useState(false);
   const [cguModal, setCguModal] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   async function toggleNotifications(v: boolean) {
     setNotifications(v);
@@ -105,19 +107,22 @@ export default function SettingsScreen() {
   function deleteAccount() {
     Alert.alert(
       'Supprimer mon compte',
-      'Cette action est irréversible. Ta demande sera transmise pour traitement, puis tu seras déconnecté. Continuer ?',
+      'Cette action est irréversible. Tes réservations, participations et données personnelles seront supprimées. Si tu es capitaine avec des membres, partenaire ou organisateur, transfère d’abord tes responsabilités. Continuer ?',
       [
         { text: 'Annuler', style: 'cancel' },
         {
-          text: 'Supprimer', style: 'destructive', onPress: async () => {
+          text: 'Supprimer définitivement', style: 'destructive', onPress: async () => {
+            setDeleting(true);
             try {
-              await apiClient.post('/api/v1/support/tickets', {
-                kind: 'support', category: 'Compte', priority: 'haute',
-                subject: 'Demande de suppression de compte',
-                message: 'L\'utilisateur demande la suppression définitive de son compte.',
-              });
-            } catch { /* non bloquant */ }
-            await supabase.auth.signOut();
+              await apiClient.delete('/api/v1/users/me');
+              await supabase.auth.signOut();
+              router.replace('/(auth)/login');
+            } catch (e: unknown) {
+              const message = (e as { response?: { data?: { message?: string } } }).response?.data?.message;
+              Alert.alert('Suppression impossible', Array.isArray(message) ? message.join('\n') : message ?? 'Réessaie dans quelques instants.');
+            } finally {
+              setDeleting(false);
+            }
           },
         },
       ],
@@ -126,25 +131,13 @@ export default function SettingsScreen() {
 
   return (
     <ScreenBackground>
-      <ImageBackground
-        source={require('../../assets/images/kente-green.png')}
-        resizeMode="repeat"
-        style={{ paddingTop: 52, paddingBottom: 18, paddingHorizontal: 20, borderBottomLeftRadius: 24, borderBottomRightRadius: 24, overflow: 'hidden' }}
-        imageStyle={{ borderBottomLeftRadius: 24, borderBottomRightRadius: 24 }}
-      >
-        <View className="flex-row items-center">
-          <Pressable onPress={() => (router.canGoBack() ? router.back() : router.replace('/(tabs)/profile'))} hitSlop={8} style={{ width: 32 }}>
-            <Text className="text-white text-xl">←</Text>
-          </Pressable>
-          <Text className="text-white font-black text-xl flex-1 text-center" style={{ marginRight: 32 }}>Paramètres</Text>
-        </View>
-      </ImageBackground>
+      <AppHeader title="Paramètres" onBack={() => (router.canGoBack() ? router.back() : router.replace('/(tabs)/profile'))} showLogo={false} centered />
 
       <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 40 }} showsVerticalScrollIndicator={false}>
         {/* Compte */}
         <SectionTitle>COMPTE</SectionTitle>
         <Card>
-          <Row icon="👤" label="Modifier le profil" right={<Chevron />} onPress={() => router.push('/(auth)/player-profile')} />
+          <Row icon="👤" label="Modifier le profil" right={<Chevron />} onPress={() => router.push('/account-profile')} />
           <Row
             icon="📱"
             label="Changer de numéro"
@@ -174,8 +167,8 @@ export default function SettingsScreen() {
           <Pressable onPress={signOut} className="h-14 rounded-xl items-center justify-center mb-3" style={{ borderWidth: 1, borderColor: 'rgba(248,113,113,0.6)' }}>
             <Text className="font-bold text-base" style={{ color: '#F87171' }}>Se déconnecter</Text>
           </Pressable>
-          <Pressable onPress={deleteAccount} className="h-14 rounded-xl items-center justify-center" style={{ backgroundColor: '#EF4444' }}>
-            <Text className="text-white font-bold text-base">Supprimer mon compte</Text>
+          <Pressable onPress={deleteAccount} disabled={deleting} className="h-14 rounded-xl items-center justify-center" style={{ backgroundColor: '#EF4444', opacity: deleting ? 0.6 : 1 }}>
+            {deleting ? <ActivityIndicator color="#fff" /> : <Text className="text-white font-bold text-base">Supprimer mon compte</Text>}
           </Pressable>
         </View>
 

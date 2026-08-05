@@ -1,9 +1,11 @@
 import { useCallback, useState } from 'react';
 import { View, Text, Image, ScrollView, Pressable, FlatList, ActivityIndicator, RefreshControl } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { ScreenBackground } from '../../components/ui/screen-background';
-import { AppHeader } from '../../components/ui/app-header';
-import { apiClient } from '../../lib/api';
+import { AppHeader, HeaderAction } from '../../components/ui/app-header';
+import { RemoteImage } from '../../components/ui/remote-image';
+import { getCached } from '../../lib/api-cache';
 import { imageThumb } from '../../lib/image';
 
 interface ApiLeague {
@@ -59,7 +61,7 @@ function LeagueCard({ league }: { league: ApiLeague }) {
     <Pressable onPress={() => router.push(`/league/${league.id}`)} className="rounded-2xl overflow-hidden mb-4 active:opacity-90" style={{ backgroundColor: '#132913', borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)' }}>
       {/* Bannière + badge statut */}
       <View style={{ height: 140, backgroundColor: '#0F3D1E' }}>
-        {banner ? <Image source={{ uri: banner }} resizeMode="cover" style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} /> : null}
+        {banner ? <RemoteImage uri={banner} contentFit="cover" style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} /> : null}
         <View style={{ position: 'absolute', top: 10, right: 10, backgroundColor: badge.bg, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4 }}>
           <Text className="font-black text-[11px] tracking-widest text-white">{badge.label}</Text>
         </View>
@@ -120,9 +122,9 @@ export default function LeagueScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [activeFilter, setActiveFilter] = useState<Cat | 'all'>('all');
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (force = false) => {
     try {
-      const { data } = await apiClient.get<ApiLeague[]>('/api/v1/leagues');
+      const data = await getCached<ApiLeague[]>('/api/v1/leagues', 30_000, force);
       setLeagues(Array.isArray(data) ? data : []);
     } catch {
       setLeagues([]);
@@ -140,7 +142,16 @@ export default function LeagueScreen() {
 
   return (
     <ScreenBackground>
-      <AppHeader title="Leagues" subtitle="Rejoins une ligue et gagne des trophées" />
+      <AppHeader
+        title="Leagues"
+        showLogo={false}
+        centered
+        actions={(
+          <HeaderAction label="Réinitialiser les filtres" onPress={() => setActiveFilter('all')}>
+            <Ionicons name="options-outline" size={22} color="#FFFFFF" />
+          </HeaderAction>
+        )}
+      />
 
       {/* Filtres */}
       <View className="px-4 pt-3 pb-1">
@@ -167,7 +178,7 @@ export default function LeagueScreen() {
           renderItem={({ item }) => <LeagueCard league={item} />}
           contentContainerStyle={{ padding: 16, paddingTop: 8, paddingBottom: 24 }}
           showsVerticalScrollIndicator={false}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor="#F7921E" />}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(true); }} tintColor="#F7921E" />}
           ListEmptyComponent={
             <View className="items-center py-24 px-8">
               <Text style={{ fontSize: 40, marginBottom: 12 }}>🏆</Text>

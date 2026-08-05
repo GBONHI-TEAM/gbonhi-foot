@@ -4,6 +4,7 @@ import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { ArrowLeft, MapPin, User, Radio } from 'lucide-react';
 import { Header } from '../../../../components/layout/header';
+import { PlayerProfileDrawer } from '../../../../components/players/player-profile-drawer';
 import { apiFetch } from '../../../../lib/api';
 
 type MatchStatus =
@@ -28,7 +29,14 @@ interface MatchEvent {
   type: EventType;
   minute: number;
   team: { id: string; name: string } | null;
-  player: { id: string; full_name: string } | null;
+  player: { id: string; full_name: string; avatar_url: string | null; position: string | null } | null;
+}
+
+interface SquadMember {
+  team_id: string;
+  jersey_num: number | null;
+  role: string;
+  user: { id: string; full_name: string | null; avatar_url: string | null; position: string | null; city: string | null };
 }
 
 interface ApiMatch {
@@ -44,6 +52,7 @@ interface ApiMatch {
   tournament?: { id: string; name: string } | null;
   referee?: { id: string; full_name: string } | null;
   events?: MatchEvent[];
+  squads?: { home: SquadMember[]; away: SquadMember[] };
 }
 
 const STATUS_META: Record<MatchStatus, { label: string; bg: string; color: string }> = {
@@ -100,6 +109,7 @@ export default function MatchDetailPage() {
 
   const [match, setMatch] = useState<ApiMatch | null>(null);
   const [loading, setLoading] = useState(true);
+  const [selectedPlayer, setSelectedPlayer] = useState<{ id: string; teamName: string; jersey: number | null } | null>(null);
 
   useEffect(() => {
     if (!matchId) return;
@@ -154,6 +164,11 @@ export default function MatchDetailPage() {
   return (
     <>
       <Header title="Détail du match" />
+
+      {selectedPlayer && <>
+        <div className="fixed inset-0 z-40 bg-black/20" onClick={() => setSelectedPlayer(null)} />
+        <PlayerProfileDrawer playerId={selectedPlayer.id} teamName={selectedPlayer.teamName} jerseyNumber={selectedPlayer.jersey} onClose={() => setSelectedPlayer(null)} />
+      </>}
 
       {/* Fil d'Ariane */}
       <div className="flex items-center gap-2 text-sm mb-5">
@@ -246,7 +261,7 @@ export default function MatchDetailPage() {
                   <li key={ev.id} className="flex items-center gap-3 py-2.5 border-b border-gray-50 last:border-0">
                     <span className="text-lg w-6 text-center flex-shrink-0">{em.icon}</span>
                     <span className="font-bold text-gray-900 w-12 flex-shrink-0 tabular-nums">{ev.minute}&apos;</span>
-                    <span className="font-semibold text-gray-800">{ev.player?.full_name ?? em.label}</span>
+                    {ev.player ? <button onClick={() => setSelectedPlayer({ id: ev.player!.id, teamName: ev.team?.name ?? 'Équipe', jersey: null })} className="flex min-w-0 items-center gap-2 text-left"><span className="flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-full bg-[#1E7A3A] text-[10px] font-black text-white">{ev.player.avatar_url ? <img src={ev.player.avatar_url} alt="" className="h-full w-full object-cover" /> : ev.player.full_name.slice(0, 2).toUpperCase()}</span><span className="min-w-0"><span className="block truncate font-semibold text-gray-800 hover:text-[#1E7A3A]">{ev.player.full_name}</span>{ev.player.position && <span className="block text-[11px] text-gray-400">{ev.player.position}</span>}</span></button> : <span className="font-semibold text-gray-800">{em.label}</span>}
                     <span className="text-xs text-gray-400">{em.label}</span>
                     <span
                       className="ml-auto text-xs font-semibold px-2 py-0.5 rounded-full flex-shrink-0"
@@ -259,8 +274,19 @@ export default function MatchDetailPage() {
               })}
             </ul>
           )}
+          <div className="mt-6 border-t border-gray-100 pt-5">
+            <div className="mb-3 flex items-center justify-between"><h3 className="font-bold text-[15px] text-gray-900">Effectifs des équipes</h3><p className="text-xs text-gray-400">Photo, poste et fiche complète au clic</p></div>
+            <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+              <SquadPanel title={match.home_team?.name ?? 'Équipe domicile'} players={match.squads?.home ?? []} color={teamColor(match.home_team, '#1E7A3A')} onPlayerClick={(player) => setSelectedPlayer({ id: player.user.id, teamName: match.home_team?.name ?? 'Équipe domicile', jersey: player.jersey_num })} />
+              <SquadPanel title={match.away_team?.name ?? 'Équipe extérieur'} players={match.squads?.away ?? []} color={teamColor(match.away_team, '#F7921E')} onPlayerClick={(player) => setSelectedPlayer({ id: player.user.id, teamName: match.away_team?.name ?? 'Équipe extérieur', jersey: player.jersey_num })} />
+            </div>
+          </div>
         </div>
       </div>
     </>
   );
+}
+
+function SquadPanel({ title, players, color, onPlayerClick }: { title: string; players: SquadMember[]; color: string; onPlayerClick: (player: SquadMember) => void }) {
+  return <section className="overflow-hidden rounded-xl border border-gray-100"><div className="flex items-center gap-2 border-b border-gray-100 px-3 py-2.5"><span className="h-3 w-3 rounded-full" style={{ backgroundColor: color }} /><h4 className="truncate text-sm font-bold text-gray-800">{title}</h4><span className="ml-auto text-xs text-gray-400">{players.length} joueur(s)</span></div>{players.length === 0 ? <p className="px-3 py-6 text-center text-xs text-gray-400">Aucun joueur actif enregistré.</p> : <ul className="max-h-72 divide-y divide-gray-50 overflow-y-auto">{players.map((player) => <li key={player.user.id}><button onClick={() => onPlayerClick(player)} className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left hover:bg-gray-50"><span className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-[#1E7A3A] text-[10px] font-black text-white">{player.user.avatar_url ? <img src={player.user.avatar_url} alt="" className="h-full w-full object-cover" /> : (player.user.full_name || 'J').slice(0, 2).toUpperCase()}</span><span className="min-w-0 flex-1"><span className="block truncate text-sm font-semibold text-gray-800">{player.user.full_name || 'Joueur'}</span><span className="block text-xs text-gray-400">{player.user.position || 'Poste non renseigné'}</span></span>{player.jersey_num != null && <span className="text-xs font-black text-gray-500">#{player.jersey_num}</span>}</button></li>)}</ul>}</section>;
 }

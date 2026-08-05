@@ -2,10 +2,12 @@ import { View, ImageBackground, Pressable, StatusBar, ScrollView } from 'react-n
 import { useRouter } from 'expo-router';
 import { useUserModeStore } from '../../store/user-mode.store';
 import { useAuthStore } from '../../store/auth.store';
+import { apiClient } from '../../lib/api';
 
 /**
- * Écran 6 — Sélection de mode (reproduction fidèle de `s06_selection_mode.png`).
- * Fond = maquette telle quelle + deux zones tactiles sur les cartes.
+ * Écran 6 — Sélection de mode.
+ * Référence validée du 04/08/2026 : terrain nocturne immersif, logo et titre
+ * centrés, puis deux cartes de choix superposées et contrastées.
  *
  * Flux (Sections 2 & 3) :
  *  - « Réserver un terrain » → mode réservation → accueil.
@@ -21,6 +23,7 @@ export default function ModeSelectionScreen() {
 
   function choose(mode: 'leagues' | 'reservation') {
     if (mode === 'reservation') {
+      void apiClient.post('/api/v1/analytics/events', { type: 'MODE_SELECTED', mode }).catch(() => undefined);
       setMode('reservation');
       router.replace('/(tabs)');
       return;
@@ -31,6 +34,7 @@ export default function ModeSelectionScreen() {
       router.push('/(auth)/player-profile');
       return;
     }
+    void apiClient.post('/api/v1/analytics/events', { type: 'MODE_SELECTED', mode }).catch(() => undefined);
     setMode('leagues');
     router.replace('/(tabs)');
   }
@@ -44,23 +48,23 @@ export default function ModeSelectionScreen() {
         bounces={false}
       >
         <ImageBackground
-          source={require('../../../assets/images/mode-bg.png')}
+          source={require('../../../assets/images/mode-selection-reference.png')}
           resizeMode="cover"
-          style={{ width: '100%', aspectRatio: 754 / 1628 }}
+          style={{ width: '100%', aspectRatio: 340 / 838 }}
         >
           {/* Carte « Réserver un terrain » */}
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="Réserver un terrain"
             onPress={() => choose('reservation')}
-            style={{ position: 'absolute', left: '4%', right: '4%', top: '34.5%', height: '31.5%' }}
+            style={{ position: 'absolute', left: '6%', right: '6%', top: '31.5%', height: '30.5%' }}
           />
           {/* Carte « Participer aux ligues » */}
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="Participer aux ligues"
             onPress={() => choose('leagues')}
-            style={{ position: 'absolute', left: '4%', right: '4%', top: '68%', height: '24%' }}
+            style={{ position: 'absolute', left: '6%', right: '6%', top: '64%', height: '30%' }}
           />
         </ImageBackground>
       </ScrollView>

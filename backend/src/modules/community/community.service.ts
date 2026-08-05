@@ -132,7 +132,12 @@ export class CommunityService {
     return { success: true };
   }
 
-  /** Ajoute / retire une réaction d'un type donné (⚽ 🔥 👏 💪). SQL brut. */
+  /**
+   * Ajoute / retire une réaction d'un type donné (⚽ 🔥 👏 💪).
+   *
+   * Un joueur ne peut exprimer qu'une seule réaction par publication. Choisir
+   * une autre réaction remplace donc la précédente ; retaper la même la retire.
+   */
   async toggleReaction(id: string, user: UserPayload, typeRaw?: string) {
     const type: ReactionType = (REACTION_TYPES as readonly string[]).includes(typeRaw ?? '')
       ? (typeRaw as ReactionType)
@@ -141,15 +146,17 @@ export class CommunityService {
     const post = await this.prisma.communityPost.findUnique({ where: { id }, select: { id: true, author_id: true } });
     if (!post) throw new NotFoundException('Publication introuvable');
 
-    const existing = await this.prisma.$queryRaw<{ id: string }[]>`
-      SELECT id FROM post_reactions
-      WHERE post_id = ${id}::uuid AND user_id = ${user.id}::uuid AND type = ${type} LIMIT 1`;
+    const existing = await this.prisma.$queryRaw<{ type: string }[]>`
+      SELECT type FROM post_reactions
+      WHERE post_id = ${id}::uuid AND user_id = ${user.id}::uuid`;
 
     let added = false;
-    if (existing.length > 0) {
+    if (existing.some((reaction) => reaction.type === type)) {
       await this.prisma.$executeRaw`
         DELETE FROM post_reactions WHERE post_id = ${id}::uuid AND user_id = ${user.id}::uuid AND type = ${type}`;
     } else {
+      await this.prisma.$executeRaw`
+        DELETE FROM post_reactions WHERE post_id = ${id}::uuid AND user_id = ${user.id}::uuid`;
       await this.prisma.$executeRaw`
         INSERT INTO post_reactions (post_id, user_id, type) VALUES (${id}::uuid, ${user.id}::uuid, ${type})`;
       added = true;

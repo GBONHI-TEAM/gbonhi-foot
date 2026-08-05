@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { View, Text, TextInput, Pressable, ActivityIndicator, Alert } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { ScreenBackground } from '../../components/ui/screen-background';
+import { AppHeader } from '../../components/ui/app-header';
 import { apiClient } from '../../lib/api';
 
 interface TeamPreview {
@@ -85,16 +86,7 @@ export default function JoinTeamPage() {
 
   return (
     <ScreenBackground>
-      {/* Header */}
-      <View
-        className="flex-row items-center px-5 pt-14 pb-4 gap-3"
-        style={{ backgroundColor: '#1E7A3A' }}
-      >
-        <Pressable onPress={() => router.back()} hitSlop={8}>
-          <Text className="text-white text-2xl">‹</Text>
-        </Pressable>
-        <Text className="text-white font-black text-xl flex-1 text-center mr-7">Rejoindre une équipe</Text>
-      </View>
+      <AppHeader title="Rejoindre une équipe" onBack={() => router.back()} showLogo={false} centered />
 
       <View className="flex-1 px-6 pt-10">
         {/* Icon */}

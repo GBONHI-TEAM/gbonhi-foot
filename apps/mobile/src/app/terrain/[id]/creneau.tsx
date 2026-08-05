@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
-import { View, Text, ScrollView, Pressable, ImageBackground, ActivityIndicator } from 'react-native';
+import { View, Text, ScrollView, Pressable, ActivityIndicator } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { ScreenBackground } from '../../../components/ui/screen-background';
+import { AppHeader } from '../../../components/ui/app-header';
 import { apiClient } from '../../../lib/api';
 import {
   type TerrainDetail,
@@ -9,9 +10,14 @@ import {
   formatFcfa,
 } from '../../../types/terrain';
 
-const OPEN_HOUR = 6;
-const CLOSE_HOUR = 23; // dernière heure de fin possible (créneaux de 1 h)
 const DAYS_AHEAD = 7;
+const DURATIONS = [
+  { value: 1, label: '1 h' },
+  { value: 1.5, label: '1 h 30' },
+  { value: 2, label: '2 h' },
+  { value: 2.5, label: '2 h 30' },
+  { value: 3, label: '3 h' },
+] as const;
 
 function toYmd(d: Date): string {
   const y = d.getFullYear();
@@ -37,7 +43,8 @@ function formatLongDate(d: Date): string {
   return `${WEEKDAYS[d.getDay()]} ${d.getDate()} ${MONTHS[d.getMonth()]}`;
 }
 function hh(h: number): string {
-  return `${String(h).padStart(2, '0')}h00`;
+  const wholeHours = Math.floor(h);
+  return `${String(wholeHours).padStart(2, '0')}h${h % 1 === 0.5 ? '30' : '00'}`;
 }
 
 export default function CreneauPage() {
@@ -49,7 +56,10 @@ export default function CreneauPage() {
   const [selectedDate, setSelectedDate] = useState<Date>(days[0]);
   const [availability, setAvailability] = useState<TerrainAvailability | null>(null);
   const [loadingAvail, setLoadingAvail] = useState(true);
+  const [availabilityError, setAvailabilityError] = useState<string | null>(null);
+  const [availabilityRetry, setAvailabilityRetry] = useState(0);
   const [startHour, setStartHour] = useState<number | null>(null);
+  const [duration, setDuration] = useState<number>(1);
 
   // Terrain (prix + nom)
   useEffect(() => {
@@ -74,13 +84,22 @@ export default function CreneauPage() {
     (async () => {
       try {
         setLoadingAvail(true);
+        setAvailabilityError(null);
         const { data } = await apiClient.get<TerrainAvailability>(
           `/api/v1/terrains/${id}/availability`,
           { params: { date: toYmd(selectedDate) } },
         );
         if (mounted) setAvailability(data);
-      } catch {
-        if (mounted) setAvailability({ date: toYmd(selectedDate), booked: [], pending: [], blocked: [] });
+      } catch (error: unknown) {
+        const status = (error as { response?: { status?: number } }).response?.status;
+        if (mounted) {
+          setAvailability(null);
+          setAvailabilityError(
+            status === 503
+              ? 'La disponibilité du terrain est momentanément indisponible. Réessaie dans quelques secondes.'
+              : 'Impossible de charger les créneaux. Vérifie ta connexion puis réessaie.',
+          );
+        }
       } finally {
         if (mounted) setLoadingAvail(false);
       }
@@ -88,7 +107,7 @@ export default function CreneauPage() {
     return () => {
       mounted = false;
     };
-  }, [id, selectedDate]);
+  }, [id, selectedDate, availabilityRetry]);
 
   const unavailable = useMemo(() => {
     const set = new Set<number>();
@@ -98,19 +117,45 @@ export default function CreneauPage() {
     return set;
   }, [availability]);
 
-  // Heures de début possibles : 6 → 22 (créneaux de 1 h).
-  const hours = useMemo(
-    () => Array.from({ length: CLOSE_HOUR - OPEN_HOUR }, (_, i) => OPEN_HOUR + i),
-    [],
-  );
+  /**
+   * Les créneaux ne doivent jamais proposer les heures génériques 06h–23h
+   * lorsqu'un partenaire a défini ses propres horaires. On construit donc la
+   * grille à partir des ouvertures du terrain pour le jour sélectionné.
+   *
+   * Le repli 06h–23h conserve la compatibilité avec les anciens terrains qui
+   * n'ont pas encore d'horaires renseignés dans le back-office.
+   */
+  const openingHours = useMemo(() => {
+    const dayOfWeek = (selectedDate.getDay() + 6) % 7; // lundi = 0 en base
+    const open = new Set<number>();
+    const slots = terrain?.slots?.filter((slot) => slot.day_of_week === dayOfWeek) ?? [];
+
+    for (const slot of slots) {
+      for (let hour = slot.start_hour; hour < slot.end_hour; hour += 0.5) {
+        open.add(Number(hour.toFixed(1)));
+      }
+    }
+
+    if (open.size === 0) {
+      for (let hour = 6; hour < 23; hour += 0.5) open.add(Number(hour.toFixed(1)));
+    }
+    return open;
+  }, [selectedDate, terrain?.slots]);
+
+  const hours = useMemo(() => [...openingHours].sort((a, b) => a - b), [openingHours]);
 
   const isToday = toYmd(selectedDate) === toYmd(new Date());
-  const nowHour = new Date().getHours();
+  const now = new Date();
+  const nowHour = now.getHours() + now.getMinutes() / 60;
 
   function slotAvailable(h: number): boolean {
-    if (h + 1 > CLOSE_HOUR) return false;
+    if (!openingHours.has(h)) return false;
     if (isToday && h <= nowHour) return false;
-    return !unavailable.has(h);
+    for (let cursor = h; cursor < h + duration; cursor += 0.5) {
+      const normalized = Number(cursor.toFixed(1));
+      if (!openingHours.has(normalized) || unavailable.has(normalized)) return false;
+    }
+    return true;
   }
 
   function onSelectHour(h: number) {
@@ -118,8 +163,8 @@ export default function CreneauPage() {
     setStartHour(h === startHour ? null : h);
   }
 
-  const total = terrain ? terrain.price_per_hour : 0;
-  const endHour = startHour != null ? startHour + 1 : null;
+  const total = terrain ? Math.round(terrain.price_per_hour * duration) : 0;
+  const endHour = startHour != null ? startHour + duration : null;
 
   function onContinue() {
     if (startHour == null || endHour == null) return;
@@ -130,30 +175,20 @@ export default function CreneauPage() {
         date: toYmd(selectedDate),
         start: String(startHour),
         end: String(endHour),
-        duration: '1',
+        duration: String(duration),
       },
     });
   }
 
   return (
     <ScreenBackground>
-      {/* Header kente (maquette s24) */}
-      <ImageBackground
-        source={require('../../../../assets/images/kente-green.png')}
-        resizeMode="repeat"
-        style={{ paddingTop: 56, paddingBottom: 18, paddingHorizontal: 20, borderBottomLeftRadius: 24, borderBottomRightRadius: 24, overflow: 'hidden' }}
-        imageStyle={{ borderBottomLeftRadius: 24, borderBottomRightRadius: 24 }}
-      >
-        <View className="flex-row items-center">
-          <Pressable onPress={() => (router.canGoBack() ? router.back() : router.replace('/terrain'))} hitSlop={8} style={{ width: 32 }}>
-            <Text className="text-white text-xl">←</Text>
-          </Pressable>
-          <View className="flex-1 items-center" style={{ marginRight: 32 }}>
-            <Text className="text-white font-black text-xl">Choisir un créneau</Text>
-            {terrain ? <Text className="text-white/80 text-sm mt-0.5">{terrain.name}</Text> : null}
-          </View>
-        </View>
-      </ImageBackground>
+      <AppHeader
+        title="Choisir un créneau"
+        subtitle={terrain?.name}
+        onBack={() => (router.canGoBack() ? router.back() : router.replace('/terrain'))}
+        showLogo={false}
+        centered
+      />
 
       {/* Sélecteur de date */}
       <ScrollView
@@ -186,9 +221,33 @@ export default function CreneauPage() {
       <ScrollView className="flex-1 px-4" contentContainerStyle={{ paddingBottom: 24 }}>
         <Text className="text-white font-black text-lg mb-4">Horaires — {formatLongDate(selectedDate)}</Text>
 
+        <Text className="text-white/65 text-sm font-semibold mb-2">Durée souhaitée</Text>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingBottom: 16 }} className="flex-grow-0">
+          {DURATIONS.map((option) => {
+            const selected = duration === option.value;
+            return (
+              <Pressable
+                key={option.value}
+                onPress={() => { setDuration(option.value); setStartHour(null); }}
+                className="h-10 rounded-full px-4 items-center justify-center"
+                style={{ backgroundColor: selected ? '#F7921E' : 'rgba(255,255,255,0.06)', borderWidth: 1, borderColor: selected ? '#F7921E' : 'rgba(255,255,255,0.15)' }}
+              >
+                <Text className="text-sm font-bold" style={{ color: selected ? '#FFFFFF' : 'rgba(255,255,255,0.65)' }}>{option.label}</Text>
+              </Pressable>
+            );
+          })}
+        </ScrollView>
+
         {loadingAvail ? (
           <View className="items-center justify-center py-12">
             <ActivityIndicator color="#F7921E" />
+          </View>
+        ) : availabilityError ? (
+          <View className="rounded-card p-5 items-center" style={{ backgroundColor: 'rgba(248,113,113,0.08)', borderWidth: 1, borderColor: 'rgba(248,113,113,0.35)' }}>
+            <Text className="text-white/75 text-center leading-5">{availabilityError}</Text>
+            <Pressable onPress={() => setAvailabilityRetry((value) => value + 1)} className="mt-4 h-11 px-5 rounded-btn items-center justify-center" style={{ backgroundColor: '#1E7A3A' }}>
+              <Text className="text-white font-bold">Réessayer</Text>
+            </Pressable>
           </View>
         ) : (
           <View className="flex-row flex-wrap" style={{ marginHorizontal: -6 }}>
@@ -247,7 +306,7 @@ export default function CreneauPage() {
                 <Text className="text-white font-bold text-base">
                   {formatLongDate(selectedDate)} · {hh(startHour)} → {hh(endHour)}
                 </Text>
-                <Text className="text-white/55 text-sm mt-0.5">Durée : 1 heure</Text>
+                <Text className="text-white/55 text-sm mt-0.5">Durée : {DURATIONS.find((option) => option.value === duration)?.label}</Text>
               </>
             ) : (
               <Text className="text-white/55 text-sm">Sélectionne un créneau</Text>
@@ -260,9 +319,9 @@ export default function CreneauPage() {
         </View>
         <Pressable
           onPress={onContinue}
-          disabled={startHour == null}
+          disabled={startHour == null || availabilityError !== null}
           className="h-14 rounded-btn items-center justify-center"
-          style={{ backgroundColor: '#F7921E', opacity: startHour == null ? 0.5 : 1 }}
+          style={{ backgroundColor: '#F7921E', opacity: startHour == null || availabilityError ? 0.5 : 1 }}
         >
           <Text className="text-white font-bold text-base">Continuer</Text>
         </Pressable>

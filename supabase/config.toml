@@ -91,7 +91,7 @@ auth_token = "env(SUPABASE_AUTH_SMS_TWILIO_AUTH_TOKEN)"
 [auth.sms.twilio_verify]
 enabled = false
 account_sid = ""
-verify_service_id = ""
+message_service_sid = ""
 auth_token = "env(SUPABASE_AUTH_SMS_TWILIO_AUTH_TOKEN)"
 
 [auth.external.google]

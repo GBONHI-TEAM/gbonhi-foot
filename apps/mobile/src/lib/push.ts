@@ -3,6 +3,9 @@ import * as Notifications from 'expo-notifications';
 import Constants from 'expo-constants';
 import { apiClient } from './api';
 
+/** Canal Android unique, déclaré avant la demande de permission. */
+export const PUSH_CHANNEL_ID = 'gbonhi-notifications';
+
 /**
  * Enregistrement des notifications push Expo.
  *
@@ -37,10 +40,16 @@ function resolveProjectId(): string | undefined {
 export async function registerForPushNotifications(): Promise<void> {
   try {
     if (Platform.OS === 'android') {
-      await Notifications.setNotificationChannelAsync('default', {
-        name: 'Général',
-        importance: Notifications.AndroidImportance.DEFAULT,
+      await Notifications.setNotificationChannelAsync(PUSH_CHANNEL_ID, {
+        name: 'Notifications GBONHI FOOT',
+        description: 'Matchs, réservations, équipes et activité de la communauté.',
+        importance: Notifications.AndroidImportance.HIGH,
+        sound: 'default',
+        enableVibrate: true,
+        vibrationPattern: [0, 250, 180, 250],
+        enableLights: true,
         lightColor: '#F7921E',
+        showBadge: true,
       });
     }
 

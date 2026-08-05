@@ -1,12 +1,14 @@
 import { useEffect, useState } from 'react';
-import { View, Text, TextInput, Pressable, Image, ImageBackground, Alert, ActivityIndicator, ScrollView, Linking } from 'react-native';
+import { View, Text, TextInput, Pressable, Image, Alert, ActivityIndicator, ScrollView, Linking } from 'react-native';
 import { useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { apiClient } from '../../lib/api';
 import { supabase } from '../../lib/supabase';
 import { imageThumb } from '../../lib/image';
+import { RemoteImage } from '../../components/ui/remote-image';
 import { ScreenBackground } from '../../components/ui/screen-background';
 import { useAuthStore } from '../../store/auth.store';
+import { PatternedGreenHeader } from '../../components/ui/patterned-green-header';
 
 interface MyTeam { id: string; name: string }
 
@@ -111,20 +113,25 @@ export default function CreatePostScreen() {
 
   async function shareWhatsApp() {
     const text = content.trim() || 'Rejoins la communauté GBONHI FOOT ⚽';
-    const url = `whatsapp://send?text=${encodeURIComponent(text)}`;
-    const can = await Linking.canOpenURL(url);
-    if (can) Linking.openURL(url);
-    else Linking.openURL(`https://wa.me/?text=${encodeURIComponent(text)}`);
+    const encoded = encodeURIComponent(text);
+    // openURL ouvre WhatsApp même sans whitelist canOpenURL ; repli wa.me sinon.
+    try {
+      await Linking.openURL(`whatsapp://send?text=${encoded}`);
+    } catch {
+      try {
+        await Linking.openURL(`https://wa.me/?text=${encoded}`);
+      } catch {
+        Alert.alert('WhatsApp indisponible', "Installe WhatsApp pour partager, ou copie ton texte manuellement.");
+      }
+    }
   }
 
   return (
     <ScreenBackground>
-      {/* Header kente + croix */}
-      <ImageBackground
-        source={require('../../../assets/images/kente-green.png')}
-        resizeMode="repeat"
+      {/* Header vert à motifs triangulaires + croix */}
+      <PatternedGreenHeader
         style={{ paddingTop: 56, paddingBottom: 18, paddingHorizontal: 20, borderBottomLeftRadius: 24, borderBottomRightRadius: 24, overflow: 'hidden' }}
-        imageStyle={{ borderBottomLeftRadius: 24, borderBottomRightRadius: 24 }}
+        patternOpacity={0.5}
       >
         <View className="flex-row items-center">
           <Pressable onPress={() => (router.canGoBack() ? router.back() : router.replace('/(tabs)/community'))} hitSlop={8} style={{ width: 32 }}>
@@ -132,7 +139,7 @@ export default function CreatePostScreen() {
           </Pressable>
           <Text className="text-white font-black text-xl flex-1 text-center" style={{ marginRight: 32 }}>Nouveau post</Text>
         </View>
-      </ImageBackground>
+      </PatternedGreenHeader>
 
       <ScrollView contentContainerStyle={{ padding: 20, paddingBottom: 40 }} keyboardShouldPersistTaps="handled">
         {/* Auteur */}
@@ -168,7 +175,7 @@ export default function CreatePostScreen() {
             <ActivityIndicator color="#F7921E" />
           ) : imageUrl ? (
             <>
-              <Image source={{ uri: imageThumb(imageUrl, 800) }} style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} resizeMode="cover" />
+              <RemoteImage uri={imageThumb(imageUrl, 800)} contentFit="cover" style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} />
               <View className="absolute px-3 py-1.5 rounded-full" style={{ bottom: 10, backgroundColor: 'rgba(0,0,0,0.6)' }}>
                 <Text className="text-white text-xs font-semibold">Changer la photo</Text>
               </View>

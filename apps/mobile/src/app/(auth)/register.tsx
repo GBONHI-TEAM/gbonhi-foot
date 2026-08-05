@@ -14,6 +14,29 @@ import {
 import { useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { apiClient } from '../../lib/api';
+import { signInWithGoogle } from '../../lib/auth-google';
+import { signInWithApple, isAppleCancel } from '../../lib/auth-apple';
+
+async function handleGoogle() {
+  try {
+    await signInWithGoogle();
+  } catch (e) {
+    Alert.alert('Connexion Google impossible', e instanceof Error ? e.message : 'Réessaie.');
+  }
+}
+
+async function handleApple() {
+  if (Platform.OS !== 'ios') {
+    Alert.alert('iOS uniquement', 'La connexion Apple est disponible sur iPhone.');
+    return;
+  }
+  try {
+    await signInWithApple();
+  } catch (e) {
+    if (isAppleCancel(e)) return;
+    Alert.alert('Connexion Apple impossible', e instanceof Error ? e.message : 'Réessaie.');
+  }
+}
 
 /**
  * Écran 3 — Inscription.
@@ -46,6 +69,16 @@ const FIELD = {
   paddingHorizontal: 22,
 };
 const PH_COLOR = '#8E948C';
+
+function readableOtpError(message: string): string {
+  if (/rate limit/i.test(message)) {
+    return 'Trop de demandes de code ont été effectuées. Attends quelques minutes avant de réessayer.';
+  }
+  if (/invalid.*email|email.*invalid/i.test(message)) {
+    return 'Cette adresse e-mail n’est pas valide.';
+  }
+  return 'Le code n’a pas pu être envoyé. Vérifie ta connexion puis réessaie.';
+}
 
 export default function RegisterScreen() {
   const router = useRouter();
@@ -90,9 +123,13 @@ export default function RegisterScreen() {
     });
     setLoading(false);
     if (error) {
-      Alert.alert('Envoi du code impossible', error.message);
+      Alert.alert('Envoi du code impossible', readableOtpError(error.message));
       return;
     }
+    Alert.alert(
+      'Code envoyé par e-mail',
+      'La vérification par SMS sera activée prochainement. Pour le moment, utilise le code envoyé à ton adresse e-mail.',
+    );
     router.push({ pathname: '/(auth)/otp', params: { email, phone } });
   }
 
@@ -166,7 +203,7 @@ export default function RegisterScreen() {
             {/* E-mail (top 53.3 %) */}
             <TextInput
               style={[FIELD, { top: '53.2%' }]}
-              placeholder="Adresse e-mail"
+              placeholder="Adresse e-mail *"
               placeholderTextColor={PH_COLOR}
               value={email}
               onChangeText={setEmail}
@@ -187,14 +224,14 @@ export default function RegisterScreen() {
             <Pressable
               accessibilityRole="button"
               accessibilityLabel="Continuer avec Google"
-              onPress={() => {}}
+              onPress={handleGoogle}
               style={{ position: 'absolute', left: '7.7%', right: '7.8%', top: '74.5%', height: '5.1%' }}
             />
             {/* Zone tactile — Apple (0.812–0.862) */}
             <Pressable
               accessibilityRole="button"
               accessibilityLabel="Continuer avec Apple"
-              onPress={() => {}}
+              onPress={handleApple}
               style={{ position: 'absolute', left: '7.7%', right: '7.8%', top: '81.2%', height: '5.1%' }}
             />
             {/* Zone tactile — « Se connecter » (~0.945) */}

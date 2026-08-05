@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { createSupabaseBrowserClient } from '../../lib/supabase/client';
 import { useCurrentUser } from '../../lib/use-user';
+import { usePartnerAccess } from '../auth/partner-access-provider';
 import { displayName, initials, ROLE_FR } from '../../lib/domain';
 import partnerLogo from '../../assets/logo.png';
 import frisoMotif from '../../assets/friso.png';
@@ -28,9 +29,9 @@ const NAV_ITEMS = [
   { label: 'Réservations', icon: ClipboardList, href: '/reservations' },
   { label: 'Live', icon: Radio, href: '/live', live: true },
   { label: 'Avis', icon: Star, href: '/avis' },
-  { label: 'Revenus', icon: Wallet, href: '/revenus' },
+  { label: 'Revenus', icon: Wallet, href: '/revenus', ownerOnly: true },
   { label: 'Support', icon: LifeBuoy, href: '/support' },
-  { label: 'Rôles', icon: Users, href: '/roles' },
+  { label: 'Rôles', icon: Users, href: '/roles', ownerOnly: true },
 ];
 
 // Frise verticale décorative — motif ivoirien officiel extrait de la maquette
@@ -55,6 +56,7 @@ export function Sidebar() {
   const router = useRouter();
   const supabase = createSupabaseBrowserClient();
   const user = useCurrentUser();
+  const { isOwner, loading } = usePartnerAccess();
   const nom = displayName(user);
   const inits = nom ? initials(nom) : '';
   const roleLabel = user ? ROLE_FR[user.role] ?? 'Propriétaire' : '';
@@ -93,7 +95,7 @@ export function Sidebar() {
 
       {/* Nav items */}
       <nav className="relative flex-1 py-4 pl-[18px] pr-3 overflow-y-auto">
-        {NAV_ITEMS.map(({ label, icon: Icon, href, live }) => {
+        {NAV_ITEMS.filter((item) => !item.ownerOnly || (!loading && isOwner)).map(({ label, icon: Icon, href, live }) => {
           const isActive = pathname === href || pathname.startsWith(href + '/');
           return (
             <Link

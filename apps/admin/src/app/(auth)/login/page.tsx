@@ -7,6 +7,8 @@ import bandTl from '../../../assets/band-tl.png';
 import bandBr from '../../../assets/band-br.png';
 import filigrane from '../../../assets/filigrane.png';
 import { createSupabaseBrowserClient } from '../../../lib/supabase/client';
+import { apiFetch } from '../../../lib/api';
+import { isAdminRole } from '../../../lib/admin-access';
 
 const asUrl = (a: unknown) => (typeof a === 'string' ? a : (a as { src: string }).src);
 
@@ -24,10 +26,31 @@ export default function AdminLoginPage() {
     setError('');
     setLoading(true);
     const { error: authError } = await supabase.auth.signInWithPassword({ email, password });
-    setLoading(false);
     if (authError) {
-      setError(authError.message);
+      setLoading(false);
+      if (authError.status === 0) {
+        setError('Le service de connexion est momentanément inaccessible. Vérifie ta connexion Internet puis réessaie.');
+      } else if (authError.code === 'email_not_confirmed') {
+        setError('Cette adresse email doit être confirmée avant de pouvoir se connecter.');
+      } else {
+        setError('Adresse email ou mot de passe incorrect.');
+      }
       return;
+    }
+
+    try {
+      const profile = await apiFetch<{ role?: string }>('/users/me');
+      if (!isAdminRole(profile.role)) {
+        await supabase.auth.signOut();
+        setError('Ce compte ne possède pas d’accès au back-office administrateur.');
+        return;
+      }
+    } catch {
+      await supabase.auth.signOut();
+      setError('Impossible de vérifier vos droits d’accès. Réessayez dans quelques instants.');
+      return;
+    } finally {
+      setLoading(false);
     }
     router.push('/tableau-de-bord');
   }

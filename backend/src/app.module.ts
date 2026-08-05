@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { APP_INTERCEPTOR } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { AppController } from './app.controller';
@@ -18,6 +19,10 @@ import { NotificationsModule } from './modules/notifications/notifications.modul
 import { FinanceModule } from './modules/finance/finance.module';
 import { CommunityModule } from './modules/community/community.module';
 import { SupportModule } from './modules/support/support.module';
+import { AuditModule } from './common/audit/audit.module';
+import { AuditLogInterceptor } from './common/audit/audit-log.interceptor';
+import { PartnerAccessModule } from './modules/partner-access/partner-access.module';
+import { AnalyticsModule } from './modules/analytics/analytics.module';
 
 @Module({
   imports: [
@@ -33,6 +38,7 @@ import { SupportModule } from './modules/support/support.module';
 
     // Core
     PrismaModule,
+    AuditModule,
 
     // Feature modules
     AuthModule,
@@ -49,7 +55,10 @@ import { SupportModule } from './modules/support/support.module';
     FinanceModule,
     CommunityModule,
     SupportModule,
+    PartnerAccessModule,
+    AnalyticsModule,
   ],
   controllers: [AppController],
+  providers: [{ provide: APP_INTERCEPTOR, useClass: AuditLogInterceptor }],
 })
 export class AppModule {}

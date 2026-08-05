@@ -11,6 +11,7 @@ interface NotifyPayload {
 }
 
 const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';
+const EXPO_PUSH_CHANNEL_ID = 'gbonhi-notifications';
 
 @Injectable()
 export class NotificationsService {
@@ -115,6 +116,8 @@ export class NotificationsService {
     const messages = tokens.map((to) => ({
       to,
       sound: 'default',
+      priority: 'high',
+      channelId: EXPO_PUSH_CHANNEL_ID,
       title: payload.title,
       body: payload.body,
       data: { type: payload.type, ...(payload.data ?? {}) },

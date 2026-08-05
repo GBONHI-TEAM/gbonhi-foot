@@ -20,6 +20,7 @@
     },
     "production": {
       "autoIncrement": true,
+      "ios": { "image": "latest" },
       "android": { "buildType": "app-bundle" }
     }
   },

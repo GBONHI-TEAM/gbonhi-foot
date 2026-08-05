@@ -9,8 +9,9 @@ import {
   Share,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { apiClient } from '../../../lib/api';
+import { apiClient, matchShareLink } from '../../../lib/api';
 import { supabase } from '../../../lib/supabase';
+import { PatternedGreenHeader } from '../../../components/ui/patterned-green-header';
 import {
   type MatchDetail,
   type MatchEvent,
@@ -148,8 +149,9 @@ export default function MatchDetailPage() {
       ? `${formatMatchDate(match.scheduled_at)} · ${formatMatchTime(match.scheduled_at)}`
       : status.label;
     try {
+      const link = matchShareLink(match.id);
       await Share.share({
-        message: `⚽ ${scoreLine}\n${meta}${match.venue ? `\n📍 ${match.venue}` : ''}\n\nSuivi sur GBONHI FOOT`,
+        message: `⚽ ${scoreLine}\n${meta}${match.venue ? `\n📍 ${match.venue}` : ''}\n\nSuis le match sur GBONHI FOOT 👇\n${link}`,
       });
     } catch {
       // partage annulé — no-op
@@ -167,11 +169,11 @@ export default function MatchDetailPage() {
   if (error || !match) {
     return (
       <View className="flex-1" style={{ backgroundColor: '#0D1F0D' }}>
-        <View className="px-5 pt-14 pb-4" style={{ backgroundColor: '#1E7A3A' }}>
+        <PatternedGreenHeader style={{ paddingHorizontal: 20, paddingTop: 56, paddingBottom: 16 }} patternOpacity={0.5}>
           <Pressable onPress={() => router.back()} hitSlop={8}>
-            <Text className="text-white text-2xl">‹</Text>
+            <Text className="text-white text-2xl">←</Text>
           </Pressable>
-        </View>
+        </PatternedGreenHeader>
         <View className="flex-1 items-center justify-center px-8">
           <Text className="text-white/60 text-center text-base">{error ?? 'Match introuvable.'}</Text>
           <Pressable
@@ -192,11 +194,11 @@ export default function MatchDetailPage() {
 
   return (
     <View className="flex-1" style={{ backgroundColor: '#0D1F0D' }}>
-      {/* Header */}
-      <View className="px-5 pt-14 pb-5" style={{ backgroundColor: '#0F3D1E' }}>
+      {/* Header vert à motifs triangulaires */}
+      <PatternedGreenHeader style={{ paddingHorizontal: 20, paddingTop: 56, paddingBottom: 20 }} patternOpacity={0.36}>
         <View className="flex-row items-center justify-between mb-4">
           <Pressable onPress={() => router.back()} hitSlop={8}>
-            <Text className="text-white text-2xl">‹</Text>
+            <Text className="text-white text-2xl">←</Text>
           </Pressable>
           <Pressable
             onPress={onShare}
@@ -264,7 +266,7 @@ export default function MatchDetailPage() {
           ) : null}
           {match.venue ? <Text className="text-white/60 text-xs">📍 {match.venue}</Text> : null}
         </View>
-      </View>
+      </PatternedGreenHeader>
 
       {/* Timeline des faits de jeu */}
       <ScrollView className="flex-1 px-5" contentContainerStyle={{ paddingVertical: 20, paddingBottom: 40 }}>

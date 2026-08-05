@@ -3,6 +3,8 @@ import {
   NotFoundException,
   ConflictException,
   BadRequestException,
+  HttpException,
+  HttpStatus,
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateLeagueDto } from './dto/create-league.dto';
@@ -172,44 +174,111 @@ export class LeaguesService {
     return { message: 'Ligue supprimée' };
   }
 
-  async registerTeam(leagueId: string, dto: RegisterTeamDto) {
-    const league = await this.prisma.tournament.findUnique({ where: { id: leagueId } });
-    if (!league) throw new NotFoundException('Ligue introuvable');
-    if (league.status !== 'INSCRIPTIONS_OUVERTES') {
-      throw new BadRequestException('Les inscriptions ne sont pas ouvertes');
-    }
+  private isStaff(user: UserPayload) {
+    return !['player', 'fan'].includes((user.role ?? '').toLowerCase());
+  }
 
-    const team = await this.prisma.team.findUnique({ where: { id: dto.team_id } });
+  /** L'inscription d'une équipe est réservée à son capitaine ou au staff. */
+  private async assertRegistrationAuthority(teamId: string, user: UserPayload) {
+    const team = await this.prisma.team.findUnique({
+      where: { id: teamId },
+      select: { id: true, name: true, home_terrain_id: true, coach_id: true },
+    });
     if (!team) throw new NotFoundException('Équipe introuvable');
-    if (!team.home_terrain_id) {
-      throw new BadRequestException('L\'équipe doit avoir un terrain domicile pour s\'inscrire à une ligue');
-    }
-
-    const teamsCount = await this.prisma.tournamentTeam.count({ where: { tournament_id: leagueId } });
-    if (teamsCount >= league.max_teams) {
-      throw new BadRequestException('La ligue a atteint le nombre maximum d\'équipes');
-    }
-
-    const existing = await this.prisma.tournamentTeam.findUnique({
-      where: { tournament_id_team_id: { tournament_id: leagueId, team_id: dto.team_id } },
+    if (this.isStaff(user) || team.coach_id === user.id) return team;
+    const captain = await this.prisma.teamMember.findFirst({
+      where: { team_id: teamId, user_id: user.id, role: 'captain', status: 'active' },
+      select: { id: true },
     });
-    if (existing) throw new ConflictException('L\'équipe est déjà inscrite à cette ligue');
+    if (!captain) throw new HttpException('Seul le capitaine peut inscrire son équipe.', HttpStatus.FORBIDDEN);
+    return team;
+  }
 
-    const registration = await this.prisma.tournamentTeam.create({
-      data: { tournament_id: leagueId, team_id: dto.team_id, status: 'registered' },
-      include: { team: true },
+  /**
+   * Etat de l'inscription pour le joueur connecté : utilisé par le mobile pour
+   * ne jamais présenter un CTA "Inscrire" à une équipe déjà enregistrée.
+   */
+  async getMyRegistration(leagueId: string, user: UserPayload) {
+    const league = await this.prisma.tournament.findUnique({
+      where: { id: leagueId },
+      select: { id: true, status: true, max_teams: true },
     });
+    if (!league) throw new NotFoundException('Ligue introuvable');
 
-    // Notifier les membres de l'équipe inscrite.
-    const memberIds = await this.activeMemberIds([dto.team_id]);
-    await this.notifications.notify(memberIds, {
-      type: 'league_registration',
-      title: 'Inscription enregistrée',
-      body: `${team.name} est inscrite à ${league.name}.`,
-      data: { league_id: leagueId, team_id: dto.team_id },
+    // Les équipes que le joueur est autorisé à inscrire (capitaine/créateur).
+    // Elles ne suffisent pas à déterminer sa participation : un simple membre
+    // doit également voir que SON équipe est déjà dans la ligue.
+    const teams = await this.prisma.team.findMany({
+      where: this.isStaff(user)
+        ? {}
+        : {
+            OR: [
+              { coach_id: user.id },
+              { members: { some: { user_id: user.id, role: 'captain', status: 'active' } } },
+            ],
+          },
+      select: { id: true, name: true, primary_color: true, home_terrain_id: true },
+      orderBy: { created_at: 'asc' },
     });
+    const teamIds = teams.map((team) => team.id);
+    const [registrations, playerParticipation, memberParticipation, totalRegistered] = await Promise.all([
+      teamIds.length
+        ? this.prisma.tournamentTeam.findMany({
+          where: { tournament_id: leagueId, team_id: { in: teamIds } },
+          include: {
+            team: { select: { id: true, name: true, primary_color: true } },
+            league_payment: { select: { id: true, amount: true, status: true, transaction_id: true } },
+          },
+          orderBy: { registration_at: 'desc' },
+        })
+        : Promise.resolve([]),
+      // Source de vérité persistante : ce verrou survit même si l'équipe est
+      // modifiée après son inscription.
+      this.isStaff(user)
+        ? Promise.resolve(null)
+        : this.prisma.leaguePlayerRegistration.findFirst({
+            where: { tournament_id: leagueId, user_id: user.id },
+            include: { team: { select: { id: true, name: true, primary_color: true } } },
+            orderBy: { created_at: 'desc' },
+          }),
+      // Compatibilité des inscriptions historiques, antérieures au verrou.
+      this.isStaff(user)
+        ? Promise.resolve(null)
+        : this.prisma.tournamentTeam.findFirst({
+            where: {
+              tournament_id: leagueId,
+              OR: [
+                { team: { coach_id: user.id } },
+                { team: { members: { some: { user_id: user.id, status: 'active' } } } },
+              ],
+            },
+            include: { team: { select: { id: true, name: true, primary_color: true } } },
+            orderBy: { registration_at: 'desc' },
+          }),
+      this.prisma.tournamentTeam.count({ where: { tournament_id: leagueId } }),
+    ]);
+    const participation = playerParticipation ?? memberParticipation;
+    return {
+      teams,
+      registrations,
+      participation: participation
+        ? { team: participation.team }
+        : null,
+      already_registered: registrations.length > 0 || participation !== null,
+      registrations_open: league.status === 'INSCRIPTIONS_OUVERTES',
+      league_full: totalRegistered >= league.max_teams,
+    };
+  }
 
-    return registration;
+  async registerTeam(leagueId: string, dto: RegisterTeamDto, user: UserPayload) {
+    // Cette ancienne route est conservée pour compatibilité mais ne doit plus
+    // créer d'inscription seule : le checkout crée paiement + inscription dans
+    // une transaction atomique via POST /payments/leagues/:id/checkout.
+    await this.assertRegistrationAuthority(dto.team_id, user);
+    throw new HttpException(
+      'Passe par le paiement de ligue pour confirmer l’inscription de ton équipe.',
+      HttpStatus.PAYMENT_REQUIRED,
+    );
   }
 
   async getStandings(leagueId: string) {

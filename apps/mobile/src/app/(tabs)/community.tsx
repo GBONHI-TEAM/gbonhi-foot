@@ -1,8 +1,12 @@
 import { useCallback, useMemo, useState } from 'react';
-import { View, Text, FlatList, Pressable, Image, ImageBackground, ScrollView, ActivityIndicator, RefreshControl } from 'react-native';
+import { View, Text, FlatList, Pressable, Image, ScrollView, ActivityIndicator, RefreshControl } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { apiClient } from '../../lib/api';
+import { getCached, invalidateCached } from '../../lib/api-cache';
 import { ScreenBackground } from '../../components/ui/screen-background';
+import { AutoImage } from '../../components/ui/auto-image';
+import { RemoteImage } from '../../components/ui/remote-image';
+import { PatternedGreenHeader } from '../../components/ui/patterned-green-header';
 
 interface Author { id: string; full_name: string | null; avatar_url: string | null }
 export type ReactionType = 'goal' | 'fire' | 'clap' | 'strong';
@@ -66,7 +70,7 @@ export function PostCard({ post, onPress, onReact }: { post: Post; onPress?: () 
       <View className="flex-row items-center gap-3 mb-2">
         {/* Avatar */}
         {post.author.avatar_url ? (
-          <Image source={{ uri: post.author.avatar_url }} style={{ width: 40, height: 40, borderRadius: 20 }} />
+          <RemoteImage uri={post.author.avatar_url} style={{ width: 40, height: 40, borderRadius: 20 }} />
         ) : (
           <View className="w-10 h-10 rounded-full items-center justify-center" style={{ backgroundColor: official ? '#0D1F0D' : '#1E7A3A', borderWidth: official ? 2 : 0, borderColor: '#FFB830' }}>
             <Text className="text-white text-xs font-bold">{initials(post.author.full_name)}</Text>
@@ -88,9 +92,7 @@ export function PostCard({ post, onPress, onReact }: { post: Post; onPress?: () 
       </View>
 
       <Text className="text-white/90 text-sm leading-5">{post.content}</Text>
-      {post.image_url ? (
-        <Image source={{ uri: post.image_url }} style={{ width: '100%', height: 200, borderRadius: 12, marginTop: 10 }} resizeMode="cover" />
-      ) : null}
+      {post.image_url ? <AutoImage uri={post.image_url} marginTop={10} /> : null}
 
       <View className="flex-row items-center mt-3">
         {REACTIONS.map((r) => {
@@ -126,13 +128,13 @@ export default function CommunityScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (force = false) => {
     try {
-      const [postsRes, summary] = await Promise.all([
-        apiClient.get<Post[]>('/api/v1/community/posts'),
-        apiClient.get<{ teams?: { id: string }[] }>('/api/v1/users/me/summary').then((r) => r.data).catch(() => null),
+      const [postsData, summary] = await Promise.all([
+        getCached<Post[]>('/api/v1/community/posts', 15_000, force),
+        getCached<{ teams?: { id: string }[] }>('/api/v1/users/me/summary', 20_000, force).catch(() => null),
       ]);
-      setPosts(Array.isArray(postsRes.data) ? postsRes.data : []);
+      setPosts(Array.isArray(postsData) ? postsData : []);
       setMyTeamId(summary?.teams?.[0]?.id ?? null);
     } catch {
       setPosts([]);
@@ -147,17 +149,26 @@ export default function CommunityScreen() {
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
   async function react(p: Post, type: ReactionType) {
-    // Mise à jour optimiste : bascule le type pour l'utilisateur.
+    // Mise à jour optimiste : une publication ne peut porter qu'une réaction
+    // de l'utilisateur. Un nouveau choix remplace donc l'ancien.
     setPosts((ps) => ps.map((x) => {
       if (x.id !== p.id) return x;
       const counts: ReactionCounts = { goal: 0, fire: 0, clap: 0, strong: 0, ...(x.reactions ?? {}) };
       const mine = new Set(x.my_reactions ?? []);
-      if (mine.has(type)) { mine.delete(type); counts[type] = Math.max(0, counts[type] - 1); }
-      else { mine.add(type); counts[type] = counts[type] + 1; }
+      if (mine.has(type)) {
+        mine.delete(type);
+        counts[type] = Math.max(0, counts[type] - 1);
+      } else {
+        for (const previous of mine) counts[previous as ReactionType] = Math.max(0, counts[previous as ReactionType] - 1);
+        mine.clear();
+        mine.add(type);
+        counts[type] += 1;
+      }
       return { ...x, reactions: counts, my_reactions: [...mine] };
     }));
     try {
       await apiClient.post(`/api/v1/community/posts/${p.id}/react`, { type });
+      invalidateCached('/api/v1/community/posts');
     } catch {
       load();
     }
@@ -171,15 +182,13 @@ export default function CommunityScreen() {
 
   return (
     <ScreenBackground>
-      {/* Header kente centré (maquette s27) */}
-      <ImageBackground
-        source={require('../../../assets/images/kente-green.png')}
-        resizeMode="repeat"
+      {/* Header vert à motifs triangulaires (maquette s27) */}
+      <PatternedGreenHeader
         style={{ paddingTop: 56, paddingBottom: 18, paddingHorizontal: 20, borderBottomLeftRadius: 24, borderBottomRightRadius: 24, overflow: 'hidden' }}
-        imageStyle={{ borderBottomLeftRadius: 24, borderBottomRightRadius: 24 }}
+        patternOpacity={0.5}
       >
         <Text className="text-white font-black text-2xl text-center">Communauté</Text>
-      </ImageBackground>
+      </PatternedGreenHeader>
 
       {/* Filtres */}
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10, paddingHorizontal: 16 }} className="mt-4 flex-grow-0">
@@ -205,7 +214,7 @@ export default function CommunityScreen() {
           data={visible}
           keyExtractor={(p) => p.id}
           contentContainerStyle={{ padding: 16, paddingBottom: 96 }}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor="#F7921E" />}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(true); }} tintColor="#F7921E" />}
           ListEmptyComponent={
             <View className="items-center py-24 px-8">
               <Text style={{ fontSize: 40, marginBottom: 12 }}>💬</Text>

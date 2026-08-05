@@ -13,6 +13,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { ScreenBackground } from '../../../components/ui/screen-background';
 import { apiClient } from '../../../lib/api';
 import { imageThumb } from '../../../lib/image';
+import { RemoteImageBackground } from '../../../components/ui/remote-image';
 import {
   type TerrainDetail,
   type TerrainAvailability,
@@ -62,7 +63,7 @@ function PhotoCarousel({ photos }: { photos: string[] }) {
       >
         {items.map((uri, i) =>
           uri ? (
-            <ImageBackground key={i} source={{ uri: imageThumb(uri, 900) }} resizeMode="cover" style={{ width, height: 300 }} />
+            <RemoteImageBackground key={i} uri={imageThumb(uri, 900)} contentFit="cover" style={{ width, height: 300 }} />
           ) : (
             <View key={i} style={{ width, height: 300, alignItems: 'center', justifyContent: 'center', backgroundColor: '#0F3D1E' }}>
               <Text style={{ fontSize: 64, opacity: 0.5 }}>🏟️</Text>
@@ -86,8 +87,11 @@ export default function TerrainDetailPage() {
   const router = useRouter();
   const [terrain, setTerrain] = useState<TerrainDetail | null>(null);
   const [availability, setAvailability] = useState<TerrainAvailability | null>(null);
+  const [isFavorite, setIsFavorite] = useState(false);
+  const [favoriteLoading, setFavoriteLoading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [retryKey, setRetryKey] = useState(0);
 
   useEffect(() => {
     let mounted = true;
@@ -95,21 +99,31 @@ export default function TerrainDetailPage() {
       try {
         setLoading(true);
         setError(null);
-        const [terrainRes, availRes] = await Promise.all([
+        const [terrainRes, availRes, favoritesRes] = await Promise.all([
           apiClient.get<TerrainDetail>(`/api/v1/terrains/${id}`),
           apiClient
             .get<TerrainAvailability>(`/api/v1/terrains/${id}/availability`, { params: { date: todayYmd() } })
             .catch(() => ({ data: null as TerrainAvailability | null })),
+          apiClient.get<{ id: string }[]>('/api/v1/terrains/favorites').catch(() => ({ data: [] as { id: string }[] })),
         ]);
         if (!mounted) return;
         setTerrain(terrainRes.data);
         setAvailability(availRes.data ?? null);
+        setIsFavorite(favoritesRes.data.some((favorite) => favorite.id === id));
       } catch (e: unknown) {
         const err = e as { response?: { status?: number; data?: { message?: string } }; message?: string };
         const status = err?.response?.status;
         const detail = err?.response?.data?.message || err?.message || 'Erreur inconnue';
         console.log('[terrain detail] error', status, detail, 'id=', id);
-        if (mounted) setError(status ? `Erreur ${status} — ${detail}` : `Connexion impossible — ${detail}`);
+        if (mounted) {
+          setError(
+            status === 503
+              ? 'La base de données est momentanément inaccessible. Réessaie dans quelques secondes.'
+              : status === 401
+                ? 'Ta session a expiré. Reconnecte-toi puis réessaie.'
+                : 'Impossible de charger ce terrain pour le moment.',
+          );
+        }
       } finally {
         if (mounted) setLoading(false);
       }
@@ -117,7 +131,22 @@ export default function TerrainDetailPage() {
     return () => {
       mounted = false;
     };
-  }, [id]);
+  }, [id, retryKey]);
+
+  async function toggleFavorite() {
+    if (favoriteLoading) return;
+    try {
+      setFavoriteLoading(true);
+      if (isFavorite) {
+        await apiClient.delete(`/api/v1/terrains/${id}/favorite`);
+      } else {
+        await apiClient.post(`/api/v1/terrains/${id}/favorite`);
+      }
+      setIsFavorite((value) => !value);
+    } finally {
+      setFavoriteLoading(false);
+    }
+  }
 
   // Créneaux d'ouverture du jour, marqués disponibles / indisponibles.
   const todaySlots = useMemo(() => {
@@ -149,8 +178,11 @@ export default function TerrainDetailPage() {
       <View className="flex-1 items-center justify-center px-8" style={{ backgroundColor: '#0D1F0D' }}>
         <Text style={{ fontSize: 40 }}>⚠️</Text>
         <Text className="text-white/70 text-center text-sm mt-3">{error ?? 'Terrain introuvable.'}</Text>
-        <Pressable onPress={() => router.back()} className="mt-6">
-          <Text className="text-accent font-semibold">‹ Retour</Text>
+        <Pressable onPress={() => setRetryKey((value) => value + 1)} className="mt-6 h-12 px-6 rounded-btn items-center justify-center" style={{ backgroundColor: '#1E7A3A' }}>
+          <Text className="text-white font-semibold">Réessayer</Text>
+        </Pressable>
+        <Pressable onPress={() => router.back()} className="mt-4">
+          <Text className="text-accent font-semibold">← Retour</Text>
         </Pressable>
       </View>
     );
@@ -169,6 +201,17 @@ export default function TerrainDetailPage() {
             hitSlop={8}
           >
             <Text className="text-white text-xl">←</Text>
+          </Pressable>
+          <Pressable
+            onPress={toggleFavorite}
+            disabled={favoriteLoading}
+            className="absolute w-10 h-10 rounded-full items-center justify-center"
+            style={{ top: 52, right: 16, backgroundColor: 'rgba(0,0,0,0.5)', opacity: favoriteLoading ? 0.6 : 1 }}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel={isFavorite ? 'Retirer des favoris' : 'Ajouter aux favoris'}
+          >
+            <Text style={{ fontSize: 20, color: isFavorite ? '#F7921E' : '#FFFFFF' }}>{isFavorite ? '♥' : '♡'}</Text>
           </Pressable>
         </View>
 

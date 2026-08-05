@@ -29,6 +29,7 @@ export interface TeamRef {
 export interface PlayerRef {
   id: string;
   full_name: string | null;
+  avatar_url?: string | null;
 }
 
 export interface TournamentRef {

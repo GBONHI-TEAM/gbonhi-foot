@@ -14,6 +14,29 @@ import {
 import { useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { apiClient } from '../../lib/api';
+import { signInWithGoogle } from '../../lib/auth-google';
+import { signInWithApple, isAppleCancel } from '../../lib/auth-apple';
+
+async function handleGoogle() {
+  try {
+    await signInWithGoogle();
+  } catch (e) {
+    Alert.alert('Connexion Google impossible', e instanceof Error ? e.message : 'Réessaie.');
+  }
+}
+
+async function handleApple() {
+  if (Platform.OS !== 'ios') {
+    Alert.alert('iOS uniquement', 'La connexion Apple est disponible sur iPhone.');
+    return;
+  }
+  try {
+    await signInWithApple();
+  } catch (e) {
+    if (isAppleCancel(e)) return;
+    Alert.alert('Connexion Apple impossible', e instanceof Error ? e.message : 'Réessaie.');
+  }
+}
 
 /**
  * Écran 5 — Se connecter (reproduction fidèle de `s05_confirmation_compte.png`).
@@ -133,14 +156,14 @@ export default function SignInScreen() {
             <Pressable
               accessibilityRole="button"
               accessibilityLabel="Continuer avec Google"
-              onPress={() => {}}
+              onPress={handleGoogle}
               style={{ position: 'absolute', left: '7.7%', right: '7.8%', top: '54.8%', height: '6.3%' }}
             />
             {/* Zone tactile — Apple (0.628–0.689) */}
             <Pressable
               accessibilityRole="button"
               accessibilityLabel="Continuer avec Apple"
-              onPress={() => {}}
+              onPress={handleApple}
               style={{ position: 'absolute', left: '7.7%', right: '7.8%', top: '62.8%', height: '6.1%' }}
             />
             {/* Zone tactile — « S'inscrire » (~0.938) */}

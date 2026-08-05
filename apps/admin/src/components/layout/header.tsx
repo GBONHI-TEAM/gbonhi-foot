@@ -3,6 +3,7 @@ import { createSupabaseBrowserClient } from '../../lib/supabase/client';
 import { useRouter } from 'next/navigation';
 import { Search, Bell } from 'lucide-react';
 import { useCurrentUser } from '../../lib/use-current-user';
+import { GlobalPeriodFilter } from '../ui/global-period-filter';
 
 interface HeaderProps {
   title: string;
@@ -25,6 +26,7 @@ export function Header({ title }: HeaderProps) {
     >
       <h1 className="text-[19px] font-bold text-white">{title}</h1>
       <div className="flex items-center gap-4">
+        <GlobalPeriodFilter />
         {/* Recherche */}
         <div className="relative hidden md:block">
           <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/40" />

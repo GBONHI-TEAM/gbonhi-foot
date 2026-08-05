@@ -2,14 +2,17 @@
 import { useEffect, useState } from 'react';
 import { MoreVertical } from 'lucide-react';
 import { Header } from '../../../components/layout/header';
+import { PlayerProfileDrawer } from '../../../components/players/player-profile-drawer';
 import { apiFetch } from '../../../lib/api';
 
 type TeamStatus = 'ACTIF' | 'SUSPENDU';
 
 interface TeamPlayer {
+  id: string;
   jersey: number | null;
   name: string;
   position: string;
+  avatarUrl: string | null;
   isStarter: boolean;
 }
 
@@ -39,9 +42,10 @@ interface ApiTeam {
 }
 
 interface ApiMember {
+  id: string;
   jersey_num: number | null;
   role: string;
-  user?: { full_name?: string | null; position?: string | null } | null;
+  user?: { id: string; full_name?: string | null; avatar_url?: string | null; position?: string | null } | null;
 }
 
 const STOP_WORDS = new Set(['FC', 'SC', 'AS', 'UNITED', 'STARS', 'CLUB']);
@@ -140,9 +144,11 @@ function TeamDrawer({
         if (cancelled || !Array.isArray(data) || data.length === 0) return;
         setMembers(
           data.map((m, i) => ({
+            id: m.user?.id ?? m.id,
             jersey: m.jersey_num,
             name: m.user?.full_name ?? '—',
             position: m.user?.position ?? '—',
+            avatarUrl: m.user?.avatar_url ?? null,
             isStarter: i < 11,
           })),
         );
@@ -247,7 +253,7 @@ function TeamDrawer({
                   {members.map((p, i) => (
                     <tr key={i} className="hover:bg-gray-50 cursor-pointer" onClick={() => onSelectPlayer(p)}>
                       <td className="px-5 py-3 text-gray-500 font-mono text-xs">{p.jersey ?? '—'}</td>
-                      <td className="px-5 py-3 font-medium text-gray-900">{p.name}</td>
+                      <td className="px-5 py-3 font-medium text-gray-900"><span className="flex items-center gap-2"><span className="flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-full bg-[#1E7A3A] text-[10px] font-black text-white">{p.avatarUrl ? <img src={p.avatarUrl} alt="" className="h-full w-full object-cover" /> : p.name.slice(0, 2).toUpperCase()}</span>{p.name}</span></td>
                       <td className="px-5 py-3 text-gray-500 text-xs">{p.position}</td>
                       <td className="px-5 py-3">
                         <span className="text-xs font-semibold" style={{ color: p.isStarter ? '#15803D' : '#9CA3AF' }}>
@@ -360,59 +366,6 @@ function TeamDrawer({
   );
 }
 
-/** Fiche joueur — slide-over Écran 16b. Affiche uniquement les données réelles
-    du joueur ; les statistiques/historique (sans endpoint) restent en état vide. */
-function PlayerSlideOver({ player, team, onClose }: { player: TeamPlayer; team: Team; onClose: () => void }) {
-  return (
-    <div className="fixed inset-y-0 right-0 w-[26rem] bg-white shadow-2xl z-50 flex flex-col overflow-hidden">
-      {/* En-tête identité */}
-      <div className="px-5 py-5" style={{ backgroundColor: '#1E7A3A' }}>
-        <div className="flex items-center gap-3">
-          <div className="w-14 h-14 rounded-xl flex items-center justify-center text-white text-lg font-black flex-shrink-0" style={{ backgroundColor: team.color, border: '2px solid rgba(255,255,255,0.35)' }}>
-            {player.jersey ?? '—'}
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="font-black text-white text-lg truncate">{player.name}</p>
-            <p className="text-white/70 text-xs">{player.position} · {team.name}</p>
-          </div>
-          <span className="px-2.5 py-0.5 rounded-full text-xs font-bold text-white" style={{ backgroundColor: player.isStarter ? '#065F46' : 'rgba(255,255,255,0.2)' }}>
-            {player.isStarter ? 'Titulaire' : 'Remplaçant'}
-          </span>
-          <button onClick={onClose} className="text-white/60 hover:text-white ml-1 text-xl leading-none">×</button>
-        </div>
-      </div>
-
-      <div className="flex-1 overflow-y-auto p-5 space-y-6">
-        {/* Identité — champs réels du joueur */}
-        <div>
-          <p className="text-[11px] font-bold tracking-widest text-gray-400 uppercase mb-3">Identité</p>
-          <div className="space-y-2 text-sm">
-            {[
-              { k: 'Numéro', v: player.jersey ? `#${player.jersey}` : '—' },
-              { k: 'Poste', v: player.position || '—' },
-              { k: 'Équipe', v: team.name },
-              { k: 'Statut', v: player.isStarter ? 'Titulaire' : 'Remplaçant' },
-            ].map((row) => (
-              <div key={row.k} className="flex justify-between py-1.5 border-b border-gray-50">
-                <span className="text-gray-500">{row.k}</span>
-                <span className="font-semibold text-gray-900">{row.v}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Statistiques — aucun endpoint : état vide */}
-        <div>
-          <p className="text-[11px] font-bold tracking-widest text-gray-400 uppercase mb-3">Statistiques</p>
-          <div className="rounded-xl border border-gray-100 bg-gray-50 py-8 text-center">
-            <p className="text-sm text-gray-400">Aucune statistique disponible</p>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 export default function EquipesPage() {
   const [activeTab, setActiveTab] = useState('Toutes');
   const [openMenu, setOpenMenu] = useState<string | null>(null);
@@ -460,7 +413,13 @@ export default function EquipesPage() {
           {selectedPlayer && (
             <>
               <div className="fixed inset-0 z-40 bg-black/20" onClick={() => setSelectedPlayer(null)} />
-              <PlayerSlideOver player={selectedPlayer} team={selectedTeam} onClose={() => setSelectedPlayer(null)} />
+              <PlayerProfileDrawer
+                playerId={selectedPlayer.id}
+                teamName={selectedTeam.name}
+                jerseyNumber={selectedPlayer.jersey}
+                membershipStatus={selectedPlayer.isStarter ? 'Titulaire' : 'Remplaçant'}
+                onClose={() => setSelectedPlayer(null)}
+              />
             </>
           )}
         </>

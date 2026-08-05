@@ -13,8 +13,10 @@ import {
   Linking,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { apiClient } from '../../lib/api';
+import { apiClient, postShareLink } from '../../lib/api';
 import { ScreenBackground } from '../../components/ui/screen-background';
+import { AutoImage } from '../../components/ui/auto-image';
+import { RemoteImage } from '../../components/ui/remote-image';
 import { AppHeader, HeaderAction } from '../../components/ui/app-header';
 import { useAuthStore } from '../../store/auth.store';
 import { initials, fmtRel, REACTIONS, type Post, type ReactionType, type ReactionCounts } from '../(tabs)/community';
@@ -107,11 +109,20 @@ export default function PostDetailScreen() {
   }
 
   async function inviteWhatsApp() {
-    const text = post ? `Sur GBONHI FOOT ⚽ : "${post.content.slice(0, 180)}"` : 'Rejoins la communauté GBONHI FOOT ⚽';
-    const url = `whatsapp://send?text=${encodeURIComponent(text)}`;
-    const can = await Linking.canOpenURL(url);
-    if (can) Linking.openURL(url);
-    else Linking.openURL(`https://wa.me/?text=${encodeURIComponent(text)}`);
+    const author = post?.author.full_name ?? 'Un joueur';
+    const text = post
+      ? `${author} sur GBONHI FOOT ⚽\n\n"${post.content}"\n\nVoir la publication sur GBONHI FOOT 👇\n${postShareLink(post.id)}`
+      : 'Rejoins la communauté GBONHI FOOT ⚽';
+    const encoded = encodeURIComponent(text);
+    try {
+      await Linking.openURL(`whatsapp://send?text=${encoded}`);
+    } catch {
+      try {
+        await Linking.openURL(`https://wa.me/?text=${encoded}`);
+      } catch {
+        Alert.alert('WhatsApp indisponible', "Installe WhatsApp pour partager le post.");
+      }
+    }
   }
 
   return (
@@ -137,7 +148,7 @@ export default function PostDetailScreen() {
               <View className="mb-4">
                 <View className="flex-row items-start gap-3 mb-3">
                   {post.author.avatar_url ? (
-                    <Image source={{ uri: post.author.avatar_url }} style={{ width: 44, height: 44, borderRadius: 22 }} />
+                    <RemoteImage uri={post.author.avatar_url} style={{ width: 44, height: 44, borderRadius: 22 }} />
                   ) : (
                     <View className="w-11 h-11 rounded-full items-center justify-center" style={{ backgroundColor: '#1E7A3A' }}>
                       <Text className="text-white text-sm font-bold">{initials(post.author.full_name)}</Text>
@@ -156,7 +167,7 @@ export default function PostDetailScreen() {
                 </View>
 
                 <Text className="text-white/90 text-[15px] leading-6">{post.content}</Text>
-                {post.image_url ? <Image source={{ uri: post.image_url }} style={{ width: '100%', height: 220, borderRadius: 12, marginTop: 12 }} resizeMode="cover" /> : null}
+                {post.image_url ? <AutoImage uri={post.image_url} marginTop={12} /> : null}
 
                 {/* Réactions en pilules */}
                 <View className="flex-row flex-wrap gap-2.5 mt-4">

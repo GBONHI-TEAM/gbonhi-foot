@@ -34,5 +34,11 @@ export class UpdateUserDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
+  @MaxLength(100)
+  position?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
   fcm_token?: string;
 }

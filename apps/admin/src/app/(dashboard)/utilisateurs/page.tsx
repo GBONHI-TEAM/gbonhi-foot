@@ -12,6 +12,7 @@ interface ApiUser {
   avatar_url: string | null;
   role: string | null;
   city: string | null;
+  position?: string | null;
   created_at: string | null;
   _count?: { team_members: number; reservations: number };
 }
@@ -89,6 +90,8 @@ export default function UtilisateursPage() {
 
   const displayName = (u: ApiUser) => u.full_name?.trim() || u.username?.trim() || '—';
   const empty = useMemo(() => loaded && users.length === 0, [loaded, users]);
+  const completedProfiles = useMemo(() => users.filter((user) => Boolean(user.position?.trim())).length, [users]);
+  const completionRate = users.length ? Math.round((completedProfiles / users.length) * 100) : 0;
 
   return (
     <>
@@ -125,6 +128,29 @@ export default function UtilisateursPage() {
             className="h-11 w-72 pl-9 pr-4 rounded-lg border border-gray-200 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:border-primary"
           />
         </div>
+      </div>
+
+      <div className="mb-4 flex items-center justify-between gap-3 text-sm text-gray-500">
+        <p><span className="font-bold text-gray-800">{users.length.toLocaleString('fr-FR')}</span> utilisateurs affichés</p>
+        <p className="text-xs">Les filtres de rôle sont appliqués directement aux comptes.</p>
+      </div>
+
+      <div className="mb-5 grid grid-cols-1 gap-4 md:grid-cols-2">
+        <div className="rounded-xl border border-gray-100 border-t-4 border-t-[#1E7A3A] bg-white p-5 shadow-sm">
+          <p className="text-3xl font-black text-gray-900">{users.length.toLocaleString('fr-FR')}</p>
+          <p className="mt-1 font-bold text-gray-700">Comptes affichés</p>
+          <p className="text-sm text-gray-400">Selon les filtres de la liste</p>
+        </div>
+        <div className="rounded-xl border border-gray-100 border-t-4 border-t-[#F7921E] bg-white p-5 shadow-sm">
+          <p className="text-3xl font-black text-gray-900">{completedProfiles.toLocaleString('fr-FR')}</p>
+          <p className="mt-1 font-bold text-gray-700">Fiches joueurs renseignées</p>
+          <p className="text-sm text-gray-400">Poste indiqué dans le profil</p>
+        </div>
+      </div>
+      <div className="mb-5 flex items-center gap-4 rounded-xl border border-gray-100 bg-white px-5 py-4 shadow-sm">
+        <p className="shrink-0 text-sm font-semibold text-gray-700">Taux de complétion des fiches</p>
+        <div className="h-2.5 flex-1 overflow-hidden rounded-full bg-gray-100"><div className="h-full rounded-full bg-[#F7921E]" style={{ width: `${completionRate}%` }} /></div>
+        <p className="shrink-0 text-sm font-bold text-[#F7921E]">{completedProfiles} / {users.length} = {completionRate}%</p>
       </div>
 
       {empty ? (

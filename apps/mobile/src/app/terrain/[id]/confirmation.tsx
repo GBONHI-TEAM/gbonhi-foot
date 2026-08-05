@@ -1,124 +1,126 @@
-import { useEffect, useState } from 'react';
-import { View, Text, Pressable, Share } from 'react-native';
+import { useCallback, useEffect, useState } from 'react';
+import { ActivityIndicator, Alert, ImageBackground, Pressable, Text, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { apiClient } from '../../../lib/api';
-import { ScreenBackground } from '../../../components/ui/screen-background';
-import { type TerrainDetail, formatFcfa } from '../../../types/terrain';
+import { formatFcfa } from '../../../types/terrain';
 
-const WEEKDAYS = ['Dim', 'Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam'];
-const MONTHS = ['jan', 'fév', 'mar', 'avr', 'mai', 'juin', 'juil', 'aoû', 'sep', 'oct', 'nov', 'déc'];
+interface PaymentStatus {
+  status: 'pending' | 'processing' | 'accepted' | 'refused' | 'cancelled';
+  amount: number;
+  payment_method?: string | null;
+}
 
-function formatShortDate(ymd: string): string {
-  const [y, m, d] = ymd.split('-').map(Number);
-  const date = new Date(y, m - 1, d);
-  return `${WEEKDAYS[date.getDay()]} ${d} ${MONTHS[m - 1]}`;
-}
-function hh(h: number): string {
-  return `${String(h).padStart(2, '0')}h00`;
-}
-function refNumber(reservationId: string): string {
-  const tail = reservationId.replace(/[^a-zA-Z0-9]/g, '').slice(-4).toUpperCase() || '0000';
-  return `#GB-${new Date().getFullYear()}-${tail}`;
+function toBase64(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer);
+  let binary = '';
+  for (let index = 0; index < bytes.length; index += 8192) {
+    binary += String.fromCharCode(...bytes.subarray(index, index + 8192));
+  }
+  return globalThis.btoa(binary);
 }
 
 export default function ConfirmationPage() {
-  const { id, reservationId, date, start, total } = useLocalSearchParams<{
-    id: string;
-    reservationId: string;
-    date: string;
-    start: string;
-    total: string;
-  }>();
+  const { reservationId, total } = useLocalSearchParams<{ reservationId: string; total: string }>();
   const router = useRouter();
-  const [terrainName, setTerrainName] = useState<string>('ton terrain');
-  const ref = refNumber(reservationId ?? '');
+  const [payment, setPayment] = useState<PaymentStatus | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [downloading, setDownloading] = useState(false);
 
-  async function shareReceipt() {
-    const lines = [
-      'GBONHI FOOT — Reçu de réservation',
-      `N° ${ref}`,
-      `Terrain : ${terrainName}`,
-      `Date : ${formatShortDate(date)} · ${hh(Number(start))}`,
-      `Montant : ${formatFcfa(Number(total))}`,
-      'Statut : Enregistrée (en attente de confirmation)',
-    ];
-    await Share.share({ message: lines.join('\n') });
-  }
+  const loadPayment = useCallback(async () => {
+    if (!reservationId) return;
+    try {
+      const { data } = await apiClient.get<PaymentStatus>(`/api/v1/payments/reservations/${reservationId}`);
+      setPayment(data);
+    } catch {
+      setPayment(null);
+    } finally {
+      setLoading(false);
+    }
+  }, [reservationId]);
 
   useEffect(() => {
-    let mounted = true;
-    (async () => {
-      try {
-        const { data } = await apiClient.get<TerrainDetail>(`/api/v1/terrains/${id}`);
-        if (mounted && data?.name) setTerrainName(data.name);
-      } catch {
-        /* nom par défaut */
+    void loadPayment();
+    const interval = setInterval(() => { void loadPayment(); }, 5000);
+    return () => clearInterval(interval);
+  }, [loadPayment]);
+
+  async function downloadReceipt() {
+    if (!reservationId || payment?.status !== 'accepted') return;
+    try {
+      setDownloading(true);
+      // Ces modules natifs ne doivent être chargés que lorsque l'utilisateur
+      // télécharge réellement un reçu. Cela laisse notamment la fiche joueur
+      // utilisable dans un client Expo qui n'a pas encore été reconstruit.
+      const FileSystem = require('expo-file-system') as typeof import('expo-file-system');
+      const Sharing = require('expo-sharing') as typeof import('expo-sharing');
+      const response = await apiClient.get<ArrayBuffer>(`/api/v1/payments/reservations/${reservationId}/receipt.pdf`, { responseType: 'arraybuffer' });
+      if (!FileSystem.documentDirectory) throw new Error('Dossier de téléchargement indisponible');
+      const uri = `${FileSystem.documentDirectory}gbonhi-foot-recu-${reservationId}.pdf`;
+      await FileSystem.writeAsStringAsync(uri, toBase64(response.data), { encoding: FileSystem.EncodingType.Base64 });
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(uri, { mimeType: 'application/pdf', dialogTitle: 'Reçu GBONHI FOOT' });
+      } else {
+        Alert.alert('Reçu téléchargé', `Le reçu a été enregistré dans : ${uri}`);
       }
-    })();
-    return () => {
-      mounted = false;
-    };
-  }, [id]);
+    } catch {
+      Alert.alert('Téléchargement impossible', 'Réessaie dans quelques instants.');
+    } finally {
+      setDownloading(false);
+    }
+  }
+
+  const accepted = payment?.status === 'accepted';
+  const refused = payment?.status === 'refused' || payment?.status === 'cancelled';
+  const amount = payment?.amount ?? Number(total);
+  const title = accepted ? 'Réservation confirmée !' : refused ? 'Paiement non finalisé' : 'Paiement en attente';
+  const body = accepted
+    ? 'Ton paiement est validé. Ta réservation est confirmée.'
+    : refused
+      ? 'Le paiement a été refusé ou annulé. Tu peux choisir un autre créneau et réessayer.'
+      : 'Nous vérifions la validation de ton paiement. Cette page se met à jour automatiquement.';
 
   return (
-    <ScreenBackground>
-
-      <View className="flex-1 items-center justify-center px-8">
-        {/* Check */}
-        <View
-          className="w-28 h-28 rounded-full items-center justify-center mb-8"
-          style={{ backgroundColor: '#2E9E4F' }}
-        >
-          <Text className="text-white" style={{ fontSize: 56 }}>✓</Text>
+    <ImageBackground
+      source={require('../../../../assets/images/kente-green.png')}
+      resizeMode="repeat"
+      style={{ flex: 1, backgroundColor: '#0F3D1E' }}
+      imageStyle={{ opacity: 0.38 }}
+    >
+      <View className="flex-1 items-center justify-center px-8" style={{ backgroundColor: 'rgba(13,31,13,0.78)' }}>
+        <View className="w-28 h-28 rounded-full items-center justify-center mb-8" style={{ backgroundColor: accepted ? '#2E9E4F' : refused ? '#B9383E' : '#F7921E' }}>
+          {loading || (!accepted && !refused) ? <ActivityIndicator color="#FFFFFF" size="large" /> : <Text className="text-white" style={{ fontSize: 56 }}>{accepted ? '✓' : '!'}</Text>}
         </View>
+        <Text className="text-white font-black text-3xl text-center">{title}</Text>
+        <Text className="text-white/65 text-base text-center mt-3 leading-relaxed">{body}</Text>
 
-        <Text className="text-white font-black text-3xl text-center">Réservation confirmée !</Text>
-        <Text className="text-white/65 text-base text-center mt-3 leading-relaxed">
-          Ta réservation à <Text className="text-white font-bold">{terrainName}</Text> est bien enregistrée.
-        </Text>
-
-        {/* Récap */}
-        <View
-          className="w-full rounded-card p-4 mt-8"
-          style={{ backgroundColor: 'rgba(255,255,255,0.06)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' }}
-        >
-          <View className="flex-row items-center justify-between pb-3">
-            <Text className="text-white/55 text-sm">N° de réservation</Text>
-            <Text className="text-accent font-black text-base">{ref}</Text>
+        <View className="w-full rounded-card p-4 mt-8" style={{ backgroundColor: 'rgba(255,255,255,0.06)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' }}>
+          <View className="flex-row items-center justify-between">
+            <Text className="text-white/55 text-sm">Montant</Text>
+            <Text className="text-white font-bold text-base">{formatFcfa(amount)}</Text>
           </View>
-          <View className="h-px" style={{ backgroundColor: 'rgba(255,255,255,0.1)' }} />
-          <View className="flex-row items-center justify-between pt-3">
-            <Text className="text-white/55 text-sm">
-              {formatShortDate(date)} · {hh(Number(start))}
+          <View className="h-px my-3" style={{ backgroundColor: 'rgba(255,255,255,0.1)' }} />
+          <View className="flex-row items-center justify-between">
+            <Text className="text-white/55 text-sm">Statut paiement</Text>
+            <Text className="font-bold text-sm" style={{ color: accepted ? '#4ADE80' : refused ? '#F87171' : '#F7921E' }}>
+              {accepted ? 'Validé' : refused ? 'Refusé' : 'Vérification en cours'}
             </Text>
-            <Text className="text-white font-bold text-base">{formatFcfa(Number(total))}</Text>
           </View>
         </View>
       </View>
 
-      {/* Actions */}
-      <View className="px-8 pb-10">
-        <Pressable
-          onPress={() => router.replace('/(tabs)')}
-          className="h-14 rounded-btn items-center justify-center"
-          style={{ backgroundColor: '#F7921E' }}
-        >
-          <Text className="text-white font-bold text-base">Retour à l&apos;accueil</Text>
+      <View className="px-8 pb-10" style={{ backgroundColor: 'rgba(13,31,13,0.78)' }}>
+        {accepted ? (
+          <Pressable onPress={downloadReceipt} disabled={downloading} className="h-14 rounded-btn flex-row items-center justify-center gap-2" style={{ backgroundColor: '#F7921E', opacity: downloading ? 0.6 : 1 }}>
+            {downloading ? <ActivityIndicator color="#FFFFFF" /> : <><Text style={{ fontSize: 16 }}>📥</Text><Text className="text-white font-bold text-base">Télécharger le reçu PDF</Text></>}
+          </Pressable>
+        ) : null}
+        <Pressable onPress={() => router.replace(reservationId ? `/reservation/${reservationId}` : '/(tabs)')} className="h-14 rounded-btn items-center justify-center mt-3" style={{ borderWidth: 1, borderColor: 'rgba(255,255,255,0.4)' }}>
+          <Text className="text-white font-semibold text-base">Voir ma réservation</Text>
         </Pressable>
-
-        <Pressable
-          onPress={shareReceipt}
-          className="h-14 rounded-btn flex-row items-center justify-center gap-2 mt-3 active:opacity-80"
-          style={{ borderWidth: 1, borderColor: 'rgba(255,255,255,0.4)' }}
-        >
-          <Text style={{ fontSize: 16 }}>📩</Text>
-          <Text className="text-white font-semibold text-base">Télécharger le reçu</Text>
-        </Pressable>
-
-        <Pressable onPress={() => router.replace('/(tabs)')} className="h-11 items-center justify-center mt-3 active:opacity-70">
-          <Text className="text-white/70 text-sm font-semibold">Voir ma réservation</Text>
+        <Pressable onPress={() => router.replace('/(tabs)')} className="h-11 items-center justify-center mt-3">
+          <Text className="text-white/70 text-sm font-semibold">Retour à l&apos;accueil</Text>
         </Pressable>
       </View>
-    </ScreenBackground>
+    </ImageBackground>
   );
 }

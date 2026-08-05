@@ -2,8 +2,10 @@ import { useCallback, useState } from 'react';
 import { View, Text, Pressable, ScrollView, Image, ActivityIndicator, Share, Alert } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { ScreenBackground } from '../../components/ui/screen-background';
-import { apiClient } from '../../lib/api';
+import { AppHeader } from '../../components/ui/app-header';
+import { apiClient, teamInviteLink } from '../../lib/api';
 import { imageThumb } from '../../lib/image';
+import { RemoteImage } from '../../components/ui/remote-image';
 import { useAuthStore } from '../../store/auth.store';
 
 interface Member {
@@ -33,20 +35,6 @@ function roleLabel(role: string) {
   return 'Joueur';
 }
 
-function MotifsHeader() {
-  return (
-    <View className="relative h-28 items-center justify-end pb-4" style={{ backgroundColor: '#1E7A3A' }}>
-      {[0, 1, 2].map((i) => (
-        <View key={`tl${i}`} style={{ position: 'absolute', top: 8 + i * 8, left: 8 + i * 8, width: 24 + i * 12, height: 24 + i * 12, borderWidth: 1, borderColor: i % 2 === 0 ? '#F7921E' : '#FFB830', transform: [{ rotate: '45deg' }], opacity: 0.15 - i * 0.04 }} />
-      ))}
-      {[0, 1, 2].map((i) => (
-        <View key={`br${i}`} style={{ position: 'absolute', bottom: 8 + i * 8, right: 8 + i * 8, width: 24 + i * 12, height: 24 + i * 12, borderWidth: 1, borderColor: i % 2 === 0 ? '#F7921E' : '#FFB830', transform: [{ rotate: '45deg' }], opacity: 0.15 - i * 0.04 }} />
-      ))}
-      <Text className="text-white font-black text-xl tracking-wide">Mon équipe</Text>
-    </View>
-  );
-}
-
 export default function MonEquipePage() {
   const router = useRouter();
   const { user } = useAuthStore();
@@ -73,13 +61,13 @@ export default function MonEquipePage() {
   const pending = (team?.members ?? []).filter((m) => m.status === 'pending');
   const myMembership = (team?.members ?? []).find((m) => m.user?.id === user?.id);
   const myRequestPending = !isCaptain && myMembership?.status === 'pending';
-  const joinLink = team?.invitation_code ? `gbonhi://join?code=${encodeURIComponent(team.invitation_code)}` : '';
+  const joinLink = team?.invitation_code ? teamInviteLink(team.invitation_code) : '';
 
   async function shareInvite(kind: 'code' | 'link') {
     if (!team?.invitation_code) return;
     const msg = kind === 'link'
-      ? `Rejoins ${team.name} sur GBONHI FOOT ⚽\nLien : ${joinLink}\n(ou code ${team.invitation_code})`
-      : `Rejoins ${team.name} sur GBONHI FOOT ⚽\nCode d'invitation : ${team.invitation_code}`;
+      ? `⚽ ${team.name} t'attend sur GBONHI FOOT !\n\nRejoins l'équipe directement dans l'application 👇\n${joinLink}\n\nCode : ${team.invitation_code}`
+      : `⚽ Rejoins ${team.name} sur GBONHI FOOT !\n\nCode d'invitation : ${team.invitation_code}\n\nOuvre ou télécharge l'application pour rejoindre l'équipe 👇\n${joinLink}`;
     await Share.share({ message: msg });
   }
 
@@ -119,7 +107,7 @@ export default function MonEquipePage() {
   if (loading) {
     return (
       <ScreenBackground>
-        <MotifsHeader />
+        <AppHeader title="Mon équipe" onBack={() => (router.canGoBack() ? router.back() : router.replace('/(tabs)/profile'))} showLogo={false} centered />
         <View className="flex-1 items-center justify-center"><ActivityIndicator color="#F7921E" /></View>
       </ScreenBackground>
     );
@@ -129,7 +117,7 @@ export default function MonEquipePage() {
   if (!team) {
     return (
       <ScreenBackground>
-        <MotifsHeader />
+        <AppHeader title="Mon équipe" onBack={() => (router.canGoBack() ? router.back() : router.replace('/(tabs)/profile'))} showLogo={false} centered />
         <ScrollView className="flex-1" contentContainerStyle={{ padding: 24, alignItems: 'center' }}>
           <View className="w-24 h-24 rounded-2xl items-center justify-center mt-8 mb-6" style={{ backgroundColor: 'rgba(30,122,58,0.25)' }}>
             <Text style={{ fontSize: 40 }}>👥</Text>
@@ -156,13 +144,13 @@ export default function MonEquipePage() {
   /* ── Équipe existante ── */
   return (
     <ScreenBackground>
-      <MotifsHeader />
+      <AppHeader title="Mon équipe" onBack={() => (router.canGoBack() ? router.back() : router.replace('/(tabs)/profile'))} showLogo={false} centered />
       <ScrollView className="flex-1" contentContainerStyle={{ padding: 20, paddingBottom: 40 }}>
         {/* En-tête équipe */}
         <View className="items-center mb-5">
           <View className="w-24 h-24 rounded-2xl items-center justify-center overflow-hidden mb-3" style={{ backgroundColor: team.primary_color?.trim() || '#1E7A3A', borderWidth: 2, borderColor: team.secondary_color?.trim() || 'rgba(255,255,255,0.15)' }}>
             {team.logo_url ? (
-              <Image source={{ uri: imageThumb(team.logo_url, 240) }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
+              <RemoteImage uri={imageThumb(team.logo_url, 240)} contentFit="cover" style={{ width: '100%', height: '100%' }} />
             ) : (
               <Text className="text-white font-black text-3xl">{initials(team.name)}</Text>
             )}
@@ -219,7 +207,7 @@ export default function MonEquipePage() {
               <View key={m.id} className="flex-row items-center gap-3 rounded-xl p-3 mb-2.5" style={{ backgroundColor: 'rgba(255,255,255,0.05)', borderWidth: 1, borderColor: 'rgba(247,146,30,0.25)' }}>
                 <View className="w-10 h-10 rounded-full items-center justify-center overflow-hidden" style={{ backgroundColor: '#1E7A3A' }}>
                   {m.user?.avatar_url ? (
-                    <Image source={{ uri: imageThumb(m.user.avatar_url, 120) }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
+                    <RemoteImage uri={imageThumb(m.user.avatar_url, 120)} contentFit="cover" style={{ width: '100%', height: '100%' }} />
                   ) : (
                     <Text className="text-white font-bold text-xs">{initials(m.user?.full_name)}</Text>
                   )}
@@ -251,7 +239,7 @@ export default function MonEquipePage() {
           <View key={m.id} className="flex-row items-center gap-3 rounded-xl p-3 mb-2" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
             <View className="w-10 h-10 rounded-full items-center justify-center overflow-hidden" style={{ backgroundColor: team.primary_color?.trim() || '#1E7A3A' }}>
               {m.user?.avatar_url ? (
-                <Image source={{ uri: imageThumb(m.user.avatar_url, 120) }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
+                <RemoteImage uri={imageThumb(m.user.avatar_url, 120)} contentFit="cover" style={{ width: '100%', height: '100%' }} />
               ) : (
                 <Text className="text-white font-bold text-xs">{initials(m.user?.full_name)}</Text>
               )}

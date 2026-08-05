@@ -1,5 +1,3 @@
--- Migration 005: Community feed, notifications
-
 CREATE TABLE community_posts (
   id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   author_id   UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
@@ -32,9 +30,8 @@ CREATE TABLE post_comments (
 CREATE TABLE notifications (
   id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id    UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
-  type       TEXT NOT NULL
-               CHECK (type IN ('match_start', 'match_goal', 'match_end', 'team_invite',
-                               'tournament_start', 'post_reaction', 'post_comment')),
+  type       TEXT NOT NULL CHECK (type IN ('match_start', 'match_goal', 'match_end', 'team_invite',
+                             'tournament_start', 'post_reaction', 'post_comment')),
   title      TEXT NOT NULL,
   body       TEXT NOT NULL,
   data       JSONB,
@@ -42,7 +39,6 @@ CREATE TABLE notifications (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- Auto-update likes count
 CREATE OR REPLACE FUNCTION update_post_likes_count()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -57,7 +53,6 @@ CREATE TRIGGER on_reaction_change
   AFTER INSERT OR DELETE ON post_reactions
   FOR EACH ROW EXECUTE PROCEDURE update_post_likes_count();
 
--- Auto-update comments count
 CREATE OR REPLACE FUNCTION update_post_comments_count()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -72,52 +67,31 @@ CREATE TRIGGER on_comment_change
   AFTER INSERT OR DELETE ON post_comments
   FOR EACH ROW EXECUTE PROCEDURE update_post_comments_count();
 
--- Triggers
 CREATE TRIGGER community_posts_updated_at
   BEFORE UPDATE ON community_posts
   FOR EACH ROW EXECUTE PROCEDURE update_updated_at();
 
--- RLS
 ALTER TABLE community_posts ENABLE ROW LEVEL SECURITY;
-
-CREATE POLICY "posts_public_read" ON community_posts
-  FOR SELECT USING (true);
-
-CREATE POLICY "posts_author_insert" ON community_posts
-  FOR INSERT WITH CHECK (auth.uid() = author_id);
-
-CREATE POLICY "posts_author_delete" ON community_posts
-  FOR DELETE USING (auth.uid() = author_id);
+CREATE POLICY "posts_public_read" ON community_posts FOR SELECT USING (true);
+CREATE POLICY "posts_author_insert" ON community_posts FOR INSERT WITH CHECK (auth.uid() = author_id);
+CREATE POLICY "posts_author_delete" ON community_posts FOR DELETE USING (auth.uid() = author_id);
 
 ALTER TABLE post_reactions ENABLE ROW LEVEL SECURITY;
-
-CREATE POLICY "reactions_public_read" ON post_reactions
-  FOR SELECT USING (true);
-
-CREATE POLICY "reactions_self_manage" ON post_reactions
-  FOR ALL USING (auth.uid() = user_id);
+CREATE POLICY "reactions_public_read" ON post_reactions FOR SELECT USING (true);
+CREATE POLICY "reactions_self_manage" ON post_reactions FOR ALL USING (auth.uid() = user_id);
 
 ALTER TABLE post_comments ENABLE ROW LEVEL SECURITY;
-
-CREATE POLICY "comments_public_read" ON post_comments
-  FOR SELECT USING (true);
-
-CREATE POLICY "comments_author_insert" ON post_comments
-  FOR INSERT WITH CHECK (auth.uid() = author_id);
-
-CREATE POLICY "comments_author_delete" ON post_comments
-  FOR DELETE USING (auth.uid() = author_id);
+CREATE POLICY "comments_public_read" ON post_comments FOR SELECT USING (true);
+CREATE POLICY "comments_author_insert" ON post_comments FOR INSERT WITH CHECK (auth.uid() = author_id);
+CREATE POLICY "comments_author_delete" ON post_comments FOR DELETE USING (auth.uid() = author_id);
 
 ALTER TABLE notifications ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "notifications_own" ON notifications FOR ALL USING (auth.uid() = user_id);
 
-CREATE POLICY "notifications_own" ON notifications
-  FOR ALL USING (auth.uid() = user_id);
-
--- Indexes
 CREATE INDEX idx_community_posts_author ON community_posts(author_id);
 CREATE INDEX idx_community_posts_team ON community_posts(team_id);
 CREATE INDEX idx_community_posts_created_at ON community_posts(created_at DESC);
 CREATE INDEX idx_post_reactions_post ON post_reactions(post_id);
 CREATE INDEX idx_post_comments_post ON post_comments(post_id);
 CREATE INDEX idx_notifications_user ON notifications(user_id);
-CREATE INDEX idx_notifications_unread ON notifications(user_id, read) WHERE read = FALSE;
+CREATE INDEX idx_notifications_unread ON notifications(user_id, read) WHERE read = FALSE;;

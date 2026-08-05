@@ -1,12 +1,15 @@
 import { useCallback, useMemo, useState } from 'react';
-import { View, Text, Pressable, ScrollView, Image, ImageBackground, Alert } from 'react-native';
+import { View, Text, Pressable, ScrollView, Image, Alert, Modal, TextInput } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { useUserModeStore } from '../../store/user-mode.store';
 import { useAuthStore } from '../../store/auth.store';
 import { apiClient } from '../../lib/api';
+import { getCached, invalidateCached } from '../../lib/api-cache';
 import { imageThumb } from '../../lib/image';
+import { RemoteImage } from '../../components/ui/remote-image';
 import { ScreenBackground } from '../../components/ui/screen-background';
+import { PatternedGreenHeader } from '../../components/ui/patterned-green-header';
 
 interface SummaryTeam { id: string; name: string; logo_url?: string | null; primary_color?: string | null }
 interface Summary {
@@ -22,6 +25,12 @@ interface Reservation {
   status: string;
   terrain: { id: string; name: string; city: string; surface: string } | null;
 }
+interface FavoriteTerrain { id: string; name: string; city: string; surface: string }
+interface PendingReview {
+  id: string;
+  terrain_id: string;
+  terrain: { id: string; name: string; city: string };
+}
 
 function initials(name?: string | null) {
   return (name ?? '?').trim().split(/\s+/).map((w) => w[0]).slice(0, 2).join('').toUpperCase() || '?';
@@ -33,7 +42,11 @@ const RES_STATUS: Record<string, { label: string; color: string; bg: string }> =
   confirmed: { label: 'Confirmé', color: '#4ADE80', bg: 'rgba(74,222,128,0.15)' },
   cancelled: { label: 'Annulé', color: '#F87171', bg: 'rgba(248,113,113,0.15)' },
 };
-function hh(h: number) { return `${String(h).padStart(2, '0')}h00`; }
+function hh(h: number) {
+  const hour = Math.floor(h);
+  const minutes = Math.round((h - hour) * 60);
+  return `${String(hour).padStart(2, '0')}h${String(minutes).padStart(2, '0')}`;
+}
 
 const LEAGUE_TABS = ['Activité', 'Équipes', 'Historique'] as const;
 const RES_TABS = ['À venir', 'Passées', 'Favoris'] as const;
@@ -46,6 +59,11 @@ export default function ProfileScreen() {
 
   const [summary, setSummary] = useState<Summary | null>(null);
   const [reservations, setReservations] = useState<Reservation[]>([]);
+  const [favorites, setFavorites] = useState<FavoriteTerrain[]>([]);
+  const [pendingReview, setPendingReview] = useState<PendingReview | null>(null);
+  const [reviewRating, setReviewRating] = useState(0);
+  const [reviewComment, setReviewComment] = useState('');
+  const [savingReview, setSavingReview] = useState(false);
   const [leagueTab, setLeagueTab] = useState<(typeof LEAGUE_TABS)[number]>('Activité');
   const [resTab, setResTab] = useState<(typeof RES_TABS)[number]>('À venir');
 
@@ -53,15 +71,25 @@ export default function ProfileScreen() {
   const name = (meta.full_name as string | undefined)?.trim() || 'Mon profil';
   const position = (meta.position as string | undefined)?.trim();
   const city = (meta.city as string | undefined)?.trim();
-  const photo = (meta.photo_url as string | undefined)?.trim();
+  // On n'affiche que les URL publiques (http…). Les anciennes URI locales
+  // (file://, ph://) enregistrées avant l'upload Storage ne s'affichent pas →
+  // repli sur les initiales.
+  const photoRaw = (meta.photo_url as string | undefined)?.trim();
+  const photo = photoRaw?.startsWith('http') ? photoRaw : undefined;
   const subtitle = isReservation ? (city ?? '') : [city, position].filter(Boolean).join(' · ');
 
   const load = useCallback(async () => {
     if (isReservation) {
-      const r = await apiClient.get<Reservation[]>('/api/v1/reservations/mine').then((x) => x.data).catch(() => []);
+      const [r, fav, pending] = await Promise.all([
+        getCached<Reservation[]>('/api/v1/reservations/mine', 20_000).catch(() => []),
+        getCached<FavoriteTerrain[]>('/api/v1/terrains/favorites', 30_000).catch(() => []),
+        getCached<PendingReview | null>('/api/v1/terrains/reviews/pending', 20_000).catch(() => null),
+      ]);
       setReservations(Array.isArray(r) ? r : []);
+      setFavorites(Array.isArray(fav) ? fav : []);
+      setPendingReview(pending);
     } else {
-      const sum = await apiClient.get<Summary>('/api/v1/users/me/summary').then((x) => x.data).catch(() => null);
+      const sum = await getCached<Summary>('/api/v1/users/me/summary', 20_000).catch(() => null);
       setSummary(sum);
     }
   }, [isReservation]);
@@ -78,24 +106,39 @@ export default function ProfileScreen() {
   }, []);
   const upcoming = reservations.filter((r) => r.reservation_date >= todayYmd && r.status !== 'cancelled');
   const past = reservations.filter((r) => r.reservation_date < todayYmd || r.status === 'cancelled');
-  const favTerrains = useMemo(() => {
-    const map = new Map<string, { id: string; name: string; city: string; surface: string }>();
-    reservations.forEach((r) => { if (r.terrain) map.set(r.terrain.id, r.terrain); });
-    return Array.from(map.values());
-  }, [reservations]);
+  async function submitReview() {
+    if (!pendingReview || reviewRating === 0) {
+      Alert.alert('Note requise', 'Choisis une note entre 1 et 5 étoiles.');
+      return;
+    }
+    try {
+      setSavingReview(true);
+      await apiClient.post(`/api/v1/terrains/${pendingReview.terrain_id}/reviews`, {
+        rating: reviewRating,
+        comment: reviewComment.trim() || undefined,
+      });
+      invalidateCached('/api/v1/terrains/reviews');
+      invalidateCached('/api/v1/terrains');
+      setPendingReview(null);
+      setReviewRating(0);
+      setReviewComment('');
+    } catch {
+      Alert.alert('Avis non envoyé', "Réessaie dans un instant.");
+    } finally {
+      setSavingReview(false);
+    }
+  }
 
   return (
     <ScreenBackground>
-      {/* Header kente */}
-      <ImageBackground
-        source={require('../../../assets/images/kente-green.png')}
-        resizeMode="repeat"
+      {/* Header vert à motifs triangulaires */}
+      <PatternedGreenHeader
         style={{ paddingTop: 52, paddingBottom: 22, paddingHorizontal: 20, borderBottomLeftRadius: 24, borderBottomRightRadius: 24, overflow: 'hidden' }}
-        imageStyle={{ borderBottomLeftRadius: 24, borderBottomRightRadius: 24 }}
+        patternOpacity={0.5}
       >
         <View className="flex-row items-center">
           <View style={{ width: 28 }} />
-          <Text className="text-white font-black text-xl flex-1 text-center">{isReservation ? '' : 'Profil'}</Text>
+          <Text className="text-white font-black text-xl flex-1 text-center">Profil</Text>
           <Pressable onPress={openSettings} hitSlop={8} style={{ width: 28, alignItems: 'flex-end' }}>
             <Text style={{ fontSize: 20 }}>⚙️</Text>
           </Pressable>
@@ -103,7 +146,7 @@ export default function ProfileScreen() {
 
         <View className="flex-row items-center gap-4 mt-4">
           {photo ? (
-            <Image source={{ uri: imageThumb(photo, 200) }} style={{ width: 84, height: 84, borderRadius: 42, borderWidth: 2, borderColor: 'rgba(255,255,255,0.4)' }} />
+            <RemoteImage uri={imageThumb(photo, 200)} style={{ width: 84, height: 84, borderRadius: 42, borderWidth: 2, borderColor: 'rgba(255,255,255,0.4)' }} />
           ) : (
             <View style={{ width: 84, height: 84, borderRadius: 42, backgroundColor: 'rgba(0,0,0,0.25)', borderWidth: 2, borderColor: 'rgba(255,255,255,0.35)', alignItems: 'center', justifyContent: 'center' }}>
               <Text className="text-white font-black text-2xl">{initials(name)}</Text>
@@ -123,28 +166,39 @@ export default function ProfileScreen() {
             </View>
           </View>
         </View>
-      </ImageBackground>
+      </PatternedGreenHeader>
 
       {isReservation ? (
         <ReservationBody
           reservations={reservations}
           upcoming={upcoming}
           past={past}
-          favTerrains={favTerrains}
+          favTerrains={favorites}
           tab={resTab}
           setTab={setResTab}
           onOpenTerrain={(id) => router.push(`/terrain/${id}`)}
+          onOpenReservation={(id) => router.push(`/reservation/${id}`)}
         />
       ) : (
         <LeaguesBody summary={summary} tab={leagueTab} setTab={setLeagueTab} router={router} />
       )}
+      <ReviewModal
+        pending={pendingReview}
+        rating={reviewRating}
+        comment={reviewComment}
+        saving={savingReview}
+        onRating={setReviewRating}
+        onComment={setReviewComment}
+        onSubmit={submitReview}
+        onDismiss={() => setPendingReview(null)}
+      />
     </ScreenBackground>
   );
 }
 
 // ─────────────────────────── Mode Réservation (s31) ───────────────────────────
 function ResDateBadge({ ymd, index }: { ymd: string; index: number }) {
-  const [, m, d] = ymd.split('-').map(Number);
+  const [, m, d] = ymd.slice(0, 10).split('-').map(Number);
   const bg = index % 2 === 0 ? '#F7921E' : '#1E7A3A';
   return (
     <View className="w-14 h-14 rounded-xl items-center justify-center" style={{ backgroundColor: bg }}>
@@ -155,7 +209,7 @@ function ResDateBadge({ ymd, index }: { ymd: string; index: number }) {
 }
 
 function ReservationBody({
-  reservations, upcoming, past, favTerrains, tab, setTab, onOpenTerrain,
+  reservations, upcoming, past, favTerrains, tab, setTab, onOpenTerrain, onOpenReservation,
 }: {
   reservations: Reservation[];
   upcoming: Reservation[];
@@ -164,6 +218,7 @@ function ReservationBody({
   tab: (typeof RES_TABS)[number];
   setTab: (t: (typeof RES_TABS)[number]) => void;
   onOpenTerrain: (id: string) => void;
+  onOpenReservation: (id: string) => void;
 }) {
   const list = tab === 'À venir' ? upcoming : tab === 'Passées' ? past : [];
 
@@ -219,7 +274,7 @@ function ReservationBody({
         list.map((r, i) => {
           const st = RES_STATUS[r.status] ?? RES_STATUS.pending;
           return (
-            <Pressable key={r.id} onPress={() => r.terrain && onOpenTerrain(r.terrain.id)} className="flex-row items-center gap-3 rounded-2xl p-3.5 mb-2.5" style={{ backgroundColor: 'rgba(255,255,255,0.05)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' }}>
+            <Pressable key={r.id} onPress={() => onOpenReservation(r.id)} className="flex-row items-center gap-3 rounded-2xl p-3.5 mb-2.5" style={{ backgroundColor: 'rgba(255,255,255,0.05)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' }}>
               <ResDateBadge ymd={r.reservation_date} index={i} />
               <View className="flex-1">
                 <Text className="text-white font-bold text-base" numberOfLines={1}>{r.terrain?.name ?? 'Terrain'}</Text>
@@ -235,6 +290,55 @@ function ReservationBody({
         })
       )}
     </ScrollView>
+  );
+}
+
+function ReviewModal({
+  pending, rating, comment, saving, onRating, onComment, onSubmit, onDismiss,
+}: {
+  pending: PendingReview | null;
+  rating: number;
+  comment: string;
+  saving: boolean;
+  onRating: (value: number) => void;
+  onComment: (value: string) => void;
+  onSubmit: () => void;
+  onDismiss: () => void;
+}) {
+  return (
+    <Modal visible={pending !== null} transparent animationType="fade" onRequestClose={onDismiss}>
+      <View className="flex-1 items-center justify-center px-6" style={{ backgroundColor: 'rgba(0,0,0,0.64)' }}>
+        <View className="w-full rounded-3xl p-6" style={{ backgroundColor: '#102817', borderWidth: 1, borderColor: 'rgba(46,158,79,0.5)' }}>
+          <Text className="text-white text-xl font-black text-center">Ton match est terminé ?</Text>
+          <Text className="text-white/70 text-center text-sm mt-2">
+            Donne ton avis sur {pending?.terrain.name ?? 'ce terrain'}.
+          </Text>
+          <View className="flex-row justify-center gap-2 mt-5">
+            {[1, 2, 3, 4, 5].map((star) => (
+              <Pressable key={star} onPress={() => onRating(star)} hitSlop={6}>
+                <Text style={{ fontSize: 34, color: star <= rating ? '#FFB830' : 'rgba(255,255,255,0.22)' }}>★</Text>
+              </Pressable>
+            ))}
+          </View>
+          <TextInput
+            value={comment}
+            onChangeText={onComment}
+            placeholder="Un mot sur ton expérience ? (facultatif)"
+            placeholderTextColor="rgba(255,255,255,0.38)"
+            multiline
+            maxLength={500}
+            className="text-white text-sm rounded-2xl px-4 py-3 mt-5"
+            style={{ minHeight: 76, textAlignVertical: 'top', backgroundColor: 'rgba(255,255,255,0.06)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)' }}
+          />
+          <Pressable disabled={saving} onPress={onSubmit} className="rounded-2xl py-4 mt-4 items-center active:opacity-80" style={{ backgroundColor: '#F7921E', opacity: saving ? 0.6 : 1 }}>
+            <Text className="text-white font-black">{saving ? 'Envoi…' : 'Publier mon avis'}</Text>
+          </Pressable>
+          <Pressable disabled={saving} onPress={onDismiss} className="py-3 mt-1 items-center">
+            <Text className="text-white/55 font-semibold text-sm">Plus tard</Text>
+          </Pressable>
+        </View>
+      </View>
+    </Modal>
   );
 }
 
@@ -260,6 +364,7 @@ function LeaguesBody({ summary, tab, setTab, router }: {
     { emoji: '🔥', label: 'Série de 5', unlocked: goals >= 5 },
     { emoji: '🎯', label: '10 passes', unlocked: assists >= 10 },
   ];
+  const unlockedAchievements = achievements.filter((achievement) => achievement.unlocked);
 
   return (
     <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 100 }} showsVerticalScrollIndicator={false}>
@@ -290,17 +395,21 @@ function LeaguesBody({ summary, tab, setTab, router }: {
         <Text className="text-white/40 text-lg">›</Text>
       </Pressable>
 
-      <Text className="text-white font-black text-lg mb-3">Accomplissements</Text>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 12 }} className="mb-6">
-        {achievements.map((a) => (
+      {unlockedAchievements.length > 0 ? (
+        <>
+          <Text className="text-white font-black text-lg mb-3">Accomplissements</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 12 }} className="mb-6">
+        {unlockedAchievements.map((a) => (
           <View key={a.label} className="items-center" style={{ width: 92 }}>
-            <View className="w-20 h-20 rounded-2xl items-center justify-center" style={{ backgroundColor: a.unlocked ? 'rgba(247,146,30,0.12)' : 'rgba(255,255,255,0.04)', borderWidth: 1, borderColor: a.unlocked ? 'rgba(247,146,30,0.5)' : 'rgba(255,255,255,0.08)', opacity: a.unlocked ? 1 : 0.45 }}>
+            <View className="w-20 h-20 rounded-2xl items-center justify-center" style={{ backgroundColor: 'rgba(247,146,30,0.12)', borderWidth: 1, borderColor: 'rgba(247,146,30,0.5)' }}>
               <Text style={{ fontSize: 34 }}>{a.emoji}</Text>
             </View>
             <Text className="text-white/60 text-xs text-center mt-1.5" numberOfLines={1}>{a.label}</Text>
           </View>
         ))}
-      </ScrollView>
+          </ScrollView>
+        </>
+      ) : null}
 
       <View className="flex-row gap-6 border-b mb-4" style={{ borderBottomColor: 'rgba(255,255,255,0.1)' }}>
         {LEAGUE_TABS.map((t) => {
@@ -318,7 +427,7 @@ function LeaguesBody({ summary, tab, setTab, router }: {
           summary.teams.map((t) => (
             <Pressable key={t.id} onPress={() => router.push('/team')} className="flex-row items-center gap-3 rounded-2xl p-3.5 mb-2.5" style={{ backgroundColor: 'rgba(255,255,255,0.05)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' }}>
               <View className="w-10 h-10 rounded-xl items-center justify-center overflow-hidden" style={{ backgroundColor: t.primary_color?.trim() || '#1E7A3A' }}>
-                {t.logo_url ? <Image source={{ uri: imageThumb(t.logo_url, 120) }} style={{ width: '100%', height: '100%' }} /> : <Text className="text-white font-bold text-xs">{initials(t.name)}</Text>}
+                {t.logo_url ? <RemoteImage uri={imageThumb(t.logo_url, 120)} style={{ width: '100%', height: '100%' }} /> : <Text className="text-white font-bold text-xs">{initials(t.name)}</Text>}
               </View>
               <Text className="text-white font-semibold flex-1">{t.name}</Text>
               <Text className="text-white/40">›</Text>

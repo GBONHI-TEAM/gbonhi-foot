@@ -5,7 +5,7 @@ import { createServerClient, type CookieOptions } from '@supabase/ssr';
 type CookieItem = { name: string; value: string; options: CookieOptions };
 
 export async function middleware(request: NextRequest) {
-  const response = NextResponse.next({ request });
+  let response = NextResponse.next({ request });
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -14,23 +14,22 @@ export async function middleware(request: NextRequest) {
       cookies: {
         getAll: () => request.cookies.getAll(),
         setAll: (cookiesToSet: CookieItem[]) => {
-          cookiesToSet.forEach(({ name, value, options }) =>
-            response.cookies.set(name, value, options),
-          );
+          cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value));
+          response = NextResponse.next({ request });
+          cookiesToSet.forEach(({ name, value, options }) => response.cookies.set(name, value, options));
         },
       },
     },
   );
 
-  const { data: { user } } = await supabase.auth.getUser();
+  // Ne pas interroger Supabase Auth à chaque navigation : le backend valide
+  // ensuite le JWT présenté sur /users/me avant de rendre le back-office.
+  const { data: { session } } = await supabase.auth.getSession();
+  const hasSession = Boolean(session?.access_token);
   const isAuthPage = request.nextUrl.pathname.startsWith('/login');
 
-  if (!user && !isAuthPage) {
+  if (!hasSession && !isAuthPage) {
     return NextResponse.redirect(new URL('/login', request.url));
-  }
-
-  if (user && isAuthPage) {
-    return NextResponse.redirect(new URL('/tableau-de-bord', request.url));
   }
 
   return response;

@@ -46,7 +46,7 @@ function formatDate(iso: string) {
   return new Date(iso).toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' });
 }
 
-export function TicketsManager({ kind }: { kind: 'support' | 'incident' }) {
+export function TicketsManager({ kind, refreshKey = 0 }: { kind: 'support' | 'incident'; refreshKey?: number }) {
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [counts, setCounts] = useState<Record<string, number>>({});
   const [filter, setFilter] = useState<string>('');
@@ -65,15 +65,16 @@ export function TicketsManager({ kind }: { kind: 'support' | 'incident' }) {
       ]);
       setTickets(Array.isArray(list) ? list : []);
       setCounts(c ?? {});
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Erreur de chargement');
+    } catch {
+      // Les détails techniques restent dans les logs du navigateur et de l'API.
+      setError('Impossible de charger les demandes pour le moment. Vérifie la connexion puis réessaie.');
       setTickets([]);
     } finally {
       setLoading(false);
     }
   }, [kind, filter]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { void load(); }, [load, refreshKey]);
 
   const total = STATUS_ORDER.reduce((s, k) => s + (counts[k] ?? 0), 0);
 
@@ -99,12 +100,13 @@ export function TicketsManager({ kind }: { kind: 'support' | 'incident' }) {
         </div>
       ) : (
         <div className="rounded-xl border overflow-hidden" style={{ borderColor: '#E5E7EB', backgroundColor: 'white' }}>
-          <table className="w-full text-sm">
+          <table className="w-full min-w-[760px] text-sm">
             <thead>
               <tr className="text-left text-[11px] uppercase tracking-wide text-gray-400" style={{ backgroundColor: '#F9FAFB' }}>
-                <th className="px-4 py-3 font-bold">Sujet</th>
-                <th className="px-4 py-3 font-bold">Demandeur</th>
-                <th className="px-4 py-3 font-bold">Catégorie</th>
+                <th className="px-4 py-3 font-bold">ID</th>
+                <th className="px-4 py-3 font-bold">{kind === 'incident' ? 'Incident / match concerné' : 'Sujet'}</th>
+                <th className="px-4 py-3 font-bold">{kind === 'incident' ? 'Rapporté par' : 'Utilisateur'}</th>
+                <th className="px-4 py-3 font-bold">Type</th>
                 <th className="px-4 py-3 font-bold">Priorité</th>
                 <th className="px-4 py-3 font-bold">Statut</th>
                 <th className="px-4 py-3 font-bold">Date</th>
@@ -113,6 +115,7 @@ export function TicketsManager({ kind }: { kind: 'support' | 'incident' }) {
             <tbody>
               {tickets.map((t) => (
                 <tr key={t.id} onClick={() => setSelected(t)} className="border-t cursor-pointer hover:bg-gray-50 transition" style={{ borderColor: '#F3F4F6' }}>
+                  <td className="px-4 py-3 font-mono text-xs font-semibold text-gray-500">#{t.id.slice(0, 5)}</td>
                   <td className="px-4 py-3 font-semibold text-gray-800 max-w-[280px] truncate">{t.subject}</td>
                   <td className="px-4 py-3 text-gray-600">{t.reporter_name ?? '—'}</td>
                   <td className="px-4 py-3 text-gray-500">{t.category ?? '—'}</td>

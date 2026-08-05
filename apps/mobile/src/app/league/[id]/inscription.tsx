@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
-import { View, Text, Pressable, ScrollView, ActivityIndicator, Alert } from 'react-native';
+import { View, Text, Pressable, ScrollView, ActivityIndicator, Alert, ImageBackground } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { ScreenBackground } from '../../../components/ui/screen-background';
 import { apiClient } from '../../../lib/api';
+import { AppHeader } from '../../../components/ui/app-header';
 
 interface League {
   id: string;
@@ -13,6 +14,18 @@ interface League {
   prize_info?: string | null;
 }
 interface MyTeam { id: string; name: string; primary_color?: string | null }
+interface Registration {
+  team: MyTeam;
+  league_payment?: { id: string; amount: number; status: string; transaction_id: string } | null;
+}
+interface RegistrationState {
+  teams: MyTeam[];
+  registrations: Registration[];
+  already_registered: boolean;
+  registrations_open: boolean;
+  league_full: boolean;
+  participation?: { team: MyTeam } | null;
+}
 
 function fcfa(n?: number | null) {
   return `${(n ?? 0).toLocaleString('fr-FR')} FCFA`;
@@ -30,15 +43,19 @@ export default function InscriptionLeaguePage() {
   const [accepted, setAccepted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [done, setDone] = useState(false);
+  const [registration, setRegistration] = useState<Registration | null>(null);
+  const [downloading, setDownloading] = useState(false);
 
   useEffect(() => {
     (async () => {
-      const [l, s] = await Promise.all([
+      const [l, state] = await Promise.all([
         apiClient.get<League>(`/api/v1/leagues/${id}`).then((r) => r.data).catch(() => null),
-        apiClient.get<{ teams: MyTeam[] }>('/api/v1/users/me/summary').then((r) => r.data).catch(() => null),
+        apiClient.get<RegistrationState>(`/api/v1/leagues/${id}/my-registration`).then((r) => r.data).catch(() => null),
       ]);
       setLeague(l);
-      setTeam(s?.teams?.[0] ?? null);
+      setTeam(state?.participation?.team ?? state?.teams?.[0] ?? null);
+      setRegistration(state?.registrations?.[0] ?? null);
+      if (state?.already_registered) setDone(true);
       setLoading(false);
     })();
   }, [id]);
@@ -47,13 +64,40 @@ export default function InscriptionLeaguePage() {
     if (!team || !league) return;
     setSubmitting(true);
     try {
-      await apiClient.post(`/api/v1/leagues/${id}/teams`, { team_id: team.id });
+      const { data } = await apiClient.post<{ payment_id: string; status: 'accepted'; amount: number }>(`/api/v1/payments/leagues/${id}/checkout`, { team_id: team.id });
+      setRegistration({ team, league_payment: { id: data.payment_id, amount: data.amount, status: data.status, transaction_id: '' } });
       setDone(true);
     } catch (e: unknown) {
       const msg = (e as { response?: { data?: { message?: string } } })?.response?.data?.message;
       Alert.alert('Inscription impossible', Array.isArray(msg) ? msg.join('\n') : msg ?? "Réessaie plus tard.");
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  async function downloadReceipt() {
+    const receiptTeam = registration?.team ?? team;
+    if (!receiptTeam || !id) return;
+    try {
+      setDownloading(true);
+      const FileSystem = require('expo-file-system') as typeof import('expo-file-system');
+      const Sharing = require('expo-sharing') as typeof import('expo-sharing');
+      const response = await apiClient.get<ArrayBuffer>(`/api/v1/payments/leagues/${id}/teams/${receiptTeam.id}/receipt.pdf`, { responseType: 'arraybuffer' });
+      if (!FileSystem.documentDirectory) throw new Error('Dossier de téléchargement indisponible');
+      const bytes = new Uint8Array(response.data);
+      let binary = '';
+      for (let offset = 0; offset < bytes.length; offset += 8192) binary += String.fromCharCode(...bytes.subarray(offset, offset + 8192));
+      const uri = `${FileSystem.documentDirectory}gbonhi-foot-recu-ligue-${id}.pdf`;
+      await FileSystem.writeAsStringAsync(uri, globalThis.btoa(binary), { encoding: FileSystem.EncodingType.Base64 });
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(uri, { mimeType: 'application/pdf', dialogTitle: 'Reçu d’inscription GBONHI FOOT' });
+      } else {
+        Alert.alert('Reçu téléchargé', `Le reçu a été enregistré dans : ${uri}`);
+      }
+    } catch {
+      Alert.alert('Téléchargement impossible', 'Réessaie dans quelques instants.');
+    } finally {
+      setDownloading(false);
     }
   }
 
@@ -65,25 +109,44 @@ export default function InscriptionLeaguePage() {
     );
   }
 
+  const receiptAvailable = registration?.league_payment?.status === 'accepted';
+
   /* Confirmation */
   if (done) {
     return (
-      <ScreenBackground style={{ alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32 }}>
+      <ImageBackground
+        source={require('../../../../assets/images/kente-green.png')}
+        resizeMode="repeat"
+        style={{ flex: 1, backgroundColor: '#0F3D1E' }}
+        imageStyle={{ opacity: 0.38 }}
+      >
+        <View className="flex-1 items-center justify-center px-8" style={{ backgroundColor: 'rgba(13,31,13,0.78)' }}>
         <View className="w-20 h-20 rounded-full items-center justify-center mb-6" style={{ backgroundColor: '#1E7A3A' }}>
           <Text className="text-white text-4xl">✓</Text>
         </View>
-        <Text className="text-white font-black text-2xl text-center mb-3">Inscription confirmée !</Text>
+        <Text className="text-white font-black text-2xl text-center mb-3">{registration ? 'Inscription confirmée !' : 'Déjà inscrit !'}</Text>
         <Text className="text-center text-sm mb-8" style={{ color: 'rgba(255,255,255,0.55)' }}>
-          <Text className="text-white font-semibold">{team?.name}</Text> est inscrite à{' '}
+          <Text className="text-white font-semibold">{registration?.team.name ?? team?.name}</Text> est inscrite à{' '}
           <Text className="text-white font-semibold">{league?.name}</Text>.
         </Text>
-        <Pressable onPress={() => router.replace(`/league/${id}`)} className="w-full h-14 rounded-2xl items-center justify-center mb-3" style={{ backgroundColor: '#F7921E' }}>
+        <View className="w-full rounded-xl p-3 mb-5" style={{ backgroundColor: receiptAvailable ? 'rgba(74,222,128,0.10)' : 'rgba(255,184,48,0.10)', borderWidth: 1, borderColor: receiptAvailable ? 'rgba(74,222,128,0.25)' : 'rgba(255,184,48,0.25)' }}>
+          <Text className="text-center text-xs" style={{ color: receiptAvailable ? '#86EFAC' : '#FFB830' }}>
+            {receiptAvailable ? '✓ Paiement simulé validé · reçu disponible' : 'Inscription historique : aucun reçu de paiement associé.'}
+          </Text>
+        </View>
+        {receiptAvailable ? (
+          <Pressable onPress={downloadReceipt} disabled={downloading} className="w-full h-14 rounded-2xl items-center justify-center mb-3" style={{ backgroundColor: '#F7921E', opacity: downloading ? 0.6 : 1 }}>
+            {downloading ? <ActivityIndicator color="white" /> : <Text className="text-white font-bold text-base">📥 Télécharger le reçu PDF</Text>}
+          </Pressable>
+        ) : null}
+        <Pressable onPress={() => router.replace(`/league/${id}`)} className="w-full h-14 rounded-2xl items-center justify-center mb-3 border" style={{ borderColor: 'rgba(255,255,255,0.3)' }}>
           <Text className="text-white font-bold text-base">Voir la ligue</Text>
         </Pressable>
         <Pressable onPress={() => router.replace('/(tabs)')} className="w-full h-12 rounded-2xl items-center justify-center border" style={{ borderColor: 'rgba(255,255,255,0.2)' }}>
           <Text className="text-white font-semibold text-sm">Retour à l&apos;accueil</Text>
         </Pressable>
-      </ScreenBackground>
+        </View>
+      </ImageBackground>
     );
   }
 
@@ -91,10 +154,7 @@ export default function InscriptionLeaguePage() {
 
   return (
     <ScreenBackground>
-      <View className="flex-row items-center px-5 pt-14 pb-4 gap-3" style={{ backgroundColor: '#1E7A3A' }}>
-        <Pressable onPress={() => router.back()} hitSlop={8}><Text className="text-white text-2xl">‹</Text></Pressable>
-        <Text className="text-white font-black text-xl flex-1 text-center mr-7">Inscription en league</Text>
-      </View>
+      <AppHeader title="Inscription en league" onBack={() => router.back()} showLogo={false} centered />
 
       <ScrollView contentContainerStyle={{ padding: 20, paddingBottom: 40 }}>
         {/* Carte ligue + équipe */}
@@ -150,11 +210,9 @@ export default function InscriptionLeaguePage() {
           </Text>
         </Pressable>
 
-        {fee > 0 ? (
-          <Text className="text-xs mt-3 text-center" style={{ color: 'rgba(255,255,255,0.35)' }}>
-            Le paiement en ligne (Wave · MTN · Orange) sera activé prochainement. L&apos;inscription est enregistrée dès maintenant.
-          </Text>
-        ) : null}
+        <Text className="text-xs mt-3 text-center" style={{ color: 'rgba(255,255,255,0.35)' }}>
+          Le paiement simulé valide l&apos;inscription pour cette phase de test. Ton équipe ne sera jamais enregistrée sans règlement confirmé.
+        </Text>
       </ScrollView>
 
       <View className="px-5 pb-8">
@@ -164,7 +222,7 @@ export default function InscriptionLeaguePage() {
           className="h-14 rounded-2xl items-center justify-center"
           style={{ backgroundColor: team ? '#1E7A3A' : '#F7921E', opacity: !!team && !accepted ? 0.4 : 1 }}
         >
-          {submitting ? <ActivityIndicator color="white" /> : <Text className="text-white font-bold text-base">{team ? 'Confirmer l\'inscription' : 'Créer / rejoindre une équipe'}</Text>}
+          {submitting ? <ActivityIndicator color="white" /> : <Text className="text-white font-bold text-base">{team ? 'Valider le paiement simulé' : 'Créer / rejoindre une équipe'}</Text>}
         </Pressable>
       </View>
     </ScreenBackground>

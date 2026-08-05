@@ -4,6 +4,8 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { ScreenBackground } from '../../../components/ui/screen-background';
 import { apiClient } from '../../../lib/api';
 import { imageThumb } from '../../../lib/image';
+import { RemoteImage } from '../../../components/ui/remote-image';
+import { PatternedGreenHeader } from '../../../components/ui/patterned-green-header';
 import {
   type Match,
   type League,
@@ -96,10 +98,18 @@ interface LeagueTeamEntry {
   team: {
     id: string;
     name: string;
+    logo_url?: string | null;
     primary_color?: string | null;
     _count?: { members: number };
     home_terrain?: { id: string; name: string; city: string } | null;
   };
+}
+
+interface MyRegistrationState {
+  already_registered: boolean;
+  league_full: boolean;
+  registrations: Array<{ team: { id: string; name: string } }>;
+  participation?: { team: { id: string; name: string; primary_color?: string | null } } | null;
 }
 
 function TabEquipes({ teams }: { teams: LeagueTeamEntry[] }) {
@@ -119,10 +129,14 @@ function TabEquipes({ teams }: { teams: LeagueTeamEntry[] }) {
           style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}
         >
           <View
-            className="w-10 h-10 rounded-full items-center justify-center"
+            className="w-10 h-10 rounded-full items-center justify-center overflow-hidden"
             style={{ backgroundColor: team.primary_color || '#1E7A3A' }}
           >
-            <Text className="text-white font-black text-xs">{teamInitials(team.name)}</Text>
+            {team.logo_url ? (
+              <RemoteImage uri={imageThumb(team.logo_url, 120)} style={{ width: '100%', height: '100%' }} />
+            ) : (
+              <Text className="text-white font-black text-xs">{teamInitials(team.name)}</Text>
+            )}
           </View>
           <View className="flex-1">
             <Text className="text-white font-bold text-sm">{team.name}</Text>
@@ -349,10 +363,14 @@ function ScorerList({ rows, unit, accent }: { rows: ScorerRow[]; unit: string; a
             }}
           >
             <Text className="font-black text-sm" style={{ color: rankColor, width: 24 }}>{idx + 1}</Text>
-            <View className="w-8 h-8 rounded-full items-center justify-center mr-3" style={{ backgroundColor: '#1E7A3A' }}>
-              <Text className="text-white font-black text-[10px]">
-                {teamInitials(r.player?.full_name ?? '??')}
-              </Text>
+            <View className="w-8 h-8 rounded-full items-center justify-center mr-3 overflow-hidden" style={{ backgroundColor: '#1E7A3A' }}>
+              {r.player?.avatar_url ? (
+                <RemoteImage uri={imageThumb(r.player.avatar_url, 120)} style={{ width: '100%', height: '100%' }} />
+              ) : (
+                <Text className="text-white font-black text-[10px]">
+                  {teamInitials(r.player?.full_name ?? '??')}
+                </Text>
+              )}
             </View>
             <Text className="text-white font-bold text-sm flex-1" numberOfLines={1}>
               {r.player?.full_name ?? 'Joueur inconnu'}
@@ -396,10 +414,14 @@ function TabStats({ scorers, loading }: { scorers: ScorersResponse | null; loadi
           style={{ backgroundColor: 'rgba(247,146,30,0.12)', borderWidth: 1, borderColor: 'rgba(247,146,30,0.3)' }}
         >
           <View
-            className="w-20 h-20 rounded-full items-center justify-center"
+            className="w-20 h-20 rounded-full items-center justify-center overflow-hidden"
             style={{ backgroundColor: '#1E7A3A', borderWidth: 2, borderColor: '#F7921E' }}
           >
-            <Text className="text-white font-black text-xl">{teamInitials(mvp.player?.full_name ?? '??')}</Text>
+            {mvp.player?.avatar_url ? (
+              <RemoteImage uri={imageThumb(mvp.player.avatar_url, 200)} style={{ width: '100%', height: '100%' }} />
+            ) : (
+              <Text className="text-white font-black text-xl">{teamInitials(mvp.player?.full_name ?? '??')}</Text>
+            )}
           </View>
           <View className="flex-1">
             <View className="self-start px-2.5 py-1 rounded-full mb-2" style={{ backgroundColor: '#F7921E' }}>
@@ -453,6 +475,7 @@ export default function LeagueDetailPage() {
   const [scorers, setScorers] = useState<ScorersResponse | null>(null);
   const [loadingScorers, setLoadingScorers] = useState(false);
   const [scorersLoaded, setScorersLoaded] = useState(false);
+  const [myRegistration, setMyRegistration] = useState<MyRegistrationState | null>(null);
 
   // Ligue (infos + équipes).
   useEffect(() => {
@@ -470,6 +493,14 @@ export default function LeagueDetailPage() {
     return () => {
       mounted = false;
     };
+  }, [id]);
+
+  useEffect(() => {
+    let mounted = true;
+    apiClient.get<MyRegistrationState>(`/api/v1/leagues/${id}/my-registration`)
+      .then(({ data }) => { if (mounted) setMyRegistration(data); })
+      .catch(() => { if (mounted) setMyRegistration(null); });
+    return () => { mounted = false; };
   }, [id]);
 
   const loadMatches = useCallback(async () => {
@@ -534,11 +565,11 @@ export default function LeagueDetailPage() {
   if (!league) {
     return (
       <View className="flex-1" style={{ backgroundColor: '#0D1F0D' }}>
-        <View className="px-5 pt-14 pb-4" style={{ backgroundColor: '#1E7A3A' }}>
+        <PatternedGreenHeader style={{ paddingHorizontal: 20, paddingTop: 56, paddingBottom: 16 }} patternOpacity={0.5}>
           <Pressable onPress={() => router.back()} hitSlop={8}>
-            <Text className="text-white text-2xl">‹</Text>
+            <Text className="text-white text-2xl">←</Text>
           </Pressable>
-        </View>
+        </PatternedGreenHeader>
         <View className="flex-1 items-center justify-center">
           <Text className="text-white/60">Ligue introuvable.</Text>
         </View>
@@ -547,25 +578,32 @@ export default function LeagueDetailPage() {
   }
 
   const statusLabel = LEAGUE_STATUS_LABEL[league.status] ?? league.status;
-  const canRegister = league.status === 'INSCRIPTIONS_OUVERTES';
+  const canRegister = league.status === 'INSCRIPTIONS_OUVERTES' && !myRegistration?.league_full;
+  const alreadyRegistered = myRegistration?.already_registered === true;
+  const participatingTeam = myRegistration?.participation?.team ?? myRegistration?.registrations[0]?.team;
 
   return (
     <ScreenBackground>
-      {/* Hero header */}
-      <View className="pb-0" style={{ backgroundColor: '#1E7A3A' }}>
+      {/* Hero header : motif triangulaire visible lorsqu'aucune bannière ne le recouvre. */}
+      <PatternedGreenHeader style={{ paddingBottom: 0 }} patternOpacity={0.5}>
         {league.banner_url ? (
           <>
-            <Image source={{ uri: imageThumb(league.banner_url, 900) }} resizeMode="cover" style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} />
+            <RemoteImage uri={imageThumb(league.banner_url, 900)} contentFit="cover" style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} />
             <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(13,31,13,0.55)' }} />
           </>
         ) : null}
         <View className="flex-row items-center px-5 pt-14 pb-3 gap-2">
           <Pressable onPress={() => router.back()} hitSlop={8}>
-            <Text className="text-white text-2xl">‹</Text>
+            <Text className="text-white text-2xl">←</Text>
           </Pressable>
           <View className="self-start px-2.5 py-0.5 rounded-full ml-2" style={{ backgroundColor: '#0F3D1E' }}>
             <Text className="text-xs font-black tracking-widest text-white">{statusLabel.toUpperCase()}</Text>
           </View>
+          {alreadyRegistered ? (
+            <View className="self-start px-2.5 py-0.5 rounded-full" style={{ backgroundColor: 'rgba(74,222,128,0.18)', borderWidth: 1, borderColor: 'rgba(74,222,128,0.45)' }}>
+              <Text className="text-xs font-black tracking-widest" style={{ color: '#86EFAC' }}>DÉJÀ INSCRIT</Text>
+            </View>
+          ) : null}
         </View>
         <View className="px-5 pb-4">
           <Text className="text-white font-black text-xl leading-tight mb-1">{league.name}</Text>
@@ -594,7 +632,7 @@ export default function LeagueDetailPage() {
             ))}
           </View>
         </ScrollView>
-      </View>
+      </PatternedGreenHeader>
 
       {/* Contenu */}
       <View className="flex-1">
@@ -633,16 +671,26 @@ export default function LeagueDetailPage() {
         )}
       </View>
 
-      {/* CTA inscription — uniquement si inscriptions ouvertes */}
+      {/* CTA inscription. Un membre déjà engagé dans cette ligue ne peut jamais
+          ouvrir un second parcours avec une autre équipe. */}
       {activeTab === 'Infos' && canRegister && (
         <View className="px-5 pb-8 pt-3" style={{ backgroundColor: '#0D1F0D' }}>
-          <Pressable
-            onPress={() => router.push(`/league/${id}/inscription`)}
-            className="h-14 rounded-2xl items-center justify-center"
-            style={{ backgroundColor: '#F7921E' }}
-          >
-            <Text className="text-white font-bold text-base">Inscrire mon équipe</Text>
-          </Pressable>
+          {alreadyRegistered ? (
+            <View className="rounded-2xl px-5 py-4" style={{ backgroundColor: 'rgba(46,158,79,0.16)', borderWidth: 1, borderColor: 'rgba(74,222,128,0.48)' }}>
+              <Text className="text-center font-black text-base" style={{ color: '#86EFAC' }}>✓ Tu participes déjà à cette ligue</Text>
+              {participatingTeam?.name ? (
+                <Text className="text-center text-sm mt-1" style={{ color: 'rgba(255,255,255,0.72)' }}>Avec {participatingTeam.name}</Text>
+              ) : null}
+            </View>
+          ) : (
+            <Pressable
+              onPress={() => router.push(`/league/${id}/inscription`)}
+              className="h-14 rounded-2xl items-center justify-center"
+              style={{ backgroundColor: '#F7921E' }}
+            >
+              <Text className="text-white font-bold text-base">Inscrire mon équipe</Text>
+            </Pressable>
+          )}
         </View>
       )}
     </ScreenBackground>

@@ -49,3 +49,6 @@ coverage/
 # ── Logs ──────────────────────────────────────────────────────────────────
 *.log
 logs/
+
+# Supabase CLI local cache
+supabase/.temp/

@@ -88,6 +88,13 @@ export interface ApiReservationStats {
   total_reservations: number;
 }
 
+/** Indicateurs d'exploitation non financiers, accessibles aux gérants. */
+export interface ApiOperationalStats {
+  today_count: number;
+  occupancy_rate: number;
+  total_reservations: number;
+}
+
 /** Libellés FR des statuts de réservation. */
 export const STATUS_FR: Record<ReservationStatus, string> = {
   pending: 'En attente',

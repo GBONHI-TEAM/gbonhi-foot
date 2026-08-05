@@ -1,19 +1,20 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import {
   View,
   Text,
   TextInput,
   ScrollView,
   Pressable,
-  Image,
-  ImageBackground,
   ActivityIndicator,
   FlatList,
+  RefreshControl,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { ScreenBackground } from '../../components/ui/screen-background';
-import { apiClient } from '../../lib/api';
+import { getCached } from '../../lib/api-cache';
 import { imageThumb } from '../../lib/image';
+import { RemoteImage } from '../../components/ui/remote-image';
+import { PatternedGreenHeader } from '../../components/ui/patterned-green-header';
 import {
   type Terrain,
   type TerrainSurface,
@@ -58,7 +59,7 @@ function TerrainCard({ terrain }: { terrain: Terrain }) {
       {/* Image */}
       <View style={{ height: 175 }}>
         {photo ? (
-          <Image source={{ uri: photo }} resizeMode="cover" style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} />
+          <RemoteImage uri={photo} contentFit="cover" style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} />
         ) : (
           <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(15,61,30,0.9)' }}>
             <Text style={{ fontSize: 40, opacity: 0.5 }}>🏟️</Text>
@@ -107,25 +108,29 @@ export default function TerrainListPage() {
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<FilterKey>('all');
+  const [refreshing, setRefreshing] = useState(false);
 
-  useEffect(() => {
-    let mounted = true;
-    (async () => {
-      try {
-        setLoading(true);
-        setError(null);
-        const { data } = await apiClient.get<Terrain[]>('/api/v1/terrains');
-        if (mounted) setTerrains(data ?? []);
-      } catch {
-        if (mounted) setError('Impossible de charger les terrains. Réessaie plus tard.');
-      } finally {
-        if (mounted) setLoading(false);
-      }
-    })();
-    return () => {
-      mounted = false;
-    };
+  const load = useCallback(async (isRefresh = false) => {
+    try {
+      if (isRefresh) setRefreshing(true); else setLoading(true);
+      setError(null);
+      const data = await getCached<Terrain[]>('/api/v1/terrains', 60_000, isRefresh);
+      setTerrains(data ?? []);
+    } catch {
+      setError('Impossible de charger les terrains. Réessaie plus tard.');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
   }, []);
+
+  // Recharge à CHAQUE affichage de l'écran (et non une seule fois au montage) :
+  // un terrain ajouté depuis le back-office apparaît dès qu'on revient sur la liste.
+  useFocusEffect(
+    useCallback(() => {
+      load();
+    }, [load]),
+  );
 
   const visible = useMemo(() => {
     return terrains.filter((t) => {
@@ -149,16 +154,14 @@ export default function TerrainListPage() {
 
   return (
     <ScreenBackground>
-      {/* Header kente vert (maquette s22) */}
-      <ImageBackground
-        source={require('../../../assets/images/kente-green.png')}
-        resizeMode="repeat"
+      {/* Header vert à motifs triangulaires (maquette s22) */}
+      <PatternedGreenHeader
         style={{ paddingTop: 56, paddingBottom: 18, paddingHorizontal: 20, borderBottomLeftRadius: 24, borderBottomRightRadius: 24, overflow: 'hidden' }}
-        imageStyle={{ borderBottomLeftRadius: 24, borderBottomRightRadius: 24 }}
+        patternOpacity={0.5}
       >
         <View className="flex-row items-center mb-4">
           <Pressable onPress={() => (router.canGoBack() ? router.back() : router.replace('/(tabs)'))} hitSlop={8} style={{ width: 32 }}>
-            <Text className="text-white text-2xl">‹</Text>
+            <Text className="text-white text-2xl">←</Text>
           </Pressable>
           <Text className="text-white font-black text-2xl flex-1 text-center" style={{ marginRight: 32 }}>Terrains</Text>
         </View>
@@ -172,7 +175,7 @@ export default function TerrainListPage() {
             className="flex-1 text-white text-base"
           />
         </View>
-      </ImageBackground>
+      </PatternedGreenHeader>
 
       {/* Filtres */}
       <ScrollView
@@ -225,6 +228,9 @@ export default function TerrainListPage() {
           contentContainerStyle={{ padding: 16, paddingBottom: 40 }}
           renderItem={({ item }) => <TerrainCard terrain={item} />}
           showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={() => load(true)} tintColor="#F7921E" />
+          }
         />
       )}
     </ScreenBackground>

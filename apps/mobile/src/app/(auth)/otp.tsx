@@ -157,7 +157,7 @@ export default function OtpScreen() {
                 zIndex: 10,
               }}
             >
-              <Text style={{ color: '#FFFFFF', fontSize: 22, marginTop: -2 }}>‹</Text>
+              <Text style={{ color: '#FFFFFF', fontSize: 22, marginTop: -2 }}>←</Text>
             </Pressable>
 
             {/* Sous-titre dynamique — vrai destinataire */}

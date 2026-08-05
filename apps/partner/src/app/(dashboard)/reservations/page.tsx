@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Header } from '../../../components/layout/header';
 import { Info, Search, Check, Clock, X } from 'lucide-react';
 import { apiFetch } from '../../../lib/api';
+import { usePartnerAccess } from '../../../components/auth/partner-access-provider';
 import {
   ApiReservation,
   ReservationStatus,
@@ -44,21 +45,22 @@ interface Row {
   status: ReservationStatus;
 }
 
-function mapRow(r: ApiReservation): Row {
+function mapRow(r: ApiReservation, showFinancials: boolean): Row {
   return {
     id: r.id,
     ref: r.id.slice(0, 8).toUpperCase(),
     client: r.user?.full_name ?? 'Client',
     date: dateCourteFR(r.reservation_date),
     creneau: heureRange(r.start_hour, r.end_hour),
-    montant: fcfa(r.total_price),
-    paiement: r.payment?.payment_method ?? '—',
+    montant: showFinancials && typeof r.total_price === 'number' ? fcfa(r.total_price) : '—',
+    paiement: showFinancials ? r.payment?.payment_method ?? '—' : '—',
     statut: STATUS_FR[r.status],
     status: r.status,
   };
 }
 
 export default function ReservationsPage() {
+  const { isOwner, loading: accessLoading } = usePartnerAccess();
   const [tab, setTab] = useState('Toutes');
   const [query, setQuery] = useState('');
   const [rows, setRows] = useState<Row[]>([]);
@@ -70,7 +72,7 @@ export default function ReservationsPage() {
     try {
       const data = await apiFetch<ApiReservation[]>('/reservations');
       if (signal?.cancelled) return;
-      if (Array.isArray(data)) setRows(data.map(mapRow));
+      if (Array.isArray(data)) setRows(data.map((reservation) => mapRow(reservation, isOwner)));
     } catch {
       /* liste vide */
     } finally {
@@ -84,7 +86,7 @@ export default function ReservationsPage() {
     return () => {
       signal.cancelled = true;
     };
-  }, []);
+  }, [isOwner, accessLoading]);
 
   async function changeStatus(
     id: string,
@@ -174,7 +176,7 @@ export default function ReservationsPage() {
           <table className="w-full text-left">
             <thead>
               <tr style={{ backgroundColor: '#1E7A3A' }}>
-                {['Réf', 'Client', 'Date', 'Créneau', 'Montant', 'Paiement', 'Statut', 'Actions'].map((h) => (
+                {['Réf', 'Client', 'Date', 'Créneau', ...(isOwner ? ['Montant', 'Paiement'] : []), 'Statut', 'Actions'].map((h) => (
                   <th key={h} className="px-4 py-2.5 text-[11px] font-semibold text-white uppercase tracking-wide whitespace-nowrap">{h}</th>
                 ))}
               </tr>
@@ -188,8 +190,8 @@ export default function ReservationsPage() {
                     <td className="px-4 py-3 text-[13px] font-semibold text-gray-900 whitespace-nowrap">{r.client}</td>
                     <td className="px-4 py-3 text-[13px] text-gray-600 whitespace-nowrap">{r.date}</td>
                     <td className="px-4 py-3 text-[13px] text-gray-600 whitespace-nowrap">{r.creneau}</td>
-                    <td className="px-4 py-3 text-[13px] font-medium text-gray-900 whitespace-nowrap">{r.montant}</td>
-                    <td className="px-4 py-3 text-[13px] font-semibold whitespace-nowrap" style={{ color: PAIEMENT_COLOR[r.paiement] ?? '#9CA3AF' }}>{r.paiement}</td>
+                    {isOwner && <><td className="px-4 py-3 text-[13px] font-medium text-gray-900 whitespace-nowrap">{r.montant}</td>
+                    <td className="px-4 py-3 text-[13px] font-semibold whitespace-nowrap" style={{ color: PAIEMENT_COLOR[r.paiement] ?? '#9CA3AF' }}>{r.paiement}</td></>}
                     <td className="px-4 py-3 whitespace-nowrap">
                       <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-full" style={{ backgroundColor: badge.bg, color: badge.color }}>
                         {badge.icon} {r.statut}

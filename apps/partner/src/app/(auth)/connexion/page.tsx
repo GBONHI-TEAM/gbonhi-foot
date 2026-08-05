@@ -1,5 +1,5 @@
 'use client';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Mail, Lock, Eye, EyeOff, Lock as LockSmall } from 'lucide-react';
 import logoSrc from '../../../assets/logo.png';
@@ -19,6 +19,12 @@ export default function PartnerLoginPage() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get('access') === 'denied') {
+      setError('Ce compte ne possède pas d’accès actif à la plateforme partenaire.');
+    }
+  }, []);
+
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
     setError('');
@@ -26,7 +32,7 @@ export default function PartnerLoginPage() {
     const { error: authError } = await supabase.auth.signInWithPassword({ email, password });
     setLoading(false);
     if (authError) {
-      setError(authError.message);
+      setError('Adresse e-mail ou mot de passe incorrect.');
       return;
     }
     router.push('/tableau-de-bord');

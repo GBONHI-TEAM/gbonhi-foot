@@ -5,6 +5,7 @@ import {
   ForbiddenException,
   BadRequestException,
 } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateTeamDto } from './dto/create-team.dto';
 import { UpdateTeamDto } from './dto/update-team.dto';
@@ -131,6 +132,8 @@ export class TeamsService {
     });
     if (!team) throw new NotFoundException('Code d\'invitation invalide');
 
+    await this.assertNoLeagueParticipationConflict(this.prisma, team.id, user.id);
+
     const existing = await this.prisma.teamMember.findUnique({
       where: { team_id_user_id: { team_id: team.id, user_id: user.id } },
     });
@@ -176,6 +179,12 @@ export class TeamsService {
     await this.prisma.teamMember.delete({
       where: { team_id_user_id: { team_id: teamId, user_id: user.id } },
     });
+    // Quitter l'équipe libère sa place dans chacune de ses ligues. Un joueur
+    // peut ensuite représenter une autre équipe dans cette même ligue, tant que
+    // les règles de calendrier/composition de la ligue le permettent.
+    await this.prisma.leaguePlayerRegistration.deleteMany({
+      where: { team_id: teamId, user_id: user.id },
+    });
 
     return { message: 'Tu as quitté l\'équipe' };
   }
@@ -209,11 +218,36 @@ export class TeamsService {
     const member = await this.prisma.teamMember.findUnique({ where: { id: memberId } });
     if (!member || member.team_id !== teamId) throw new NotFoundException('Demande introuvable');
     if (member.status === 'active') return member;
-    const updated = await this.prisma.teamMember.update({
-      where: { id: memberId },
-      data: { status: 'active', joined_at: new Date() },
-      include: { user: { select: { id: true, full_name: true, avatar_url: true, position: true } } },
-    });
+    let updated;
+    try {
+      updated = await this.prisma.$transaction(async (tx) => {
+        await this.assertNoLeagueParticipationConflict(tx, teamId, member.user_id);
+        const teamLeagues = await tx.tournamentTeam.findMany({
+          where: { team_id: teamId },
+          select: { tournament_id: true },
+        });
+        const activated = await tx.teamMember.update({
+          where: { id: memberId },
+          data: { status: 'active', joined_at: new Date() },
+          include: { user: { select: { id: true, full_name: true, avatar_url: true, position: true } } },
+        });
+        if (teamLeagues.length > 0) {
+          await tx.leaguePlayerRegistration.createMany({
+            data: teamLeagues.map((league) => ({
+              tournament_id: league.tournament_id,
+              team_id: teamId,
+              user_id: member.user_id,
+            })),
+          });
+        }
+        return activated;
+      });
+    } catch (error: unknown) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        throw new ConflictException('Ce joueur participe déjà à cette ligue avec une autre équipe.');
+      }
+      throw error;
+    }
     await this.notifications.notify(member.user_id, {
       type: 'team_join_approved',
       title: 'Demande acceptée 🎉',
@@ -249,5 +283,46 @@ export class TeamsService {
     });
     if (!team) throw new NotFoundException('Code d\'invitation invalide');
     return team;
+  }
+
+  /**
+   * Cherche une participation existante du joueur dans l'une des ligues de
+   * l'équipe cible. La vérification s'appuie sur les membres actifs ET sur le
+   * verrou de participation afin de couvrir l'historique et la concurrence.
+   */
+  private async assertNoLeagueParticipationConflict(
+    db: Prisma.TransactionClient | PrismaService,
+    targetTeamId: string,
+    userId: string,
+  ) {
+    const targetRegistrations = await db.tournamentTeam.findMany({
+      where: { team_id: targetTeamId },
+      select: { tournament_id: true, tournament: { select: { name: true } } },
+    });
+    if (targetRegistrations.length === 0) return;
+    const tournamentIds = targetRegistrations.map((registration) => registration.tournament_id);
+
+    const [membershipConflict, lockConflict] = await Promise.all([
+      db.tournamentTeam.findFirst({
+        where: {
+          tournament_id: { in: tournamentIds },
+          team_id: { not: targetTeamId },
+          team: { members: { some: { user_id: userId, status: 'active' } } },
+        },
+        include: { team: { select: { name: true } }, tournament: { select: { name: true } } },
+      }),
+      db.leaguePlayerRegistration.findFirst({
+        where: {
+          tournament_id: { in: tournamentIds },
+          user_id: userId,
+          team_id: { not: targetTeamId },
+        },
+        include: { team: { select: { name: true } }, tournament: { select: { name: true } } },
+      }),
+    ]);
+    const conflict = membershipConflict ?? lockConflict;
+    if (conflict) {
+      throw new ConflictException(`Tu participes déjà à ${conflict.tournament.name} avec ${conflict.team.name}.`);
+    }
   }
 }

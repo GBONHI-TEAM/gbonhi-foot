@@ -1,6 +1,6 @@
-import { View, Text, Pressable, Share } from 'react-native';
+import { View, Text, Pressable, Share, ImageBackground } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { ScreenBackground } from '../../components/ui/screen-background';
+import { teamInviteLink } from '../../lib/api';
 
 export default function TeamSuccessPage() {
   const router = useRouter();
@@ -8,20 +8,26 @@ export default function TeamSuccessPage() {
   const invitationCode = params.code?.trim() ? params.code : '—';
   const teamName = params.name?.trim() ? params.name : 'Ton équipe';
   const hasCode = !!params.code?.trim();
-  const joinLink = hasCode ? `gbonhi://join?code=${encodeURIComponent(invitationCode)}` : '';
+  const joinLink = hasCode ? teamInviteLink(invitationCode) : '';
 
   async function shareCode() {
     if (!hasCode) return;
-    await Share.share({ message: `Rejoins ${teamName} sur GBONHI FOOT ⚽\nCode d'invitation : ${invitationCode}` });
+    await Share.share({ message: `⚽ Rejoins ${teamName} sur GBONHI FOOT !\n\nCode d'invitation : ${invitationCode}\n\nOuvre ou télécharge l'application pour rejoindre l'équipe 👇\n${joinLink}` });
   }
 
   async function shareLink() {
     if (!hasCode) return;
-    await Share.share({ message: `Rejoins ${teamName} sur GBONHI FOOT ⚽\nClique sur le lien : ${joinLink}\n(ou saisis le code ${invitationCode} dans l'app)` });
+    await Share.share({ message: `⚽ ${teamName} t'attend sur GBONHI FOOT !\n\nRejoins l'équipe directement dans l'application 👇\n${joinLink}\n\nCode d'invitation : ${invitationCode}` });
   }
 
   return (
-    <ScreenBackground style={{ alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32 }}>
+    <ImageBackground
+      source={require('../../../assets/images/kente-green.png')}
+      resizeMode="repeat"
+      style={{ flex: 1, backgroundColor: '#0F3D1E' }}
+      imageStyle={{ opacity: 0.38 }}
+    >
+      <View className="flex-1 items-center justify-center px-8" style={{ backgroundColor: 'rgba(13,31,13,0.78)' }}>
       {/* Success animation placeholder */}
       <View
         className="w-24 h-24 rounded-full items-center justify-center mb-6"
@@ -78,6 +84,7 @@ export default function TeamSuccessPage() {
       >
         <Text className="text-white font-bold text-base">Aller à l&apos;accueil</Text>
       </Pressable>
-    </ScreenBackground>
+      </View>
+    </ImageBackground>
   );
 }

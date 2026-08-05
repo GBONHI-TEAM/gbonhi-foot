@@ -1,8 +1,9 @@
-import { View, Text, Image, ImageBackground, Pressable } from 'react-native';
+import { View, Text, Image, Pressable } from 'react-native';
+import { PatternedGreenHeader } from './patterned-green-header';
 
 /**
- * En-tête vert kente réutilisable (fidèle à la maquette s08) : fond vert
- * `#1E7A3A` avec filigrane kente, coins bas arrondis.
+ * En-tête réutilisable fidèle aux exports mobiles : fond vert officiel,
+ * motifs géométriques ivoiriens limités au header et coins bas arrondis.
  *
  * Deux usages :
  *  - Accueil : `leading` = logo (par défaut), `title` = « Bonjour X 👋 », `subtitle`,
@@ -15,28 +16,31 @@ export function AppHeader({
   actions,
   onBack,
   showLogo = true,
+  centered = false,
 }: {
   title: string;
   subtitle?: string;
   actions?: React.ReactNode;
   onBack?: () => void;
   showLogo?: boolean;
+  /** À utiliser pour les écrans de détail : titre centré, retour à gauche. */
+  centered?: boolean;
 }) {
+  const titleLeftInset = onBack && showLogo ? 116 : onBack || showLogo ? 72 : 20;
+  const titleRightInset = actions ? 76 : 20;
+
   return (
-    <ImageBackground
-      source={require('../../../assets/images/kente-green.png')}
-      resizeMode="repeat"
+    <PatternedGreenHeader
       style={{
         paddingTop: 56,
         paddingBottom: 20,
         paddingHorizontal: 20,
         borderBottomLeftRadius: 24,
         borderBottomRightRadius: 24,
-        overflow: 'hidden',
       }}
-      imageStyle={{ borderBottomLeftRadius: 24, borderBottomRightRadius: 24 }}
+      patternOpacity={0.5}
     >
-      <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', minHeight: 48 }}>
         {onBack ? (
           <Pressable
             onPress={onBack}
@@ -46,20 +50,23 @@ export function AppHeader({
               width: 40,
               height: 40,
               borderRadius: 20,
-              marginRight: 10,
+              marginRight: centered ? 0 : 10,
               alignItems: 'center',
               justifyContent: 'center',
               backgroundColor: 'rgba(255,255,255,0.15)',
             }}
           >
-            <Text style={{ color: '#FFFFFF', fontSize: 22, marginTop: -2 }}>‹</Text>
+            <Text style={{ color: '#FFFFFF', fontSize: 22, marginTop: -2 }}>←</Text>
           </Pressable>
-        ) : showLogo ? (
+        ) : null}
+
+        {showLogo ? (
           <View
             style={{
               width: 48,
               height: 48,
               borderRadius: 24,
+              marginLeft: onBack ? 8 : 0,
               marginRight: 12,
               alignItems: 'center',
               justifyContent: 'center',
@@ -69,16 +76,18 @@ export function AppHeader({
               borderColor: '#FFB830',
             }}
           >
-            <Image source={require('../../../assets/images/logo.png')} resizeMode="contain" style={{ width: 40, height: 28 }} />
+            <Image source={require('../../../assets/images/logo.png')} resizeMode="contain" style={{ width: 42, height: 34 }} />
           </View>
         ) : null}
 
-        <View style={{ flex: 1, minWidth: 0 }}>
-          <Text numberOfLines={1} style={{ color: '#FFFFFF', fontSize: 22, fontWeight: '800' }}>
+        <View
+          style={centered ? { position: 'absolute', left: titleLeftInset, right: titleRightInset, alignItems: 'center' } : { flex: 1, minWidth: 0 }}
+        >
+          <Text numberOfLines={centered ? 1 : 2} style={{ color: '#FFFFFF', fontSize: 22, fontWeight: '800', textAlign: centered ? 'center' : 'left' }}>
             {title}
           </Text>
           {subtitle ? (
-            <Text numberOfLines={1} style={{ color: 'rgba(255,255,255,0.8)', fontSize: 13, marginTop: 2 }}>
+            <Text numberOfLines={centered ? 1 : 2} style={{ color: 'rgba(255,255,255,0.8)', fontSize: 13, marginTop: 2, textAlign: centered ? 'center' : 'left' }}>
               {subtitle}
             </Text>
           ) : null}
@@ -86,7 +95,7 @@ export function AppHeader({
 
         {actions ? <View style={{ flexDirection: 'row', alignItems: 'center' }}>{actions}</View> : null}
       </View>
-    </ImageBackground>
+    </PatternedGreenHeader>
   );
 }
 

@@ -1,4 +1,4 @@
-import { IsDateString, IsInt, IsOptional, IsString, Min, Max } from 'class-validator';
+import { IsDateString, IsNumber, IsOptional, IsString, Min, Max } from 'class-validator';
 
 export class CreateReservationDto {
   // @IsString (et non @IsUUID) : les UUID seed (ex. 2222…2201) ont des bits de
@@ -9,12 +9,12 @@ export class CreateReservationDto {
   @IsDateString()
   reservation_date: string;
 
-  @IsInt()
+  @IsNumber({ maxDecimalPlaces: 1 })
   @Min(6)
-  @Max(22)
+  @Max(22.5)
   start_hour: number;
 
-  @IsInt()
+  @IsNumber({ maxDecimalPlaces: 1 })
   @Min(7)
   @Max(23)
   end_hour: number;

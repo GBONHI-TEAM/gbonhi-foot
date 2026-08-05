@@ -1,12 +1,14 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { Header } from '../../../components/layout/header';
-import { Wallet, CalendarCheck, TrendingUp, Gauge, LineChart, Star } from 'lucide-react';
+import { Wallet, CalendarCheck, TrendingUp, Gauge, LineChart, Star, ListChecks } from 'lucide-react';
 import { apiFetch } from '../../../lib/api';
 import { useCurrentUser } from '../../../lib/use-user';
+import { usePartnerAccess } from '../../../components/auth/partner-access-provider';
 import {
   ApiReservation,
   ApiReservationStats,
+  ApiOperationalStats,
   ApiTerrain,
   STATUS_FR,
   STATUS_BADGE_FR,
@@ -23,24 +25,44 @@ interface ResaJour {
   statut: string;
 }
 
+interface RevenuePoint { date: string; amount: number }
+interface PartnerReview {
+  id: string;
+  rating: number;
+  comment: string | null;
+  created_at: string;
+  terrain: { id: string; name: string };
+  user: { id: string; full_name: string | null; avatar_url: string | null };
+}
+
 export default function PartnerDashboardPage() {
   const user = useCurrentUser();
-  const [stats, setStats] = useState<ApiReservationStats | null>(null);
+  const { isOwner, loading: accessLoading } = usePartnerAccess();
+  const [stats, setStats] = useState<ApiReservationStats | ApiOperationalStats | null>(null);
   const [terrain, setTerrain] = useState<ApiTerrain | null>(null);
   const [resaJour, setResaJour] = useState<ResaJour[]>([]);
+  const [revenueHistory, setRevenueHistory] = useState<RevenuePoint[]>([]);
+  const [latestReviews, setLatestReviews] = useState<PartnerReview[]>([]);
 
   useEffect(() => {
     let cancelled = false;
+    if (accessLoading) return;
     (async () => {
       try {
-        const [s, terrains, resas] = await Promise.all([
-          apiFetch<ApiReservationStats>('/reservations/stats/summary'),
+        const [s, terrains, resas, history, reviews] = await Promise.all([
+          isOwner
+            ? apiFetch<ApiReservationStats>('/reservations/stats/summary')
+            : apiFetch<ApiOperationalStats>('/reservations/stats/operational-summary'),
           apiFetch<ApiTerrain[]>('/terrains/mine'),
           apiFetch<ApiReservation[]>(`/reservations?date=${todayISO()}`),
+          isOwner ? apiFetch<RevenuePoint[]>('/reservations/stats/revenue-history') : Promise.resolve([] as RevenuePoint[]),
+          apiFetch<PartnerReview[]>('/terrains/mine/reviews'),
         ]);
         if (cancelled) return;
         setStats(s);
         if (Array.isArray(terrains) && terrains.length > 0) setTerrain(terrains[0]);
+        setRevenueHistory(Array.isArray(history) ? history : []);
+        setLatestReviews(Array.isArray(reviews) ? reviews : []);
         if (Array.isArray(resas)) {
           setResaJour(
             resas
@@ -49,7 +71,7 @@ export default function PartnerDashboardPage() {
               .map((r) => ({
                 heure: `${String(r.start_hour).padStart(2, '0')}h00`,
                 client: r.user?.full_name ?? 'Client',
-                detail: `Terrain · ${fcfa(r.total_price)}`,
+                detail: isOwner && typeof r.total_price === 'number' ? `Terrain · ${fcfa(r.total_price)}` : 'Terrain',
                 statut: STATUS_FR[r.status],
               }))
           );
@@ -61,18 +83,19 @@ export default function PartnerDashboardPage() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [accessLoading, isOwner]);
 
   const nomUser = displayName(user);
   const nomTerrain = terrain?.name ?? '';
   const dateLongue = dateLongueFR();
   const sousTitre = nomTerrain ? `${nomTerrain} · ${dateLongue}` : dateLongue;
 
-  const revenuMois = stats ? fcfa(stats.month_revenue) : '—';
-  const revenuSemaine = stats ? fcfa(stats.week_revenue) : '—';
+  const financialStats = isOwner ? stats as ApiReservationStats | null : null;
+  const revenuMois = financialStats ? fcfa(financialStats.month_revenue) : '—';
+  const revenuSemaine = financialStats ? fcfa(financialStats.week_revenue) : '—';
   const resaAujourdhui = stats ? String(stats.today_count) : '—';
   const tauxOccupation = stats ? `${Math.round(stats.occupancy_rate)}%` : '—';
-  const caJour = stats ? fcfa(stats.today_revenue) : '—';
+  const caJour = financialStats ? fcfa(financialStats.today_revenue) : '—';
   const occupWidth = stats ? `${Math.round(stats.occupancy_rate)}%` : '0%';
   const nbResaJour = stats ? stats.today_count : 0;
 
@@ -97,7 +120,7 @@ export default function PartnerDashboardPage() {
               {nomTerrain ? `${nomTerrain} · ` : ''}Aujourd&apos;hui, {dateLongue}
             </p>
             <p className="text-[13px] text-gray-600 mt-0.5">
-              {nbResaJour} réservation{nbResaJour > 1 ? 's' : ''} aujourd&apos;hui · CA du jour : <span className="font-semibold" style={{ color: '#1E7A3A' }}>{caJour}</span>
+              {nbResaJour} réservation{nbResaJour > 1 ? 's' : ''} aujourd&apos;hui{isOwner ? <> · CA du jour : <span className="font-semibold" style={{ color: '#1E7A3A' }}>{caJour}</span></> : ''}
             </p>
             <div className="mt-3">
               <div className="flex items-center justify-between text-[12px] text-gray-500 mb-1">
@@ -113,23 +136,17 @@ export default function PartnerDashboardPage() {
       </div>
 
       {/* KPI réels */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        <KpiCard icon={<Wallet size={16} />} iconColor="#1E7A3A" label="Revenu du mois" value={revenuMois} />
-        <KpiCard icon={<TrendingUp size={16} />} iconColor="#1E7A3A" label="Revenu de la semaine" value={revenuSemaine} />
+      <div className={`grid grid-cols-1 md:grid-cols-2 ${isOwner ? 'lg:grid-cols-4' : 'lg:grid-cols-3'} gap-4 mb-6`}>
+        {isOwner && <><KpiCard icon={<Wallet size={16} />} iconColor="#1E7A3A" label="Revenu du mois" value={revenuMois} />
+        <KpiCard icon={<TrendingUp size={16} />} iconColor="#1E7A3A" label="Revenu de la semaine" value={revenuSemaine} /></>}
         <KpiCard icon={<CalendarCheck size={16} />} iconColor="#F7921E" label="Réservations aujourd'hui" value={resaAujourdhui} sub="terrain" />
         <KpiCard icon={<Gauge size={16} />} iconColor="#1E7A3A" label="Taux d'occupation" value={tauxOccupation} sub="ce mois" />
+        {!isOwner && <KpiCard icon={<ListChecks size={16} />} iconColor="#1E7A3A" label="Réservations cumulées" value={stats ? String(stats.total_reservations) : '—'} sub="accès gérant" />}
       </div>
 
-      {/* Historique (pas encore d'endpoint) + réservations du jour */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-        <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-100">
-          <h2 className="font-semibold text-gray-900 text-[14px] mb-4">Revenus — 30 derniers jours</h2>
-          <div className="h-52 flex flex-col items-center justify-center text-center">
-            <LineChart size={28} className="text-gray-300 mb-3" />
-            <p className="text-[13px] font-medium text-gray-500">Historique bientôt disponible</p>
-            <p className="text-[12px] text-gray-400 mt-1 max-w-xs">La courbe des revenus s&apos;affichera dès que l&apos;historique quotidien sera collecté.</p>
-          </div>
-        </div>
+      {/* Historique réel des revenus (propriétaire) + réservations du jour */}
+      <div className={`grid grid-cols-1 ${isOwner ? 'lg:grid-cols-2' : ''} gap-6 mb-6`}>
+        {isOwner && <RevenueHistoryCard points={revenueHistory} />}
 
         <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-100">
           <h2 className="font-semibold text-gray-900 text-[14px] mb-4">Réservations du jour</h2>
@@ -158,17 +175,19 @@ export default function PartnerDashboardPage() {
         </div>
       </div>
 
-      {/* Derniers avis — pas d'endpoint : état vide propre */}
+      {/* Derniers avis réellement laissés par les clients */}
       <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-100">
         <h2 className="font-semibold text-gray-900 text-[14px] mb-4">Derniers avis</h2>
-        <div className="flex flex-col items-center justify-center text-center py-8">
-          <Star size={28} className="text-gray-300 mb-3" />
-          <p className="text-[13px] font-medium text-gray-500">Aucun avis pour le moment</p>
-          <p className="text-[12px] text-gray-400 mt-1">Les avis laissés par vos clients apparaîtront ici.</p>
-        </div>
+        {latestReviews.length === 0 ? <div className="flex flex-col items-center justify-center text-center py-8"><Star size={28} className="text-gray-300 mb-3" /><p className="text-[13px] font-medium text-gray-500">Aucun avis pour le moment</p><p className="text-[12px] text-gray-400 mt-1">Les avis laissés par vos clients apparaîtront ici.</p></div> : <div className="divide-y divide-gray-100">{latestReviews.map((review) => <div key={review.id} className="py-3 first:pt-0 last:pb-0"><div className="flex items-center justify-between gap-3"><div><p className="text-[13px] font-semibold text-gray-900">{review.user.full_name?.trim() || 'Client GBONHI FOOT'}</p><p className="text-[11px] text-gray-400">{review.terrain.name}</p></div><span className="whitespace-nowrap text-sm font-bold text-amber-500">{'★'.repeat(review.rating)}<span className="text-gray-200">{'★'.repeat(5 - review.rating)}</span></span></div>{review.comment && <p className="mt-1.5 text-[13px] text-gray-600">{review.comment}</p>}</div>)}</div>}
       </div>
     </>
   );
+}
+
+function RevenueHistoryCard({ points }: { points: RevenuePoint[] }) {
+  const max = Math.max(1, ...points.map((point) => point.amount));
+  const total = points.reduce((sum, point) => sum + point.amount, 0);
+  return <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-100"><div className="mb-4 flex items-center justify-between"><div><h2 className="font-semibold text-gray-900 text-[14px]">Revenus — 30 derniers jours</h2><p className="text-[12px] text-gray-400">Montants nets reversables</p></div><LineChart size={18} className="text-primary" /></div>{points.length === 0 ? <p className="py-14 text-center text-[13px] text-gray-400">Aucun revenu sur cette période.</p> : <><div className="flex h-36 items-end gap-1">{points.map((point) => <div key={point.date} title={`${point.date} · ${fcfa(point.amount)}`} className="group flex h-full min-w-0 flex-1 flex-col justify-end"><div className="rounded-t bg-primary transition-colors group-hover:bg-primaryMedium" style={{ height: `${Math.max(point.amount > 0 ? 5 : 1, Math.round((point.amount / max) * 100))}%` }} /></div>)}</div><div className="mt-3 flex items-center justify-between text-[12px] text-gray-400"><span>{points[0]?.date.slice(8)} {new Date(`${points[0]?.date}T00:00:00`).toLocaleDateString('fr-FR', { month: 'short' })}</span><span className="font-semibold text-primary">{fcfa(total)}</span><span>{points.at(-1)?.date.slice(8)} {new Date(`${points.at(-1)?.date}T00:00:00`).toLocaleDateString('fr-FR', { month: 'short' })}</span></div></>}</div>;
 }
 
 function KpiCard({ icon, iconColor, label, value, sub }: {

@@ -20,32 +20,36 @@ import {
   LifeBuoy,
   Bell,
   KeyRound,
+  Building2,
   type LucideIcon,
 } from 'lucide-react';
+import { type AdminRole } from '../../lib/admin-access';
 
 interface NavItem {
   label: string;
   icon: LucideIcon;
   href: string;
+  roles: AdminRole[];
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { label: 'Dashboard', icon: LayoutGrid, href: '/tableau-de-bord' },
-  { label: 'KPI', icon: BarChart3, href: '/kpi' },
-  { label: 'Finance', icon: DollarSign, href: '/finance' },
-  { label: 'Ligues', icon: Trophy, href: '/ligues' },
-  { label: 'Matchs', icon: Target, href: '/matchs' },
-  { label: 'Calendriers', icon: Calendar, href: '/calendriers' },
-  { label: 'Classements', icon: ListOrdered, href: '/classements' },
-  { label: 'Utilisateurs', icon: Users, href: '/utilisateurs' },
-  { label: 'Équipes', icon: Shield, href: '/equipes' },
-  { label: 'Incidents', icon: AlertTriangle, href: '/incidents' },
-  { label: 'Terrains', icon: MapPin, href: '/terrains' },
-  { label: 'Réservations', icon: CalendarCheck, href: '/reservations' },
-  { label: 'Avis', icon: Star, href: '/avis' },
-  { label: 'Support', icon: LifeBuoy, href: '/support' },
-  { label: 'Notifications', icon: Bell, href: '/notifications' },
-  { label: 'Rôles & Accès', icon: KeyRound, href: '/roles' },
+  { label: 'Dashboard', icon: LayoutGrid, href: '/tableau-de-bord', roles: ['SUPER_ADMIN', 'ADMIN', 'CONTROLEUR', 'SUPPORT', 'OPERATEUR'] },
+  { label: 'KPI', icon: BarChart3, href: '/kpi', roles: ['SUPER_ADMIN', 'ADMIN'] },
+  { label: 'Finance', icon: DollarSign, href: '/finance', roles: ['SUPER_ADMIN', 'ADMIN'] },
+  { label: 'Ligues', icon: Trophy, href: '/ligues', roles: ['SUPER_ADMIN', 'ADMIN', 'OPERATEUR'] },
+  { label: 'Matchs', icon: Target, href: '/matchs', roles: ['SUPER_ADMIN', 'ADMIN', 'CONTROLEUR', 'OPERATEUR'] },
+  { label: 'Calendriers', icon: Calendar, href: '/calendriers', roles: ['SUPER_ADMIN', 'ADMIN', 'OPERATEUR'] },
+  { label: 'Classements', icon: ListOrdered, href: '/classements', roles: ['SUPER_ADMIN', 'ADMIN', 'CONTROLEUR', 'OPERATEUR'] },
+  { label: 'Utilisateurs', icon: Users, href: '/utilisateurs', roles: ['SUPER_ADMIN', 'ADMIN', 'SUPPORT'] },
+  { label: 'Équipes', icon: Shield, href: '/equipes', roles: ['SUPER_ADMIN', 'ADMIN', 'SUPPORT', 'OPERATEUR'] },
+  { label: 'Incidents', icon: AlertTriangle, href: '/incidents', roles: ['SUPER_ADMIN', 'ADMIN', 'CONTROLEUR', 'SUPPORT'] },
+  { label: 'Terrains', icon: MapPin, href: '/terrains', roles: ['SUPER_ADMIN', 'ADMIN', 'OPERATEUR'] },
+  { label: 'Réservations', icon: CalendarCheck, href: '/reservations', roles: ['SUPER_ADMIN', 'ADMIN', 'OPERATEUR'] },
+  { label: 'Avis', icon: Star, href: '/avis', roles: ['SUPER_ADMIN', 'ADMIN', 'SUPPORT'] },
+  { label: 'Support', icon: LifeBuoy, href: '/support', roles: ['SUPER_ADMIN', 'ADMIN', 'SUPPORT'] },
+  { label: 'Notifications', icon: Bell, href: '/notifications', roles: ['SUPER_ADMIN', 'ADMIN', 'SUPPORT'] },
+  { label: 'Rôles & Accès', icon: KeyRound, href: '/roles', roles: ['SUPER_ADMIN'] },
+  { label: 'Accès partenaires', icon: Building2, href: '/acces-partenaires', roles: ['SUPER_ADMIN', 'ADMIN'] },
 ];
 
 /** Frise verticale décorative — motif ivoirien officiel extrait de la maquette
@@ -80,16 +84,13 @@ function LogoEmblem() {
   );
 }
 
-export function Sidebar() {
+export function Sidebar({ role }: { role: AdminRole }) {
   const pathname = usePathname();
 
   return (
     <aside
       className="fixed top-0 left-0 h-full w-60 flex flex-col z-30 overflow-hidden"
-      style={{
-        background:
-          'radial-gradient(120% 60% at 20% 0%, #14522A 0%, #0F3D1E 45%, #0B2E16 100%)',
-      }}
+      style={{ backgroundColor: '#1E7A3A' }}
     >
       <MotifBand />
 
@@ -110,7 +111,7 @@ export function Sidebar() {
 
       {/* Nav items */}
       <nav className="flex-1 pl-[18px] pr-3 pt-2 overflow-y-auto">
-        {NAV_ITEMS.map(({ label, icon: Icon, href }) => {
+        {NAV_ITEMS.filter((item) => item.roles.includes(role)).map(({ label, icon: Icon, href }) => {
           const isActive = pathname === href || pathname.startsWith(href + '/');
           return (
             <Link

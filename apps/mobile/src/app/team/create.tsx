@@ -13,8 +13,10 @@ import {
 import { useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { ScreenBackground } from '../../components/ui/screen-background';
+import { AppHeader } from '../../components/ui/app-header';
 import { apiClient } from '../../lib/api';
 import { imageThumb } from '../../lib/image';
+import { RemoteImage } from '../../components/ui/remote-image';
 import { supabase } from '../../lib/supabase';
 
 // Palette de base (couleurs de maillot courantes). L'utilisateur peut en ajouter d'autres.
@@ -125,7 +127,10 @@ export default function CreateTeamPage() {
   }
 
   async function handleCreate() {
-    if (!teamName.trim() || !selectedTerrain) return;
+    if (!logoUrl || !teamName.trim() || !selectedTerrain) {
+      Alert.alert('Équipe incomplète', 'Ajoute un logo, le nom de l’équipe et son terrain domicile.');
+      return;
+    }
     setLoading(true);
     try {
       const { data } = await apiClient.post<{ id: string; name: string; invitation_code?: string | null }>('/api/v1/teams', {
@@ -186,13 +191,7 @@ export default function CreateTeamPage() {
 
   return (
     <ScreenBackground>
-      {/* Header */}
-      <View className="flex-row items-center px-5 pt-14 pb-4 gap-3" style={{ backgroundColor: '#1E7A3A' }}>
-        <Pressable onPress={() => router.back()} hitSlop={8}>
-          <Text className="text-white text-2xl">‹</Text>
-        </Pressable>
-        <Text className="text-white font-black text-xl flex-1 text-center mr-7">Créer une équipe</Text>
-      </View>
+      <AppHeader title="Créer une équipe" onBack={() => router.back()} showLogo={false} centered />
 
       <ScrollView className="flex-1" contentContainerStyle={{ padding: 20, paddingBottom: 40 }}>
         {/* Logo picker */}
@@ -205,7 +204,7 @@ export default function CreateTeamPage() {
             {uploading ? (
               <ActivityIndicator color="#F7921E" />
             ) : logoUrl ? (
-              <Image source={{ uri: imageThumb(logoUrl, 200) }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
+              <RemoteImage uri={imageThumb(logoUrl, 200)} contentFit="cover" style={{ width: '100%', height: '100%' }} />
             ) : (
               <Text style={{ color: 'rgba(255,255,255,0.3)', fontSize: 28 }}>🖼</Text>
             )}
@@ -309,9 +308,9 @@ export default function CreateTeamPage() {
         {/* CTA */}
         <Pressable
           onPress={handleCreate}
-          disabled={!teamName.trim() || !selectedTerrain || loading}
+          disabled={!logoUrl || !teamName.trim() || !selectedTerrain || loading}
           className="h-14 rounded-2xl items-center justify-center"
-          style={{ backgroundColor: '#F7921E', opacity: !teamName.trim() || !selectedTerrain ? 0.5 : 1 }}
+          style={{ backgroundColor: '#F7921E', opacity: !logoUrl || !teamName.trim() || !selectedTerrain ? 0.5 : 1 }}
         >
           {loading ? <ActivityIndicator color="white" /> : <Text className="text-white font-bold text-base">Créer l&apos;équipe</Text>}
         </Pressable>

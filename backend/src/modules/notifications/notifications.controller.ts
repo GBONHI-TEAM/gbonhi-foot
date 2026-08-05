@@ -12,8 +12,10 @@ import { CreateNotificationDto } from './dto/create-notification.dto';
 import { SupabaseAuthGuard } from '../auth/supabase-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { UserPayload } from '../../common/types/user-payload.type';
+import { RolesGuard } from '../../common/access/roles.guard';
+import { Roles } from '../../common/access/roles.decorator';
 
-@UseGuards(SupabaseAuthGuard)
+@UseGuards(SupabaseAuthGuard, RolesGuard)
 @Controller('notifications')
 export class NotificationsController {
   constructor(private readonly notificationsService: NotificationsService) {}
@@ -24,6 +26,7 @@ export class NotificationsController {
   }
 
   @Get('all')
+  @Roles('SUPER_ADMIN', 'ADMIN', 'SUPPORT')
   findAll() {
     return this.notificationsService.findAll();
   }
@@ -34,6 +37,7 @@ export class NotificationsController {
   }
 
   @Post()
+  @Roles('SUPER_ADMIN', 'ADMIN')
   create(@Body() dto: CreateNotificationDto) {
     return this.notificationsService.create(dto);
   }

@@ -1,15 +1,21 @@
 import '../../global.css';
-import { useEffect } from 'react';
-import { Stack, useRouter, useSegments, useRootNavigationState } from 'expo-router';
+import { useEffect, useState } from 'react';
+import { Stack, useRouter, useSegments, useRootNavigationState, type Href } from 'expo-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useAuthStore } from '../store/auth.store';
 import { useUserModeStore } from '../store/user-mode.store';
 import { BackButton } from '../components/ui/back-button';
+import * as Linking from 'expo-linking';
 import { supabase } from '../lib/supabase';
+import { setApiAuthSession } from '../lib/api';
 import '../lib/supabase';
 import { registerForPushNotifications } from '../lib/push';
+import { handleOAuthDeepLink } from '../lib/auth-google';
+import { routeFromGbonhiLink } from '../lib/deep-link';
+
+const INITIAL_SESSION_TIMEOUT_MS = 4_000;
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -19,21 +25,44 @@ const queryClient = new QueryClient({
 
 function AuthGate() {
   const { session, isLoading, setSession, setLoading } = useAuthStore();
-  const { mode, hydrated, loadMode } = useUserModeStore();
+  const { mode, hydrated, startNewAppSession } = useUserModeStore();
   const segments = useSegments();
   const router = useRouter();
+  const [pendingDeepRoute, setPendingDeepRoute] = useState<string | null>(null);
   // Clé présente uniquement quand le navigateur racine est monté.
   const navState = useRootNavigationState();
 
   useEffect(() => {
-    loadMode();
-    supabase.auth.getSession().then(({ data }) => {
-      setSession(data.session);
-      setLoading(false);
-      if (data.session) registerForPushNotifications();
-    });
+    // Règle produit : un relancement complet repart toujours par le choix de
+    // mode, quel que soit le dernier écran ouvert avant la fermeture.
+    startNewAppSession();
+    let mounted = true;
+    // Une lecture SecureStore/Supabase qui se bloque ne doit jamais garder
+    // l'utilisateur sur le splash. La session réelle, si elle arrive plus
+    // tard, est toujours prise en compte et l'AuthGate se réoriente.
+    const sessionTimeout = setTimeout(() => {
+      if (mounted) setLoading(false);
+    }, INITIAL_SESSION_TIMEOUT_MS);
+    supabase.auth.getSession()
+      .then(({ data }) => {
+        if (!mounted) return;
+        setApiAuthSession(data.session);
+        setSession(data.session);
+        if (data.session) registerForPushNotifications();
+      })
+      .catch(() => {
+        if (mounted) {
+          setApiAuthSession(null);
+          setSession(null);
+        }
+      })
+      .finally(() => {
+        clearTimeout(sessionTimeout);
+        if (mounted) setLoading(false);
+      });
 
     const { data: listener } = supabase.auth.onAuthStateChange((event, newSession) => {
+      setApiAuthSession(newSession);
       setSession(newSession);
       // Après une connexion RÉELLE (pas un simple relancement d'app), on repasse
       // par la Sélection de mode → on efface le mode persistant.
@@ -44,8 +73,27 @@ function AuthGate() {
       if (newSession) registerForPushNotifications();
     });
 
-    return () => listener.subscription.unsubscribe();
-  }, [setSession, setLoading, loadMode]);
+    return () => {
+      mounted = false;
+      clearTimeout(sessionTimeout);
+      listener.subscription.unsubscribe();
+    };
+  }, [setSession, setLoading, startNewAppSession]);
+
+  // Liens entrants : OAuth Google ou contenu partagé (match, post, équipe).
+  // Une route est mémorisée jusqu'à ce que l'auth, le mode et la fiche soient
+  // prêts : sans compte, l'utilisateur voit d'abord la connexion puis revient
+  // automatiquement au contenu demandé.
+  useEffect(() => {
+    const handleUrl = async (url: string) => {
+      if (await handleOAuthDeepLink(url)) return;
+      const route = routeFromGbonhiLink(url);
+      if (route) setPendingDeepRoute(route);
+    };
+    Linking.getInitialURL().then((url) => { if (url) void handleUrl(url); });
+    const sub = Linking.addEventListener('url', ({ url }) => { void handleUrl(url); });
+    return () => sub.remove();
+  }, []);
 
   useEffect(() => {
     // Attendre que le navigateur soit monté, la session résolue ET le mode chargé.
@@ -79,9 +127,18 @@ function AuthGate() {
       return;
     }
 
+    if (pendingDeepRoute) {
+      router.replace(pendingDeepRoute as Href);
+      setPendingDeepRoute(null);
+      return;
+    }
+
     // Connecté + mode choisi (+ fiche si ligue) → application.
-    if (inAuth) router.replace('/(tabs)');
-  }, [navState?.key, isLoading, hydrated, session, mode, segments, router]);
+    // On NE renvoie PAS vers les tabs quand l'utilisateur est volontairement sur
+    // un écran réutilisable (fiche joueur en édition, changement de mode) : sinon
+    // « Modifier le profil » / « Modifier ma fiche joueur » rebondiraient vers l'accueil.
+    if (inAuth && !onOnboarding) router.replace('/(tabs)');
+  }, [navState?.key, isLoading, hydrated, session, mode, segments, router, pendingDeepRoute]);
 
   return null;
 }

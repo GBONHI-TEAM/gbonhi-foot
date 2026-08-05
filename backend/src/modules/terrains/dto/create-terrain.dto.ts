@@ -6,6 +6,7 @@ import {
   IsArray,
   IsNumber,
   Min,
+  Max,
   MinLength,
   MaxLength,
   IsIn,
@@ -32,6 +33,7 @@ export class CreateTerrainDto {
 
   @IsInt()
   @Min(1)
+  @Max(40)
   capacity: number;
 
   @IsInt()

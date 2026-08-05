@@ -5,7 +5,7 @@ import { Check, Heart, Clock, Info } from 'lucide-react';
 import { apiFetch } from '../../../lib/api';
 import {
   ApiReservation,
-  ApiReservationStats,
+  ApiOperationalStats,
   STATUS_FR,
   fcfa,
   todayISO,
@@ -23,12 +23,11 @@ const RESA_BADGE: Record<string, { bg: string; color: string; icon?: React.React
 interface ResaRow {
   heure: string;
   client: string;
-  montant: string;
   statut: string;
 }
 
 export default function LivePage() {
-  const [stats, setStats] = useState<ApiReservationStats | null>(null);
+  const [stats, setStats] = useState<ApiOperationalStats | null>(null);
   const [resas, setResas] = useState<ResaRow[]>([]);
   const [totalCreneaux, setTotalCreneaux] = useState<number>(0);
 
@@ -37,7 +36,7 @@ export default function LivePage() {
     (async () => {
       try {
         const [s, terrains, today] = await Promise.all([
-          apiFetch<ApiReservationStats>('/reservations/stats/summary'),
+          apiFetch<ApiOperationalStats>('/reservations/stats/operational-summary'),
           apiFetch<{ slots?: { day_of_week: number; is_active: boolean }[] }[]>('/terrains/mine'),
           apiFetch<ApiReservation[]>(`/reservations?date=${todayISO()}`),
         ]);
@@ -56,7 +55,6 @@ export default function LivePage() {
               .map((r) => ({
                 heure: `${String(r.start_hour).padStart(2, '0')}h00`,
                 client: r.user?.full_name ?? 'Client',
-                montant: fcfa(r.total_price),
                 statut: STATUS_FR[r.status],
               }))
           );
@@ -70,7 +68,6 @@ export default function LivePage() {
     };
   }, []);
 
-  const caJour = stats ? fcfa(stats.today_revenue) : '—';
   const nbResa = stats ? stats.today_count : resas.length;
   const taux = stats ? `${Math.round(stats.occupancy_rate)}%` : '—';
   const majHeure = useMemo(
@@ -95,11 +92,7 @@ export default function LivePage() {
       </div>
 
       {/* KPI */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-        <div className="rounded-xl p-4 shadow-sm" style={{ backgroundColor: '#1A3D2B' }}>
-          <p className="text-white/60 text-[12px] mb-1">CA aujourd&apos;hui</p>
-          <p className="text-[22px] font-black text-white">{stats ? stats.today_revenue.toLocaleString('fr-FR') : '—'} <span className="text-[13px] font-medium text-white/70">FCFA</span></p>
-        </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
         <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
           <p className="text-gray-500 text-[12px] mb-1">Réservations</p>
           <p className="text-[22px] font-black text-gray-900">{nbResa} <span className="text-[13px] font-medium text-gray-400">{totalCreneaux > 0 ? `/ ${totalCreneaux} créneaux` : ''}</span></p>
@@ -119,7 +112,7 @@ export default function LivePage() {
           <table className="w-full text-left">
             <thead>
               <tr style={{ backgroundColor: '#1E7A3A' }}>
-                {['Heure', 'Client', 'Montant', 'Statut'].map((h) => (
+                {['Heure', 'Client', 'Statut'].map((h) => (
                   <th key={h} className="px-5 py-2.5 text-[11px] font-semibold text-white uppercase tracking-wide">{h}</th>
                 ))}
               </tr>
@@ -131,7 +124,6 @@ export default function LivePage() {
                   <tr key={`${r.heure}-${i}`}>
                     <td className="px-5 py-3 text-[13px] font-bold text-gray-700">{r.heure}</td>
                     <td className="px-5 py-3 text-[13px] font-medium text-gray-900">{r.client}</td>
-                    <td className="px-5 py-3 text-[13px] text-gray-600">{r.montant}</td>
                     <td className="px-5 py-3">
                       <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-full" style={{ backgroundColor: badge.bg, color: badge.color }}>
                         {badge.icon} {r.statut}
@@ -142,7 +134,7 @@ export default function LivePage() {
               })}
               {resas.length === 0 && (
                 <tr>
-                  <td colSpan={4} className="px-5 py-12 text-center text-gray-400 text-sm">
+                  <td colSpan={3} className="px-5 py-12 text-center text-gray-400 text-sm">
                     Aucune réservation aujourd&apos;hui.
                   </td>
                 </tr>

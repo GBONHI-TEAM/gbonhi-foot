@@ -12,10 +12,11 @@ import {
 import { useRouter } from 'expo-router';
 import { useUserModeStore } from '../../store/user-mode.store';
 import { useAuthStore } from '../../store/auth.store';
-import { apiClient } from '../../lib/api';
+import { getCached } from '../../lib/api-cache';
 import { imageThumb } from '../../lib/image';
 import { ScreenBackground } from '../../components/ui/screen-background';
 import { AppHeader, HeaderAction } from '../../components/ui/app-header';
+import { RemoteImage } from '../../components/ui/remote-image';
 import {
   type Match,
   formatMatchDate,
@@ -259,7 +260,8 @@ interface MyReservation {
 interface FeedPost { id: string; content: string; created_at: string; author: { full_name: string | null } }
 
 const SURFACE_FR: Record<string, string> = { grass: 'Gazon', artificial: 'Synthétique', futsal: 'Futsal' };
-const RES_FILTERS: { key: string; label: string; kind: 'surface' | 'format' }[] = [
+const RES_FILTERS: { key: string; label: string; kind: 'all' | 'surface' | 'format' }[] = [
+  { key: 'all', label: 'Tous', kind: 'all' },
   { key: 'grass', label: 'Gazon', kind: 'surface' },
   { key: 'artificial', label: 'Synthétique', kind: 'surface' },
   { key: 'futsal', label: 'Futsal', kind: 'surface' },
@@ -281,32 +283,32 @@ function HomeReservation() {
   const [reservations, setReservations] = useState<MyReservation[]>([]);
   const [latestPost, setLatestPost] = useState<FeedPost | null>(null);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState<string | null>(null);
+  const [filter, setFilter] = useState('all');
 
   useEffect(() => {
     let mounted = true;
-    (async () => {
-      const [t, r, p] = await Promise.all([
-        apiClient.get<Terrain[]>('/api/v1/terrains').then((x) => x.data).catch(() => []),
-        apiClient.get<MyReservation[]>('/api/v1/reservations/mine').then((x) => x.data).catch(() => []),
-        apiClient.get<FeedPost[]>('/api/v1/community/posts?limit=1').then((x) => x.data).catch(() => []),
-      ]);
-      if (!mounted) return;
-      setTerrains(Array.isArray(t) ? t : []);
-      setReservations(Array.isArray(r) ? r : []);
-      setLatestPost(Array.isArray(p) && p.length > 0 ? p[0] : null);
-      setLoading(false);
-    })();
+    // Chaque section devient visible dès que SA donnée arrive : on ne bloque
+    // plus l'accueil entier sur le fil communautaire ou les réservations.
+    void getCached<Terrain[]>('/api/v1/terrains', 60_000)
+      .then((data) => { if (mounted) setTerrains(Array.isArray(data) ? data : []); })
+      .catch(() => { if (mounted) setTerrains([]); })
+      .finally(() => { if (mounted) setLoading(false); });
+    void getCached<MyReservation[]>('/api/v1/reservations/mine', 20_000)
+      .then((data) => { if (mounted) setReservations(Array.isArray(data) ? data : []); })
+      .catch(() => { if (mounted) setReservations([]); });
+    void getCached<FeedPost[]>('/api/v1/community/posts?limit=1', 20_000)
+      .then((data) => { if (mounted) setLatestPost(Array.isArray(data) && data.length > 0 ? data[0] : null); })
+      .catch(() => { if (mounted) setLatestPost(null); });
     return () => { mounted = false; };
   }, []);
 
-  const visible = filter
-    ? terrains.filter((t) => {
-        const f = RES_FILTERS.find((x) => x.key === filter);
-        if (!f) return true;
-        return f.kind === 'surface' ? t.surface === f.key : t.format === f.key;
-      })
-    : terrains;
+  const visible = terrains.filter((terrain) => {
+    const selectedFilter = RES_FILTERS.find((item) => item.key === filter);
+    if (!selectedFilter || selectedFilter.kind === 'all') return true;
+    return selectedFilter.kind === 'surface'
+      ? terrain.surface === selectedFilter.key
+      : terrain.format === selectedFilter.key;
+  });
 
   const upcoming = reservations.filter((r) => {
     const d = new Date(r.reservation_date);
@@ -319,9 +321,9 @@ function HomeReservation() {
       <View className="px-4 mt-5">
         <View className="rounded-card overflow-hidden" style={{ borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)', backgroundColor: '#0F3D1E' }}>
           {terrains[0]?.photos?.[0] ? (
-            <Image
-              source={{ uri: imageThumb(terrains[0].photos![0], 800) }}
-              resizeMode="cover"
+            <RemoteImage
+              uri={imageThumb(terrains[0].photos![0], 800)}
+              contentFit="cover"
               style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
             />
           ) : null}
@@ -346,7 +348,7 @@ function HomeReservation() {
           return (
             <Pressable
               key={f.key}
-              onPress={() => setFilter(active ? null : f.key)}
+              onPress={() => setFilter(f.key)}
               className="h-10 rounded-full items-center justify-center px-5"
               style={{ backgroundColor: active ? 'rgba(46,158,79,0.28)' : 'rgba(255,255,255,0.06)', borderWidth: 1, borderColor: active ? '#2E9E4F' : 'rgba(255,255,255,0.15)' }}
             >
@@ -366,9 +368,9 @@ function HomeReservation() {
               <Pressable key={t.id} onPress={() => router.push(`/terrain/${t.id}`)} className="rounded-card overflow-hidden active:opacity-90" style={{ width: 260, backgroundColor: 'rgba(255,255,255,0.05)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' }}>
                 <View style={{ height: 130, backgroundColor: '#0F3D1E' }}>
                   {t.photos?.[0] ? (
-                    <Image
-                      source={{ uri: imageThumb(t.photos[0], 600) }}
-                      resizeMode="cover"
+                    <RemoteImage
+                      uri={imageThumb(t.photos[0], 600)}
+                      contentFit="cover"
                       style={{ width: '100%', height: '100%' }}
                     />
                   ) : null}
@@ -460,48 +462,42 @@ export default function HomeScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  const load = useCallback(async () => {
-    try {
-      const [s, m] = await Promise.all([
-        apiClient.get<Summary>('/api/v1/users/me/summary').then((r) => r.data).catch(() => null),
-        apiClient.get<Match[]>('/api/v1/matches').then((r) => r.data).catch(() => []),
-      ]);
-      setSummary(s);
-      setMatches(Array.isArray(m) ? m : []);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
+  const load = useCallback(async (force = false) => {
+    // La synthèse utilisateur est prioritaire pour le contenu du dashboard ;
+    // les matchs s'ajoutent dès leur disponibilité, sans écran bloqué.
+    const [summaryResult, matchesResult] = await Promise.allSettled([
+      getCached<Summary>('/api/v1/users/me/summary', 20_000, force),
+      getCached<Match[]>('/api/v1/matches', 15_000, force),
+    ]);
+    setSummary(summaryResult.status === 'fulfilled' ? summaryResult.value : null);
+    setMatches(matchesResult.status === 'fulfilled' && Array.isArray(matchesResult.value) ? matchesResult.value : []);
+    setLoading(false);
+    setRefreshing(false);
   }, []);
 
   useEffect(() => { load(); }, [load]);
-
-  async function changeMode() {
-    await clearMode();
-    router.replace('/(auth)/mode-selection');
-  }
 
   return (
     <ScreenBackground>
       <AppHeader
         title={`Bonjour ${firstName}${firstName ? ' ' : ''}👋`}
         subtitle="Le football amateur commence ici."
+        onBack={() => {
+          void clearMode();
+          router.replace('/(auth)/mode-selection');
+        }}
+        showLogo
         actions={
-          <>
-            <HeaderAction label="Changer de mode" onPress={changeMode}>
-              <Text style={{ fontSize: 18 }}>⇄</Text>
-            </HeaderAction>
-            <HeaderAction label="Notifications" onPress={() => router.push('/notifications')} badge={!!summary && summary.unreadNotifications > 0}>
-              <Text style={{ fontSize: 20 }}>🔔</Text>
-            </HeaderAction>
-          </>
+          <HeaderAction label="Notifications" onPress={() => router.push('/notifications')} badge={!!summary && summary.unreadNotifications > 0}>
+            <Text style={{ fontSize: 20 }}>🔔</Text>
+          </HeaderAction>
         }
       />
 
       <ScrollView
         className="flex-1"
         contentContainerStyle={{ paddingBottom: 24 }}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor="#F7921E" />}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(true); }} tintColor="#F7921E" />}
       >
         {mode === 'reservation' ? <HomeReservation /> : <HomeLeagues summary={summary} matches={matches} loading={loading} />}
       </ScrollView>

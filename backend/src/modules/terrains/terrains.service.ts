@@ -6,19 +6,24 @@ import {
 import { PrismaService } from '../../prisma/prisma.service';
 import { UserPayload } from '../../common/types/user-payload.type';
 import { CreateTerrainDto } from './dto/create-terrain.dto';
+import { CreateAdminTerrainDto } from './dto/create-admin-terrain.dto';
 import { UpdateTerrainDto } from './dto/update-terrain.dto';
 import { CreateSlotDto } from './dto/create-slot.dto';
 import { CreateBlockDto } from './dto/create-block.dto';
 import { CreateReviewDto } from './dto/create-review.dto';
+import { PartnerAccessService } from '../partner-access/partner-access.service';
 
-const ADMIN_ROLES = ['SUPER_ADMIN', 'ADMIN', 'CONTRÔLEUR', 'OPÉRATEUR'];
+const ADMIN_ROLES = ['SUPER_ADMIN', 'ADMIN', 'CONTROLEUR', 'OPERATEUR'];
 function isAdmin(user: UserPayload): boolean {
   return ADMIN_ROLES.includes((user.role ?? '').toUpperCase());
 }
 
 @Injectable()
 export class TerrainsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly partnerAccess: PartnerAccessService,
+  ) {}
 
   /** Liste publique des terrains actifs (app mobile). */
   async findAll(query: { city?: string }) {
@@ -33,10 +38,24 @@ export class TerrainsService {
     return this.withRatings(terrains);
   }
 
+  /** Vue complète destinée au BO (actifs + inactifs, propriétaire inclus). */
+  async findAllAdmin() {
+    const terrains = await this.prisma.terrain.findMany({
+      include: {
+        partner: { select: { id: true, full_name: true, username: true } },
+        _count: { select: { reservations: true, reviews: true } },
+      },
+      orderBy: { created_at: 'desc' },
+    });
+    return this.withRatings(terrains);
+  }
+
   /** Terrains détenus par le partenaire connecté (portail partenaire). */
   async findMine(user: UserPayload) {
+    const partnerIds = await this.partnerAccess.accessiblePartnerIds(user);
+    if (partnerIds.length === 0) return [];
     const terrains = await this.prisma.terrain.findMany({
-      where: { partner_id: user.id },
+      where: { partner_id: { in: partnerIds } },
       include: {
         slots: { orderBy: [{ day_of_week: 'asc' }, { start_hour: 'asc' }] },
         _count: { select: { reservations: true, reviews: true } },
@@ -47,30 +66,69 @@ export class TerrainsService {
   }
 
   async findOne(id: string) {
-    const terrain = await this.prisma.terrain.findUnique({
-      where: { id },
-      include: {
-        slots: { orderBy: [{ day_of_week: 'asc' }, { start_hour: 'asc' }] },
-        blocks: { orderBy: { blocked_date: 'asc' } },
-        partner: { select: { id: true, full_name: true } },
-        _count: { select: { reservations: true, reviews: true } },
-      },
-    });
+    const terrain = await this.prisma.withRetry(() =>
+      this.prisma.terrain.findUnique({
+        where: { id },
+        include: {
+          slots: { orderBy: [{ day_of_week: 'asc' }, { start_hour: 'asc' }] },
+          blocks: { orderBy: { blocked_date: 'asc' } },
+          partner: { select: { id: true, full_name: true } },
+          _count: { select: { reservations: true, reviews: true } },
+        },
+      }),
+    );
     if (!terrain) throw new NotFoundException('Terrain introuvable');
     const [withRating] = await this.withRatings([terrain]);
     return withRating;
+  }
+
+  /** Les favoris sont un choix volontaire du joueur, indépendant des réservations. */
+  async findFavorites(user: UserPayload) {
+    const favorites = await this.prisma.terrainFavorite.findMany({
+      where: { user_id: user.id },
+      include: {
+        terrain: {
+          include: { _count: { select: { reservations: true, reviews: true } } },
+        },
+      },
+      orderBy: { created_at: 'desc' },
+    });
+    return this.withRatings(favorites.map((favorite) => favorite.terrain));
+  }
+
+  async addFavorite(terrainId: string, user: UserPayload) {
+    const terrain = await this.prisma.terrain.findFirst({
+      where: { id: terrainId, is_active: true },
+      select: { id: true },
+    });
+    if (!terrain) throw new NotFoundException('Terrain introuvable');
+
+    return this.prisma.terrainFavorite.upsert({
+      where: { terrain_id_user_id: { terrain_id: terrainId, user_id: user.id } },
+      create: { terrain_id: terrainId, user_id: user.id },
+      update: {},
+    });
+  }
+
+  async removeFavorite(terrainId: string, user: UserPayload) {
+    await this.prisma.terrainFavorite.deleteMany({
+      where: { terrain_id: terrainId, user_id: user.id },
+    });
+    return { ok: true };
   }
 
   /** Attache la note moyenne (rating_avg) et le nb d'avis (rating_count) aux terrains. */
   private async withRatings<T extends { id: string }>(terrains: T[]) {
     const ids = terrains.map((t) => t.id);
     if (ids.length === 0) return terrains;
-    const rows = await this.prisma.terrainReview.groupBy({
-      by: ['terrain_id'],
-      where: { terrain_id: { in: ids } },
-      _avg: { rating: true },
-      _count: { rating: true },
-    });
+    const rows = await this.prisma.withRetry(() =>
+      this.prisma.terrainReview.groupBy({
+        by: ['terrain_id'],
+        where: { terrain_id: { in: ids } },
+        _avg: { rating: true },
+        _count: { rating: true },
+      }),
+    );
     const map = new Map(
       rows.map((r) => [
         r.terrain_id,
@@ -92,22 +150,30 @@ export class TerrainsService {
     const day = new Date(date);
     const expand = (s: number, e: number) => {
       const out: number[] = [];
-      for (let h = s; h < e; h++) out.push(h);
+      for (let h = s; h < e; h += 0.5) out.push(Number(h.toFixed(1)));
       return out;
     };
 
-    const reservations = await this.prisma.reservation.findMany({
-      where: {
-        terrain_id: id,
-        reservation_date: day,
-        status: { in: ['pending', 'confirmed'] },
-      },
-      select: { start_hour: true, end_hour: true, status: true },
-    });
-    const blocks = await this.prisma.terrainBlock.findMany({
-      where: { terrain_id: id, blocked_date: day },
-      select: { start_hour: true, end_hour: true },
-    });
+    const pendingCutoff = new Date(Date.now() - 15 * 60 * 1000);
+    const [reservations, blocks] = await this.prisma.withRetry(() =>
+      Promise.all([
+        this.prisma.reservation.findMany({
+          where: {
+            terrain_id: id,
+            reservation_date: day,
+            OR: [
+              { status: 'confirmed' },
+              { status: 'pending', created_at: { gte: pendingCutoff } },
+            ],
+          },
+          select: { start_hour: true, end_hour: true, status: true },
+        }),
+        this.prisma.terrainBlock.findMany({
+          where: { terrain_id: id, blocked_date: day },
+          select: { start_hour: true, end_hour: true },
+        }),
+      ]),
+    );
 
     const booked = reservations
       .filter((r) => r.status === 'confirmed')
@@ -143,20 +209,32 @@ export class TerrainsService {
     });
   }
 
-  /** Ajout/mise à jour d'un avis — réservé aux joueurs ayant réservé ce terrain. */
+  /** Derniers avis des terrains accessibles depuis le portail partenaire. */
+  async findReviewsForPartner(user: UserPayload) {
+    const partnerIds = await this.partnerAccess.accessiblePartnerIds(user);
+    if (partnerIds.length === 0) return [];
+    return this.prisma.terrainReview.findMany({
+      where: { terrain: { partner_id: { in: partnerIds } } },
+      include: {
+        user: { select: { id: true, full_name: true, avatar_url: true } },
+        terrain: { select: { id: true, name: true } },
+      },
+      orderBy: { created_at: 'desc' },
+      take: 5,
+    });
+  }
+
+  /** Ajout/mise à jour d'un avis après la fin d'une réservation confirmée. */
   async addReview(terrainId: string, dto: CreateReviewDto, user: UserPayload) {
     const terrain = await this.prisma.terrain.findUnique({
       where: { id: terrainId },
     });
     if (!terrain) throw new NotFoundException('Terrain introuvable');
 
-    const hasReservation = await this.prisma.reservation.findFirst({
-      where: { terrain_id: terrainId, user_id: user.id },
-      select: { id: true },
-    });
-    if (!hasReservation) {
+    const hasEndedReservation = await this.findEndedReservation(terrainId, user.id);
+    if (!hasEndedReservation) {
       throw new ForbiddenException(
-        'Seuls les joueurs ayant réservé ce terrain peuvent laisser un avis',
+        "Un avis peut être laissé après la fin d'un créneau réservé et confirmé",
       );
     }
 
@@ -172,10 +250,69 @@ export class TerrainsService {
     });
   }
 
+  /** Dernier terrain terminé mais pas encore noté, pour le popup mobile. */
+  async findPendingReview(user: UserPayload) {
+    const reservations = await this.prisma.reservation.findMany({
+      where: {
+        user_id: user.id,
+        status: { in: ['confirmed', 'completed'] },
+      },
+      include: { terrain: { select: { id: true, name: true, city: true } } },
+      orderBy: [{ reservation_date: 'desc' }, { end_hour: 'desc' }],
+      take: 30,
+    });
+    const ended = reservations.filter((reservation) =>
+      this.hasEnded(reservation.reservation_date, reservation.end_hour),
+    );
+    if (ended.length === 0) return null;
+
+    const reviewed = await this.prisma.terrainReview.findMany({
+      where: {
+        user_id: user.id,
+        terrain_id: { in: ended.map((reservation) => reservation.terrain_id) },
+      },
+      select: { terrain_id: true },
+    });
+    const reviewedTerrainIds = new Set(reviewed.map((review) => review.terrain_id));
+    return ended.find((reservation) => !reviewedTerrainIds.has(reservation.terrain_id)) ?? null;
+  }
+
+  private async findEndedReservation(terrainId: string, userId: string) {
+    const reservations = await this.prisma.reservation.findMany({
+      where: {
+        terrain_id: terrainId,
+        user_id: userId,
+        status: { in: ['confirmed', 'completed'] },
+      },
+      select: { id: true, reservation_date: true, end_hour: true },
+      orderBy: [{ reservation_date: 'desc' }, { end_hour: 'desc' }],
+      take: 30,
+    });
+    return reservations.find((reservation) =>
+      this.hasEnded(reservation.reservation_date, reservation.end_hour),
+    );
+  }
+
+  private hasEnded(reservationDate: Date, endHour: number) {
+    const end = new Date(reservationDate);
+    end.setUTCHours(Math.floor(endHour), Math.round((endHour % 1) * 60), 0, 0);
+    return end <= new Date();
+  }
+
   create(dto: CreateTerrainDto, user: UserPayload) {
     return this.prisma.terrain.create({
       data: { ...dto, partner_id: user.id },
     });
+  }
+
+  async createForAdmin(dto: CreateAdminTerrainDto) {
+    const partner = await this.prisma.profile.findUnique({
+      where: { id: dto.partner_id },
+      select: { id: true },
+    });
+    if (!partner) throw new NotFoundException('Partenaire introuvable');
+
+    return this.prisma.terrain.create({ data: dto });
   }
 
   async update(id: string, dto: UpdateTerrainDto, user: UserPayload) {
@@ -241,7 +378,8 @@ export class TerrainsService {
     const terrain = await this.prisma.terrain.findUnique({ where: { id } });
     if (!terrain) throw new NotFoundException('Terrain introuvable');
     // Les admins du back-office peuvent gérer n'importe quel terrain.
-    if (terrain.partner_id !== user.id && !isAdmin(user)) {
+    const hasPartnerAccess = await this.partnerAccess.canManagePartner(user, terrain.partner_id);
+    if (!hasPartnerAccess && !isAdmin(user)) {
       throw new ForbiddenException('Accès refusé à ce terrain');
     }
     return terrain;

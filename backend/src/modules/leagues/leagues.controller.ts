@@ -17,13 +17,16 @@ import { ChangeStatusDto } from './dto/change-status.dto';
 import { SupabaseAuthGuard } from '../auth/supabase-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { UserPayload } from '../../common/types/user-payload.type';
+import { RolesGuard } from '../../common/access/roles.guard';
+import { Roles } from '../../common/access/roles.decorator';
 
-@UseGuards(SupabaseAuthGuard)
+@UseGuards(SupabaseAuthGuard, RolesGuard)
 @Controller('leagues')
 export class LeaguesController {
   constructor(private readonly leaguesService: LeaguesService) {}
 
   @Post()
+  @Roles('SUPER_ADMIN', 'ADMIN', 'OPERATEUR')
   create(@Body() dto: CreateLeagueDto, @CurrentUser() user: UserPayload) {
     return this.leaguesService.create(dto, user);
   }
@@ -39,23 +42,31 @@ export class LeaguesController {
   }
 
   @Patch(':id')
+  @Roles('SUPER_ADMIN', 'ADMIN', 'OPERATEUR')
   update(@Param('id') id: string, @Body() dto: UpdateLeagueDto) {
     return this.leaguesService.update(id, dto);
   }
 
   @Patch(':id/status')
+  @Roles('SUPER_ADMIN', 'ADMIN')
   changeStatus(@Param('id') id: string, @Body() dto: ChangeStatusDto) {
     return this.leaguesService.changeStatus(id, dto);
   }
 
   @Delete(':id')
+  @Roles('SUPER_ADMIN', 'ADMIN')
   remove(@Param('id') id: string) {
     return this.leaguesService.remove(id);
   }
 
   @Post(':id/teams')
-  registerTeam(@Param('id') id: string, @Body() dto: RegisterTeamDto) {
-    return this.leaguesService.registerTeam(id, dto);
+  registerTeam(@Param('id') id: string, @Body() dto: RegisterTeamDto, @CurrentUser() user: UserPayload) {
+    return this.leaguesService.registerTeam(id, dto, user);
+  }
+
+  @Get(':id/my-registration')
+  getMyRegistration(@Param('id') id: string, @CurrentUser() user: UserPayload) {
+    return this.leaguesService.getMyRegistration(id, user);
   }
 
   @Get(':id/standings')

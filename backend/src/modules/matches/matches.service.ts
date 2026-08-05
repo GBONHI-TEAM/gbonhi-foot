@@ -62,14 +62,33 @@ export class MatchesService {
         events: {
           include: {
             team: { select: { id: true, name: true } },
-            player: { select: { id: true, full_name: true } },
+            player: { select: { id: true, full_name: true, avatar_url: true, position: true } },
           },
           orderBy: { minute: 'asc' },
         },
       },
     });
     if (!match) throw new NotFoundException('Match introuvable');
-    return match;
+    const teamIds = [match.home_team_id, match.away_team_id].filter((teamId): teamId is string => Boolean(teamId));
+    const members = teamIds.length
+      ? await this.prisma.teamMember.findMany({
+          where: { team_id: { in: teamIds }, status: 'active' },
+          select: {
+            team_id: true,
+            jersey_num: true,
+            role: true,
+            user: { select: { id: true, full_name: true, avatar_url: true, position: true, city: true } },
+          },
+          orderBy: { joined_at: 'asc' },
+        })
+      : [];
+    return {
+      ...match,
+      squads: {
+        home: members.filter((member) => member.team_id === match.home_team_id),
+        away: members.filter((member) => member.team_id === match.away_team_id),
+      },
+    };
   }
 
   async create(dto: CreateMatchDto) {
@@ -154,7 +173,7 @@ export class MatchesService {
       where: { match_id: matchId },
       include: {
         team: { select: { id: true, name: true } },
-        player: { select: { id: true, full_name: true } },
+        player: { select: { id: true, full_name: true, avatar_url: true, position: true } },
       },
       orderBy: { minute: 'asc' },
     });
@@ -251,18 +270,19 @@ export class MatchesService {
         where: { match_id: { in: matchIds }, type, player_id: { not: null } },
         _count: { player_id: true },
       });
-      const withNames = await Promise.all(
-        rows.map(async (r) => {
-          const player = r.player_id
-            ? await this.prisma.profile.findUnique({
-                where: { id: r.player_id },
-                select: { id: true, full_name: true },
-              })
-            : null;
-          return { player, count: r._count.player_id };
-        }),
-      );
-      return withNames
+      const playerIds = rows.flatMap((row) => row.player_id ? [row.player_id] : []);
+      const players = playerIds.length
+        ? await this.prisma.profile.findMany({
+            where: { id: { in: playerIds } },
+            select: { id: true, full_name: true, avatar_url: true },
+          })
+        : [];
+      const playersById = new Map(players.map((player) => [player.id, player]));
+      return rows
+        .map((row) => ({
+          player: row.player_id ? playersById.get(row.player_id) ?? null : null,
+          count: row._count.player_id,
+        }))
         .filter((x) => x.player)
         .sort((a, b) => b.count - a.count)
         .slice(0, 10);
