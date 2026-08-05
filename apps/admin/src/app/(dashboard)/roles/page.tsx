@@ -44,8 +44,12 @@ export default function RolesPage() {
   const invite = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault(); setSaving(true); setError('');
     try {
-      const result = await apiFetch<{ invitationSent: boolean }>('/users/admin-invitations', { method: 'POST', body: JSON.stringify({ fullName: form.fullName, email: form.email, role: form.role, ...(form.username.trim() ? { username: form.username.trim() } : {}) }) });
-      setNotice(result.invitationSent ? 'Invitation envoyée. Le membre choisira son mot de passe depuis son e-mail.' : 'Rôle administrateur attribué au compte existant.');
+      const result = await apiFetch<{ invitationSent: boolean; mode?: 'invited' | 'password_setup' }>('/users/admin-invitations', { method: 'POST', body: JSON.stringify({ fullName: form.fullName, email: form.email, role: form.role, ...(form.username.trim() ? { username: form.username.trim() } : {}) }) });
+      setNotice(
+        result.mode === 'password_setup'
+          ? 'Rôle attribué. Un e-mail a été envoyé au compte existant pour définir son mot de passe d’accès au back-office.'
+          : 'Invitation envoyée. Le membre choisira son mot de passe depuis son e-mail.',
+      );
       setModal(false); setForm({ fullName: '', email: '', role: 'ADMIN', username: '' }); await load();
     } catch (caught) { setError(message(caught)); }
     finally { setSaving(false); }

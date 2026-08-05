@@ -64,17 +64,36 @@ export class UsersService {
 
   async inviteAdmin(dto: CreateAdminInvitationDto) {
     const email = dto.email.trim().toLowerCase();
+    // Lien de retour après clic sur l'e-mail → page où l'on définit le mot de passe.
+    const adminUrl = (process.env.ADMIN_URL ?? 'http://localhost:3000').replace(/\/+$/, '');
+    const redirectTo = `${adminUrl}/reset-password`;
+
     let authUser = await this.findAuthUserByEmail(email);
-    let invitationSent = false;
+    // 'invited' = nouveau compte créé ; 'password_setup' = compte déjà existant
+    // (ex. utilisateur mobile) à qui on envoie un lien pour définir un mot de passe BO.
+    let mode: 'invited' | 'password_setup' = 'invited';
+
     if (!authUser) {
       const { data, error } = await this.supabase.client.auth.admin.inviteUserByEmail(email, {
         data: { full_name: dto.fullName.trim() },
+        redirectTo,
       });
       if (error || !data.user) {
         throw new ServiceUnavailableException('Impossible d’envoyer l’invitation administrateur. Réessaie dans quelques instants.');
       }
       authUser = data.user;
-      invitationSent = true;
+      mode = 'invited';
+    } else {
+      // Le compte existe (souvent un utilisateur mobile créé par OTP, sans mot de
+      // passe) : on lui envoie TOUJOURS un lien pour établir un mot de passe BO,
+      // afin qu'il puisse se connecter au back-office même si l'e-mail existe déjà.
+      const { error } = await this.supabase.client.auth.resetPasswordForEmail(email, {
+        redirectTo,
+      });
+      if (error) {
+        throw new ServiceUnavailableException('Impossible d’envoyer le lien d’accès. Réessaie dans quelques instants.');
+      }
+      mode = 'password_setup';
     }
 
     const profile = await this.prisma.profile.upsert({
@@ -88,7 +107,8 @@ export class UsersService {
       },
       select: { id: true, full_name: true, username: true, role: true },
     });
-    return { ...profile, invitationSent };
+    // invitationSent reste true dans les deux cas : un lien e-mail part toujours.
+    return { ...profile, invitationSent: true, mode };
   }
 
   async upsertOnLogin(user: UserPayload) {

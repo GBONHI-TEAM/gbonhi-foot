@@ -1,6 +1,7 @@
 'use client';
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { Mail, Lock, Eye, EyeOff, Lock as LockSmall } from 'lucide-react';
 import logoSrc from '../../../assets/logo.png';
 import bandTl from '../../../assets/band-tl.png';
@@ -173,9 +174,9 @@ export default function AdminLoginPage() {
                   </button>
                 </div>
                 <div className="mt-2 text-right">
-                  <a href="#" className="text-[13px] font-semibold hover:underline" style={{ color: '#1E7A3A' }}>
+                  <Link href="/forgot-password" className="text-[13px] font-semibold hover:underline" style={{ color: '#1E7A3A' }}>
                     Mot de passe oublié ?
-                  </a>
+                  </Link>
                 </div>
               </div>
 
