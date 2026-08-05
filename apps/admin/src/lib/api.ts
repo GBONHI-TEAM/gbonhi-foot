@@ -1,7 +1,14 @@
 'use client';
 import { createSupabaseBrowserClient } from './supabase/client';
 
-const API_BASE = `${process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001'}/api/v1`;
+// On normalise l'URL de base : on retire un éventuel slash final et un suffixe
+// `/api/v1` déjà présent, PUIS on ajoute `/api/v1`. Ainsi la variable
+// NEXT_PUBLIC_API_URL fonctionne qu'elle vaille `https://…onrender.com` ou
+// `https://…onrender.com/api/v1` (évite le doublon `/api/v1/api/v1`).
+const API_ROOT = (process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001')
+  .replace(/\/+$/, '')
+  .replace(/\/api\/v1$/, '');
+const API_BASE = `${API_ROOT}/api/v1`;
 
 export class ApiError extends Error {
   constructor(

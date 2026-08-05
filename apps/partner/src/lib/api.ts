@@ -1,7 +1,13 @@
 'use client';
 import { createSupabaseBrowserClient } from './supabase/client';
 
-const API_BASE = `${process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001'}/api/v1`;
+// Normalisation : retire slash final + suffixe `/api/v1` déjà présent avant de
+// rajouter `/api/v1`. Tolère les deux formes de NEXT_PUBLIC_API_URL (évite le
+// doublon `/api/v1/api/v1`).
+const API_ROOT = (process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001')
+  .replace(/\/+$/, '')
+  .replace(/\/api\/v1$/, '');
+const API_BASE = `${API_ROOT}/api/v1`;
 
 function withActivePeriod(path: string, init?: RequestInit): string {
   if (typeof window === 'undefined' || (init?.method ?? 'GET').toUpperCase() !== 'GET') return path;
