@@ -18,4 +18,18 @@ config.resolver.nodeModulesPaths = [
 ];
 config.resolver.disableHierarchicalLookup = true;
 
+// 3. Stub des dépendances OPTIONNELLES de @supabase/supabase-js (tracing).
+//    @opentelemetry/api n'est pas installé et n'est jamais utilisé à l'exécution ;
+//    on le résout vers un module vide pour éviter l'échec de bundling (web + natif).
+const originalResolveRequest = config.resolver.resolveRequest;
+config.resolver.resolveRequest = (context, moduleName, platform) => {
+  if (moduleName === '@opentelemetry/api' || moduleName.startsWith('@opentelemetry/')) {
+    return { type: 'empty' };
+  }
+  if (originalResolveRequest) {
+    return originalResolveRequest(context, moduleName, platform);
+  }
+  return context.resolveRequest(context, moduleName, platform);
+};
+
 module.exports = withNativeWind(config, { input: './global.css' });
