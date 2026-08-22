@@ -6,7 +6,6 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useAuthStore } from '../store/auth.store';
 import { useUserModeStore } from '../store/user-mode.store';
-import { BackButton } from '../components/ui/back-button';
 import * as Linking from 'expo-linking';
 import { supabase } from '../lib/supabase';
 import { setApiAuthSession } from '../lib/api';
@@ -150,8 +149,6 @@ export default function RootLayout() {
         <QueryClientProvider client={queryClient}>
           <AuthGate />
           <Stack screenOptions={{ headerShown: false }} />
-          {/* Bouton retour flottant, affiché intelligemment (voir BackButton) */}
-          <BackButton />
         </QueryClientProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>

@@ -658,7 +658,9 @@ export default function LeagueDetailPage() {
     return (
       <View className="flex-1" style={{ backgroundColor: '#0D1F0D' }}>
         <PatternedGreenHeader style={{ paddingHorizontal: 20, paddingTop: 56, paddingBottom: 16 }} patternOpacity={0.5}>
-          <View style={{ height: 28 }} />
+          <Pressable onPress={() => (router.canGoBack() ? router.back() : router.replace('/(tabs)/league'))} hitSlop={8}>
+            <Text className="text-white text-2xl">←</Text>
+          </Pressable>
         </PatternedGreenHeader>
         <View className="flex-1 items-center justify-center">
           <Text className="text-white/60">Ligue introuvable.</Text>
@@ -682,8 +684,11 @@ export default function LeagueDetailPage() {
             <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(13,31,13,0.55)' }} />
           </>
         ) : null}
-        <View className="flex-row items-center pl-16 pr-5 pt-14 pb-3 gap-2">
-          <View className="self-start px-2.5 py-0.5 rounded-full" style={{ backgroundColor: '#0F3D1E' }}>
+        <View className="flex-row items-center px-5 pt-14 pb-3 gap-2">
+          <Pressable onPress={() => (router.canGoBack() ? router.back() : router.replace('/(tabs)/league'))} hitSlop={8}>
+            <Text className="text-white text-2xl">←</Text>
+          </Pressable>
+          <View className="self-start px-2.5 py-0.5 rounded-full ml-2" style={{ backgroundColor: '#0F3D1E' }}>
             <Text className="text-xs font-black tracking-widest text-white">{statusLabel.toUpperCase()}</Text>
           </View>
           {alreadyRegistered ? (
