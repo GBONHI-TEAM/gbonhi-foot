@@ -170,9 +170,7 @@ export default function MatchDetailPage() {
     return (
       <View className="flex-1" style={{ backgroundColor: '#0D1F0D' }}>
         <PatternedGreenHeader style={{ paddingHorizontal: 20, paddingTop: 56, paddingBottom: 16 }} patternOpacity={0.5}>
-          <Pressable onPress={() => router.back()} hitSlop={8}>
-            <Text className="text-white text-2xl">←</Text>
-          </Pressable>
+          <View style={{ height: 28 }} />
         </PatternedGreenHeader>
         <View className="flex-1 items-center justify-center px-8">
           <Text className="text-white/60 text-center text-base">{error ?? 'Match introuvable.'}</Text>
@@ -196,10 +194,7 @@ export default function MatchDetailPage() {
     <View className="flex-1" style={{ backgroundColor: '#0D1F0D' }}>
       {/* Header vert à motifs triangulaires */}
       <PatternedGreenHeader style={{ paddingHorizontal: 20, paddingTop: 56, paddingBottom: 20 }} patternOpacity={0.36}>
-        <View className="flex-row items-center justify-between mb-4">
-          <Pressable onPress={() => router.back()} hitSlop={8}>
-            <Text className="text-white text-2xl">←</Text>
-          </Pressable>
+        <View className="flex-row items-center justify-end mb-4">
           <Pressable
             onPress={onShare}
             hitSlop={8}

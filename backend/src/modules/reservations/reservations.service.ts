@@ -11,11 +11,14 @@ import { CreateReservationDto } from './dto/create-reservation.dto';
 import { ChangeReservationStatusDto } from './dto/change-status.dto';
 import { PartnerAccessService } from '../partner-access/partner-access.service';
 import { AnalyticsService } from '../analytics/analytics.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { createPartnerRevenueStatementPdf } from '../payments/receipt-pdf';
 
 const PLATFORM_FEE_RATE = 0.1; // 10 % commission plateforme
 const CART_HOLD_MINUTES = 15;
 const CART_CLEANUP_INTERVAL_MS = 60_000;
+// Fenêtre de rappel : on prévient l'utilisateur jusqu'à 90 min avant le début.
+const REMINDER_LEAD_MINUTES = 90;
 
 @Injectable()
 export class ReservationsService {
@@ -25,7 +28,78 @@ export class ReservationsService {
     private readonly prisma: PrismaService,
     private readonly partnerAccess: PartnerAccessService,
     private readonly analytics: AnalyticsService,
+    private readonly notifications: NotificationsService,
   ) {}
+
+  /**
+   * Rappels de réservation à venir (push + notification).
+   * Déclenché par un cron externe (Render gratuit s'endort → pas de @Cron interne).
+   * Idempotent : dédoublonnage via l'existence d'une notification RESERVATION_REMINDER
+   * portant le reservation_id, donc appelable aussi souvent que voulu sans spam.
+   */
+  async sendDueReminders() {
+    const now = new Date();
+    const windowEnd = new Date(now.getTime() + REMINDER_LEAD_MINUTES * 60_000);
+
+    // On limite aux réservations d'aujourd'hui/demain (UTC = heure locale CI).
+    const todayUtc = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+    const dayAfterTomorrow = new Date(todayUtc.getTime() + 2 * 86_400_000);
+
+    const rows = await this.prisma.reservation.findMany({
+      where: {
+        status: 'confirmed',
+        reservation_date: { gte: todayUtc, lt: dayAfterTomorrow },
+      },
+      select: {
+        id: true,
+        user_id: true,
+        reservation_date: true,
+        start_hour: true,
+        terrain: { select: { name: true } },
+      },
+    });
+
+    // Début réel = date (minuit UTC) + start_hour. Ne garder que ce qui commence
+    // entre maintenant et la fin de fenêtre (donc pas les créneaux déjà passés).
+    const due = rows
+      .map((r) => {
+        const startAt = new Date(new Date(r.reservation_date).getTime() + r.start_hour * 3_600_000);
+        return { ...r, startAt };
+      })
+      .filter((r) => r.startAt > now && r.startAt <= windowEnd);
+
+    if (due.length === 0) return { sent: 0 };
+
+    // Dédoublonnage : réservations déjà rappelées (notif des 2 derniers jours).
+    const recentReminders = await this.prisma.notification.findMany({
+      where: {
+        type: 'RESERVATION_REMINDER',
+        created_at: { gte: new Date(now.getTime() - 2 * 86_400_000) },
+      },
+      select: { data: true },
+    });
+    const alreadyReminded = new Set(
+      recentReminders
+        .map((n) => (n.data as { reservation_id?: string } | null)?.reservation_id)
+        .filter((id): id is string => !!id),
+    );
+
+    let sent = 0;
+    for (const r of due) {
+      if (alreadyReminded.has(r.id)) continue;
+      const hh = String(Math.floor(r.start_hour)).padStart(2, '0');
+      const mm = String(Math.round((r.start_hour % 1) * 60)).padStart(2, '0');
+      await this.notifications.notify(r.user_id, {
+        type: 'RESERVATION_REMINDER',
+        title: 'Rappel de réservation ⚽',
+        body: `Ta réservation${r.terrain?.name ? ` à ${r.terrain.name}` : ''} commence à ${hh}h${mm}. À tout de suite !`,
+        data: { reservation_id: r.id },
+      });
+      sent += 1;
+    }
+
+    return { sent };
+  }
 
   /** Réservations des terrains du partenaire connecté. */
   async findForPartner(

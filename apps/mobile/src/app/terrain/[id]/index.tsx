@@ -195,14 +195,6 @@ export default function TerrainDetailPage() {
         <View>
           <PhotoCarousel photos={terrain.photos ?? []} />
           <Pressable
-            onPress={() => (router.canGoBack() ? router.back() : router.replace('/terrain'))}
-            className="absolute w-10 h-10 rounded-full items-center justify-center"
-            style={{ top: 52, left: 16, backgroundColor: 'rgba(0,0,0,0.5)' }}
-            hitSlop={8}
-          >
-            <Text className="text-white text-xl">←</Text>
-          </Pressable>
-          <Pressable
             onPress={toggleFavorite}
             disabled={favoriteLoading}
             className="absolute w-10 h-10 rounded-full items-center justify-center"

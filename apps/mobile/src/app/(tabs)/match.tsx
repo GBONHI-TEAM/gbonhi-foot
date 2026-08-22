@@ -184,7 +184,7 @@ export default function MatchScreen() {
 
   return (
     <ScreenBackground>
-      <AppHeader title="Matchs" />
+      <AppHeader title="Matchs" centered />
 
       {/* Sélecteur de ligue */}
       {leagues.length > 1 ? (

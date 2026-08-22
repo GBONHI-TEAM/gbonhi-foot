@@ -1,9 +1,8 @@
 import { useCallback, useState } from 'react';
 import { View, Text, Image, ScrollView, Pressable, FlatList, ActivityIndicator, RefreshControl } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { ScreenBackground } from '../../components/ui/screen-background';
-import { AppHeader, HeaderAction } from '../../components/ui/app-header';
+import { AppHeader } from '../../components/ui/app-header';
 import { RemoteImage } from '../../components/ui/remote-image';
 import { getCached } from '../../lib/api-cache';
 import { imageThumb } from '../../lib/image';
@@ -142,16 +141,7 @@ export default function LeagueScreen() {
 
   return (
     <ScreenBackground>
-      <AppHeader
-        title="Leagues"
-        showLogo={false}
-        centered
-        actions={(
-          <HeaderAction label="Réinitialiser les filtres" onPress={() => setActiveFilter('all')}>
-            <Ionicons name="options-outline" size={22} color="#FFFFFF" />
-          </HeaderAction>
-        )}
-      />
+      <AppHeader title="Leagues" showLogo={false} centered />
 
       {/* Filtres */}
       <View className="px-4 pt-3 pb-1">

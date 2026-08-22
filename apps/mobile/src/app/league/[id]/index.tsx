@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, useCallback } from 'react';
-import { View, Text, Image, ScrollView, Pressable, ActivityIndicator } from 'react-native';
+import { View, Text, ScrollView, Pressable, ActivityIndicator } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { ScreenBackground } from '../../../components/ui/screen-background';
 import { apiClient } from '../../../lib/api';
@@ -20,7 +20,7 @@ import {
   isUpcoming,
 } from '../../../types/match';
 
-const TABS = ['Infos', 'Règlement', 'Récompenses', 'Équipes', 'Matchs', 'Classement', 'Stats'] as const;
+const TABS = ['Infos', 'Règlement', 'Équipes', 'Matchs', 'Classement', 'Stats'] as const;
 type Tab = (typeof TABS)[number];
 
 const MONTHS_FULL = [
@@ -44,40 +44,123 @@ const LEAGUE_STATUS_LABEL: Record<string, string> = {
 
 /* ───────────────────────── Onglet Infos ───────────────────────── */
 
-function TabInfos({ league }: { league: League }) {
-  const stats = [
+interface LeagueInfoStat {
+  label: string;
+  value: string;
+  highlighted?: boolean;
+  fullWidth?: boolean;
+}
+
+interface LeagueReward {
+  icon: string;
+  title: string;
+  detail: string;
+}
+
+function rewardIcon(title: string): string {
+  const normalized = title.toLocaleLowerCase('fr-FR');
+  if (/\b(1er|1re|1ère|premier|première)\b/.test(normalized)) return '🥇';
+  if (/\b(2e|2ème|deuxième)\b/.test(normalized)) return '🥈';
+  if (/\b(3e|3ème|troisième)\b/.test(normalized)) return '🥉';
+  if (normalized.includes('buteur')) return '⚽';
+  if (normalized.includes('passeur')) return '🎯';
+  if (normalized.includes('joueur')) return '🏅';
+  if (normalized.includes('gardien')) return '🧤';
+  return '🏆';
+}
+
+/**
+ * Les récompenses sont configurées par l'admin sous forme de lignes :
+ * « 1er : 1 000 000 FCFA », « Meilleur buteur : trophée », etc.
+ * Chaque ligne devient une carte du carrousel mobile, sans valeur fictive.
+ */
+function rewardsFromText(rewards?: string | null): LeagueReward[] {
+  if (!rewards?.trim()) return [];
+  return rewards
+    .split(/\r?\n|;/)
+    .map((line) => line.trim().replace(/^[-•]\s*/, ''))
+    .filter(Boolean)
+    .map((line) => {
+      const separator = line.indexOf(':');
+      const title = (separator >= 0 ? line.slice(0, separator) : line).trim();
+      const detail = (separator >= 0 ? line.slice(separator + 1) : '').trim();
+      return { icon: rewardIcon(title), title: title || 'Récompense', detail };
+    });
+}
+
+function TabInfos({ league }: { league: League & { teams?: LeagueTeamEntry[] } }) {
+  const rewardCards = rewardsFromText(league.rewards);
+  // `GET /leagues/:id` retourne les inscriptions dans `teams`. Le compteur
+  // agrégé n'était pas inclus par l'API détail : utiliser la liste évite le
+  // faux « 0 équipe » tout en restant compatible avec les anciennes réponses.
+  const registeredTeams = league.teams?.length ?? league._count?.teams ?? 0;
+  const stats: LeagueInfoStat[] = [
     { label: 'Dates', value: `${shortDate(league.start_date)} — ${shortDate(league.end_date)}` },
-    { label: 'Niveau', value: league.level?.trim() || '—' },
-    { label: 'Équipes', value: `${league._count?.teams ?? 0} / ${league.max_teams} inscrites` },
-    { label: 'Matchs / équipe', value: league.matches_per_team != null ? String(league.matches_per_team) : '—' },
+    { label: 'Équipes', value: `${registeredTeams} / ${league.max_teams} inscrites` },
     { label: 'Format', value: ({ round_robin: 'Championnat', single_elimination: 'Coupe', double_elimination: 'Coupe (double élim.)', league: 'Championnat + Play-offs' } as Record<string, string>)[league.format ?? ''] ?? (league.format ?? '—') },
-    ...(league.registration_fee ? [{ label: 'Inscription', value: `${league.registration_fee.toLocaleString('fr-FR')} FCFA` }] : []),
+    { label: 'Matchs / équipe', value: league.matches_per_team != null ? String(league.matches_per_team) : '—' },
+    ...(league.level?.trim() ? [{ label: 'Niveau', value: league.level }] : []),
+    ...(league.prize_info?.trim() ? [{ label: 'Récompenses', value: league.prize_info, highlighted: true }] : []),
+    ...(league.registration_fee ? [{ label: "Frais d'inscription", value: `${league.registration_fee.toLocaleString('fr-FR')} FCFA`, fullWidth: true }] : []),
   ];
   return (
     <ScrollView contentContainerStyle={{ padding: 20, paddingBottom: 40 }}>
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12 }} className="mb-6">
-        {stats.map(({ label, value }) => (
+        {stats.map(({ label, value, highlighted, fullWidth }) => (
           <View
             key={label}
             className="rounded-xl p-3.5"
-            style={{ minWidth: '45%', flexGrow: 1, backgroundColor: 'rgba(255,255,255,0.05)' }}
+            style={{
+              minWidth: fullWidth ? '100%' : '45%',
+              flexGrow: 1,
+              backgroundColor: highlighted ? 'rgba(255,184,48,0.10)' : 'rgba(255,255,255,0.05)',
+              borderWidth: highlighted ? 1 : 0,
+              borderColor: highlighted ? 'rgba(255,184,48,0.30)' : 'transparent',
+            }}
           >
             <Text className="text-xs mb-1" style={{ color: 'rgba(255,255,255,0.4)' }}>{label}</Text>
-            <Text className="text-white font-bold text-sm">{value}</Text>
+            <Text className="font-bold text-sm" style={{ color: highlighted ? '#FFB830' : '#FFFFFF' }}>{value}</Text>
           </View>
         ))}
       </View>
 
-      {league.prize_info ? (
-        <>
-          <Text className="text-white font-bold text-base mb-2">Dotation</Text>
-          <View
-            className="rounded-2xl p-4 mb-6"
-            style={{ backgroundColor: 'rgba(255,184,48,0.1)', borderWidth: 1, borderColor: 'rgba(255,184,48,0.2)' }}
-          >
-            <Text className="text-base font-bold" style={{ color: '#FFB830' }}>{league.prize_info}</Text>
+      {rewardCards.length > 0 ? (
+        <View className="mb-6">
+          <View className="flex-row items-center justify-between mb-3">
+            <Text className="text-white font-bold text-base">Récompenses à gagner</Text>
+            <Text className="text-xs font-semibold" style={{ color: 'rgba(255,255,255,0.45)' }}>Glisse →</Text>
           </View>
-        </>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{ gap: 12, paddingRight: 20 }}
+          >
+            {rewardCards.map((reward, index) => {
+              const featured = reward.icon === '🥇';
+              return (
+                <View
+                  key={`${reward.title}-${index}`}
+                  className="rounded-2xl px-5 py-4 justify-between"
+                  style={{
+                    width: 220,
+                    minHeight: 166,
+                    backgroundColor: featured ? 'rgba(247,146,30,0.12)' : 'rgba(255,255,255,0.05)',
+                    borderWidth: 1,
+                    borderColor: featured ? 'rgba(247,146,30,0.48)' : 'rgba(255,255,255,0.08)',
+                  }}
+                >
+                  <Text style={{ fontSize: 34 }}>{reward.icon}</Text>
+                  <View>
+                    <Text className="text-white font-bold text-base mb-1">{reward.title}</Text>
+                    {reward.detail ? (
+                      <Text className="font-black text-lg" style={{ color: '#F7921E' }}>{reward.detail}</Text>
+                    ) : null}
+                  </View>
+                </View>
+              );
+            })}
+          </ScrollView>
+        </View>
       ) : null}
 
       <Text className="text-white font-bold text-base mb-2">À propos</Text>
@@ -319,8 +402,17 @@ function TabClassement({ standings, loading }: { standings: Standing[]; loading:
                 {s.rank}
               </Text>
               <View className="flex-row items-center gap-2" style={{ flex: 1, marginLeft: 8 }}>
-                <View className="w-6 h-6 rounded-full items-center justify-center" style={{ backgroundColor: teamColor(s.team) }}>
-                  <Text className="text-white font-black" style={{ fontSize: 9 }}>{teamInitials(s.team.name)}</Text>
+                <View className="w-6 h-6 rounded-full items-center justify-center overflow-hidden" style={{ backgroundColor: teamColor(s.team) }}>
+                  {s.team.logo_url ? (
+                    <RemoteImage
+                      uri={imageThumb(s.team.logo_url, 96)}
+                      contentFit="cover"
+                      accessibilityLabel={`Logo de ${s.team.name}`}
+                      style={{ width: '100%', height: '100%' }}
+                    />
+                  ) : (
+                    <Text className="text-white font-black" style={{ fontSize: 9 }}>{teamInitials(s.team.name)}</Text>
+                  )}
                 </View>
                 <Text className="text-white text-xs font-semibold flex-1" numberOfLines={1}>{s.team.name}</Text>
               </View>
@@ -566,9 +658,7 @@ export default function LeagueDetailPage() {
     return (
       <View className="flex-1" style={{ backgroundColor: '#0D1F0D' }}>
         <PatternedGreenHeader style={{ paddingHorizontal: 20, paddingTop: 56, paddingBottom: 16 }} patternOpacity={0.5}>
-          <Pressable onPress={() => router.back()} hitSlop={8}>
-            <Text className="text-white text-2xl">←</Text>
-          </Pressable>
+          <View style={{ height: 28 }} />
         </PatternedGreenHeader>
         <View className="flex-1 items-center justify-center">
           <Text className="text-white/60">Ligue introuvable.</Text>
@@ -592,11 +682,8 @@ export default function LeagueDetailPage() {
             <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(13,31,13,0.55)' }} />
           </>
         ) : null}
-        <View className="flex-row items-center px-5 pt-14 pb-3 gap-2">
-          <Pressable onPress={() => router.back()} hitSlop={8}>
-            <Text className="text-white text-2xl">←</Text>
-          </Pressable>
-          <View className="self-start px-2.5 py-0.5 rounded-full ml-2" style={{ backgroundColor: '#0F3D1E' }}>
+        <View className="flex-row items-center pl-16 pr-5 pt-14 pb-3 gap-2">
+          <View className="self-start px-2.5 py-0.5 rounded-full" style={{ backgroundColor: '#0F3D1E' }}>
             <Text className="text-xs font-black tracking-widest text-white">{statusLabel.toUpperCase()}</Text>
           </View>
           {alreadyRegistered ? (
@@ -651,22 +738,6 @@ export default function LeagueDetailPage() {
             ) : (
               <Text className="text-sm" style={{ color: 'rgba(255,255,255,0.4)' }}>Aucun règlement publié pour cette ligue.</Text>
             )}
-          </ScrollView>
-        )}
-        {activeTab === 'Récompenses' && (
-          <ScrollView contentContainerStyle={{ padding: 20, paddingBottom: 40 }}>
-            <Text className="text-white font-bold text-base mb-3">Récompenses</Text>
-            {league.prize_info?.trim() ? (
-              <View className="rounded-2xl p-4 mb-4" style={{ backgroundColor: 'rgba(255,184,48,0.1)', borderWidth: 1, borderColor: 'rgba(255,184,48,0.25)' }}>
-                <Text className="text-xs mb-1" style={{ color: 'rgba(255,255,255,0.5)' }}>Dotation totale</Text>
-                <Text className="text-lg font-black" style={{ color: '#FFB830' }}>{league.prize_info}</Text>
-              </View>
-            ) : null}
-            {league.rewards?.trim() ? (
-              <Text className="text-sm leading-relaxed" style={{ color: 'rgba(255,255,255,0.75)' }}>{league.rewards}</Text>
-            ) : !league.prize_info?.trim() ? (
-              <Text className="text-sm" style={{ color: 'rgba(255,255,255,0.4)' }}>Aucune récompense publiée pour cette ligue.</Text>
-            ) : null}
           </ScrollView>
         )}
       </View>

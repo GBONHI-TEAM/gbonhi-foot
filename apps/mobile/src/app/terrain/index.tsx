@@ -102,7 +102,6 @@ function TerrainCard({ terrain }: { terrain: Terrain }) {
 }
 
 export default function TerrainListPage() {
-  const router = useRouter();
   const [terrains, setTerrains] = useState<Terrain[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -159,11 +158,8 @@ export default function TerrainListPage() {
         style={{ paddingTop: 56, paddingBottom: 18, paddingHorizontal: 20, borderBottomLeftRadius: 24, borderBottomRightRadius: 24, overflow: 'hidden' }}
         patternOpacity={0.5}
       >
-        <View className="flex-row items-center mb-4">
-          <Pressable onPress={() => (router.canGoBack() ? router.back() : router.replace('/(tabs)'))} hitSlop={8} style={{ width: 32 }}>
-            <Text className="text-white text-2xl">←</Text>
-          </Pressable>
-          <Text className="text-white font-black text-2xl flex-1 text-center" style={{ marginRight: 32 }}>Terrains</Text>
+        <View className="flex-row items-center justify-center mb-4">
+          <Text className="text-white font-black text-2xl text-center">Terrains</Text>
         </View>
         <View className="h-12 rounded-full flex-row items-center px-4 gap-2" style={{ backgroundColor: 'rgba(255,255,255,0.15)' }}>
           <Text style={{ color: 'rgba(255,255,255,0.8)' }}>🔍</Text>
