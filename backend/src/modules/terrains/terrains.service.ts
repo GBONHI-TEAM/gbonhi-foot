@@ -313,7 +313,27 @@ export class TerrainsService {
     });
     if (!partner) throw new NotFoundException('Partenaire introuvable');
 
-    return this.prisma.terrain.create({ data: dto });
+    // `hours` n'est pas une colonne de Terrain : on l'extrait pour en dériver
+    // les créneaux horaires (1 par heure entre start_hour et end_hour).
+    const { hours, ...terrainData } = dto;
+    const terrain = await this.prisma.terrain.create({ data: terrainData });
+
+    if (hours && hours.length > 0) {
+      const slots = hours.flatMap((day) => {
+        const start = Math.max(0, Math.min(day.start_hour, day.end_hour));
+        const end = Math.max(day.start_hour, day.end_hour);
+        const rows: { terrain_id: string; day_of_week: number; start_hour: number; end_hour: number }[] = [];
+        for (let h = start; h < end; h += 1) {
+          rows.push({ terrain_id: terrain.id, day_of_week: day.day_of_week, start_hour: h, end_hour: h + 1 });
+        }
+        return rows;
+      });
+      if (slots.length > 0) {
+        await this.prisma.terrainSlot.createMany({ data: slots, skipDuplicates: true });
+      }
+    }
+
+    return terrain;
   }
 
   async update(id: string, dto: UpdateTerrainDto, user: UserPayload) {

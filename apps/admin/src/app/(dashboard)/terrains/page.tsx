@@ -56,6 +56,9 @@ const SURFACES = [
   { value: 'futsal', label: 'Futsal' },
 ] as const;
 const SURFACE_LABEL = Object.fromEntries(SURFACES.map((surface) => [surface.value, surface.label]));
+// day_of_week : 0 = Lundi … 6 = Dimanche (cohérent avec l'app mobile / le portail).
+const OPENING_DAYS = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'];
+const HOUR_OPTIONS = Array.from({ length: 25 }, (_, h) => h); // 0..24
 const FORMATS = ['5vs5', '7vs7', '8vs8', '11vs11'];
 const AMENITIES = ['Vestiaires', 'Douches', 'Parking', 'Éclairage', 'Buvette', 'Wifi'];
 const INPUT_CLASS = 'mt-1.5 h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-[#1E7A3A] focus:ring-2 focus:ring-[#1E7A3A]/10';
@@ -136,6 +139,9 @@ function TerrainForm({
   const [photos, setPhotos] = useState<string[]>(terrain?.photos ?? []);
   const [amenities, setAmenities] = useState<string[]>(terrain?.amenities ?? []);
   const [active, setActive] = useState(terrain?.is_active ?? true);
+  const [openDays, setOpenDays] = useState<boolean[]>(() => Array(7).fill(true));
+  const [openHour, setOpenHour] = useState(6);
+  const [closeHour, setCloseHour] = useState(22);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -200,7 +206,13 @@ function TerrainForm({
     };
     if (latitude) payload.latitude = parsedLatitude;
     if (longitude) payload.longitude = parsedLongitude;
-    if (!editing) payload.partner_id = partnerId;
+    if (!editing) {
+      payload.partner_id = partnerId;
+      if (closeHour <= openHour) return setError("L'heure de fermeture doit être postérieure à l'ouverture.");
+      payload.hours = openDays
+        .map((open, day) => (open ? { day_of_week: day, start_hour: openHour, end_hour: closeHour } : null))
+        .filter(Boolean);
+    }
 
     setSaving(true);
     try {
@@ -296,7 +308,44 @@ function TerrainForm({
               <div className="grid grid-cols-2 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-500"><span>Créneaux</span><span>Tarif indicatif</span></div>
               {['Matin', 'Après-midi', 'Soir'].map((period) => <div key={period} className="grid grid-cols-2 border-t border-slate-100 px-3 py-3 text-slate-600"><span>{period}</span><span className="font-semibold text-slate-800">{Number.isFinite(hourlyRate) && hourlyRate > 0 ? formatFcfa(hourlyRate) : '—'}</span></div>)}
             </div>
-            <p className="mt-3 text-xs leading-5 text-slate-400">Les horaires d&apos;ouverture et les créneaux sont ensuite pilotés par le partenaire dans son portail.</p>
+            {editing ? (
+              <p className="mt-3 text-xs leading-5 text-slate-400">Les horaires sont ensuite pilotés par le partenaire dans son portail.</p>
+            ) : (
+              <div className="mt-5 border-t border-slate-100 pt-4">
+                <h3 className="text-sm font-bold text-slate-900">Horaires d&apos;ouverture</h3>
+                <div className="mt-3 grid grid-cols-2 gap-3">
+                  <label className="text-xs font-semibold text-slate-500">Ouverture
+                    <select value={openHour} onChange={(event) => setOpenHour(Number(event.target.value))} className={`${INPUT_CLASS} mt-1`}>
+                      {HOUR_OPTIONS.slice(0, 24).map((h) => <option key={h} value={h}>{h}h</option>)}
+                    </select>
+                  </label>
+                  <label className="text-xs font-semibold text-slate-500">Fermeture
+                    <select value={closeHour} onChange={(event) => setCloseHour(Number(event.target.value))} className={`${INPUT_CLASS} mt-1`}>
+                      {HOUR_OPTIONS.slice(1).map((h) => <option key={h} value={h}>{h}h</option>)}
+                    </select>
+                  </label>
+                </div>
+                <p className="mt-4 text-xs font-semibold text-slate-500">Jours ouverts</p>
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {OPENING_DAYS.map((label, day) => (
+                    <button
+                      key={label}
+                      type="button"
+                      onClick={() => setOpenDays((prev) => prev.map((value, index) => (index === day ? !value : value)))}
+                      className="rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition-colors"
+                      style={{
+                        borderColor: openDays[day] ? '#24883F' : '#CBD5E1',
+                        backgroundColor: openDays[day] ? '#24883F' : 'white',
+                        color: openDays[day] ? 'white' : '#64748B',
+                      }}
+                    >
+                      {label.slice(0, 3)}
+                    </button>
+                  ))}
+                </div>
+                <p className="mt-3 text-xs leading-5 text-slate-400">Des créneaux d&apos;1h seront générés sur cette plage pour chaque jour ouvert. Le partenaire pourra ensuite ouvrir/fermer les jours depuis son portail.</p>
+              </div>
+            )}
           </section>
           <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
             <h2 className="text-base font-bold text-slate-900">Partenariat</h2>
