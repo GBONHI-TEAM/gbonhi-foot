@@ -2,19 +2,21 @@
 import { useEffect, useState } from 'react';
 import { Header } from '../../../components/layout/header';
 import { Info, Check, X, Star } from 'lucide-react';
-import { apiFetch } from '../../../lib/api';
 import {
-  ApiTerrain,
   ApiSlot,
   JOURS_FR,
   SURFACE_FR,
   fcfa,
 } from '../../../lib/domain';
+import { useTerrain } from '../../../lib/terrain-context';
+import { apiFetch } from '../../../lib/api';
 
 interface JourDispo {
   nom: string;
+  day: number;
   horaire: string;
   ouvert: boolean;
+  hasSlots: boolean;
 }
 
 interface Equipement {
@@ -38,43 +40,50 @@ function Card({ children, className = '' }: { children: React.ReactNode; classNa
   return <div className={`bg-white rounded-xl p-5 shadow-sm border border-gray-100 ${className}`}>{children}</div>;
 }
 
-/** Regroupe les créneaux actifs par jour de semaine → "6h – 22h" ou "Fermé". */
+/**
+ * Regroupe les créneaux par jour. `ouvert` = au moins un créneau actif ce jour ;
+ * `hasSlots` = des horaires existent (sinon rien à ouvrir, bascule désactivée).
+ */
 function slotsToJours(slots: ApiSlot[]): JourDispo[] {
   return JOURS_FR.map((nom, day) => {
-    const jourSlots = slots.filter((s) => s.day_of_week === day && s.is_active);
-    if (jourSlots.length === 0) return { nom, horaire: 'Fermé', ouvert: false };
-    const min = Math.min(...jourSlots.map((s) => s.start_hour));
-    const max = Math.max(...jourSlots.map((s) => s.end_hour));
-    return { nom, horaire: `${min}h – ${max}h`, ouvert: true };
+    const daySlots = slots.filter((s) => s.day_of_week === day);
+    const activeSlots = daySlots.filter((s) => s.is_active);
+    if (daySlots.length === 0) {
+      return { nom, day, horaire: 'Horaires non configurés', ouvert: false, hasSlots: false };
+    }
+    const ref = activeSlots.length > 0 ? activeSlots : daySlots;
+    const min = Math.min(...ref.map((s) => s.start_hour));
+    const max = Math.max(...ref.map((s) => s.end_hour));
+    return { nom, day, horaire: `${min}h – ${max}h`, ouvert: activeSlots.length > 0, hasSlots: true };
   });
 }
 
 export default function MonTerrainPage() {
-  const [terrain, setTerrain] = useState<ApiTerrain | null>(null);
+  const { selectedTerrain: terrain, reload } = useTerrain();
   const [jours, setJours] = useState<JourDispo[]>([]);
+  const [saving, setSaving] = useState<number | null>(null);
 
   useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const terrains = await apiFetch<ApiTerrain[]>('/terrains/mine');
-        if (cancelled) return;
-        if (Array.isArray(terrains) && terrains.length > 0) {
-          const t = terrains[0];
-          setTerrain(t);
-          setJours(slotsToJours(t.slots ?? []));
-        }
-      } catch {
-        /* affiche l'état vide si l'API échoue */
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+    setJours(slotsToJours(terrain?.slots ?? []));
+  }, [terrain]);
 
-  function toggle(i: number) {
-    setJours((prev) => prev.map((j, idx) => (idx === i ? { ...j, ouvert: !j.ouvert } : j)));
+  async function toggle(i: number) {
+    const jour = jours[i];
+    if (!terrain || !jour.hasSlots || saving !== null) return; // rien à ouvrir sans horaires configurés
+    const next = !jour.ouvert;
+    setSaving(i);
+    setJours((prev) => prev.map((j, idx) => (idx === i ? { ...j, ouvert: next } : j))); // optimiste
+    try {
+      await apiFetch(`/terrains/${terrain.id}/availability`, {
+        method: 'PATCH',
+        body: JSON.stringify({ day_of_week: jour.day, is_active: next }),
+      });
+      await reload(); // rafraîchit les créneaux dans le contexte partagé
+    } catch {
+      setJours((prev) => prev.map((j, idx) => (idx === i ? { ...j, ouvert: !next } : j))); // revert
+    } finally {
+      setSaving(null);
+    }
   }
 
   const nom = terrain?.name ?? '—';
@@ -172,13 +181,15 @@ export default function MonTerrainPage() {
                 <div key={j.nom} className="flex items-center justify-between py-2.5">
                   <div>
                     <p className="text-[13px] font-medium text-gray-900">{j.nom}</p>
-                    <p className="text-[11px] text-gray-400">{j.ouvert ? j.horaire : 'Fermé'}</p>
+                    <p className="text-[11px] text-gray-400">{!j.hasSlots ? j.horaire : j.ouvert ? j.horaire : 'Fermé'}</p>
                   </div>
                   <button
                     onClick={() => toggle(i)}
-                    className="relative w-10 h-6 rounded-full transition-colors flex-shrink-0"
+                    disabled={!j.hasSlots || saving !== null}
+                    className="relative w-10 h-6 rounded-full transition-colors flex-shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
                     style={{ backgroundColor: j.ouvert ? '#1E7A3A' : '#D1D5DB' }}
                     aria-label={`Basculer ${j.nom}`}
+                    title={!j.hasSlots ? 'Aucun horaire configuré pour ce jour' : undefined}
                   >
                     <span
                       className="absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all"

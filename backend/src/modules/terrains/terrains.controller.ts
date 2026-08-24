@@ -14,6 +14,7 @@ import { CreateTerrainDto } from './dto/create-terrain.dto';
 import { CreateAdminTerrainDto } from './dto/create-admin-terrain.dto';
 import { UpdateTerrainDto } from './dto/update-terrain.dto';
 import { CreateSlotDto } from './dto/create-slot.dto';
+import { SetDayAvailabilityDto } from './dto/set-day-availability.dto';
 import { CreateBlockDto } from './dto/create-block.dto';
 import { CreateReviewDto } from './dto/create-review.dto';
 import { SupabaseAuthGuard } from '../auth/supabase-auth.guard';
@@ -118,6 +119,15 @@ export class TerrainsController {
     @CurrentUser() user: UserPayload,
   ) {
     return this.terrainsService.removeSlot(id, slotId, user);
+  }
+
+  @Patch(':id/availability')
+  setDayAvailability(
+    @Param('id') id: string,
+    @Body() dto: SetDayAvailabilityDto,
+    @CurrentUser() user: UserPayload,
+  ) {
+    return this.terrainsService.setDayAvailability(id, dto, user);
   }
 
   @Get(':id/availability')

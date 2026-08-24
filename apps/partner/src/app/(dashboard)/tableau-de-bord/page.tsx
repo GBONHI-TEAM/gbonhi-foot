@@ -5,11 +5,11 @@ import { Wallet, CalendarCheck, TrendingUp, Gauge, LineChart, Star, ListChecks }
 import { apiFetch } from '../../../lib/api';
 import { useCurrentUser } from '../../../lib/use-user';
 import { usePartnerAccess } from '../../../components/auth/partner-access-provider';
+import { useTerrain } from '../../../lib/terrain-context';
 import {
   ApiReservation,
   ApiReservationStats,
   ApiOperationalStats,
-  ApiTerrain,
   STATUS_FR,
   STATUS_BADGE_FR,
   displayName,
@@ -38,8 +38,8 @@ interface PartnerReview {
 export default function PartnerDashboardPage() {
   const user = useCurrentUser();
   const { isOwner, loading: accessLoading } = usePartnerAccess();
+  const { selectedTerrain: terrain } = useTerrain();
   const [stats, setStats] = useState<ApiReservationStats | ApiOperationalStats | null>(null);
-  const [terrain, setTerrain] = useState<ApiTerrain | null>(null);
   const [resaJour, setResaJour] = useState<ResaJour[]>([]);
   const [revenueHistory, setRevenueHistory] = useState<RevenuePoint[]>([]);
   const [latestReviews, setLatestReviews] = useState<PartnerReview[]>([]);
@@ -49,18 +49,16 @@ export default function PartnerDashboardPage() {
     if (accessLoading) return;
     (async () => {
       try {
-        const [s, terrains, resas, history, reviews] = await Promise.all([
+        const [s, resas, history, reviews] = await Promise.all([
           isOwner
             ? apiFetch<ApiReservationStats>('/reservations/stats/summary')
             : apiFetch<ApiOperationalStats>('/reservations/stats/operational-summary'),
-          apiFetch<ApiTerrain[]>('/terrains/mine'),
           apiFetch<ApiReservation[]>(`/reservations?date=${todayISO()}`),
           isOwner ? apiFetch<RevenuePoint[]>('/reservations/stats/revenue-history') : Promise.resolve([] as RevenuePoint[]),
           apiFetch<PartnerReview[]>('/terrains/mine/reviews'),
         ]);
         if (cancelled) return;
         setStats(s);
-        if (Array.isArray(terrains) && terrains.length > 0) setTerrain(terrains[0]);
         setRevenueHistory(Array.isArray(history) ? history : []);
         setLatestReviews(Array.isArray(reviews) ? reviews : []);
         if (Array.isArray(resas)) {

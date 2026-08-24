@@ -9,6 +9,7 @@ import { CreateTerrainDto } from './dto/create-terrain.dto';
 import { CreateAdminTerrainDto } from './dto/create-admin-terrain.dto';
 import { UpdateTerrainDto } from './dto/update-terrain.dto';
 import { CreateSlotDto } from './dto/create-slot.dto';
+import { SetDayAvailabilityDto } from './dto/set-day-availability.dto';
 import { CreateBlockDto } from './dto/create-block.dto';
 import { CreateReviewDto } from './dto/create-review.dto';
 import { PartnerAccessService } from '../partner-access/partner-access.service';
@@ -342,6 +343,21 @@ export class TerrainsService {
       where: { id: slotId, terrain_id: id },
     });
     return { ok: true, deleted: count };
+  }
+
+  /**
+   * Ouvre ou ferme un jour de la semaine : bascule `is_active` sur TOUS les
+   * créneaux récurrents de ce jour. Un jour fermé n'apparaît plus comme
+   * disponible dans l'app mobile. Réservé au propriétaire/gérant du terrain.
+   */
+  async setDayAvailability(id: string, dto: SetDayAvailabilityDto, user: UserPayload) {
+    await this.assertOwner(id, user);
+    const { count } = await this.prisma.terrainSlot.updateMany({
+      where: { terrain_id: id, day_of_week: dto.day_of_week },
+      data: { is_active: dto.is_active },
+    });
+    // count === 0 : aucun créneau configuré ce jour-là (horaires à définir).
+    return { ok: true, updated: count, is_active: dto.is_active };
   }
 
   // ─── Blocages (jours/heures fermés) ──────────────────────────────────────

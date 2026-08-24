@@ -4,11 +4,11 @@ import { Header } from '../../../components/layout/header';
 import { Star } from 'lucide-react';
 import { apiFetch } from '../../../lib/api';
 import {
-  ApiTerrain,
   ApiReview,
   dateFR,
   initials,
 } from '../../../lib/domain';
+import { useTerrain } from '../../../lib/terrain-context';
 
 /** Rangée d'étoiles pleines/vides pour une note donnée. */
 function Stars({ value, size = 14 }: { value: number; size?: number }) {
@@ -30,23 +30,23 @@ function Stars({ value, size = 14 }: { value: number; size?: number }) {
 }
 
 export default function AvisPage() {
-  const [terrain, setTerrain] = useState<ApiTerrain | null>(null);
+  const { selectedTerrain: terrain } = useTerrain();
   const [reviews, setReviews] = useState<ApiReview[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    if (!terrain) {
+      setReviews([]);
+      setLoading(false);
+      return;
+    }
     let cancelled = false;
+    setLoading(true);
     (async () => {
       try {
-        const terrains = await apiFetch<ApiTerrain[]>('/terrains/mine');
+        const list = await apiFetch<ApiReview[]>(`/terrains/${terrain.id}/reviews`);
         if (cancelled) return;
-        const t = Array.isArray(terrains) && terrains.length > 0 ? terrains[0] : null;
-        setTerrain(t);
-        if (t) {
-          const list = await apiFetch<ApiReview[]>(`/terrains/${t.id}/reviews`);
-          if (cancelled) return;
-          if (Array.isArray(list)) setReviews(list);
-        }
+        if (Array.isArray(list)) setReviews(list);
       } catch {
         /* état vide si l'API échoue */
       } finally {
@@ -56,7 +56,7 @@ export default function AvisPage() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [terrain]);
 
   const count = terrain?.rating_count ?? reviews.length;
   const avg = terrain?.rating_avg ?? 0;

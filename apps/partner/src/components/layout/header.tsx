@@ -1,8 +1,31 @@
 'use client';
-import { Bell } from 'lucide-react';
+import { Bell, MapPin, ChevronDown } from 'lucide-react';
 import { useCurrentUser } from '../../lib/use-user';
 import { displayName, initials } from '../../lib/domain';
 import { GlobalPeriodFilter } from '../ui/global-period-filter';
+import { useTerrain } from '../../lib/terrain-context';
+
+/** Sélecteur du terrain courant : visible seulement si le proprio a 2+ terrains. */
+function TerrainSwitcher() {
+  const { terrains, selectedId, setSelectedId } = useTerrain();
+  if (terrains.length <= 1) return null;
+  return (
+    <div className="relative flex items-center">
+      <MapPin size={15} className="pointer-events-none absolute left-2.5 text-primary" />
+      <ChevronDown size={15} className="pointer-events-none absolute right-2 text-gray-400" />
+      <select
+        aria-label="Choisir le terrain"
+        value={selectedId ?? ''}
+        onChange={(event) => setSelectedId(event.target.value)}
+        className="h-9 max-w-[220px] appearance-none rounded-lg border border-gray-200 bg-white pl-8 pr-7 text-[13px] font-semibold text-gray-800 focus:border-primary focus:outline-none"
+      >
+        {terrains.map((terrain) => (
+          <option key={terrain.id} value={terrain.id}>{terrain.name}</option>
+        ))}
+      </select>
+    </div>
+  );
+}
 
 interface HeaderProps {
   title: string;
@@ -32,6 +55,7 @@ export function Header({ title, subtitle }: HeaderProps) {
           {subtitle && <p className="text-[12px] text-gray-400">{subtitle}</p>}
         </div>
         <div className="flex items-center gap-4">
+          <TerrainSwitcher />
           <GlobalPeriodFilter />
           <button className="relative p-1.5 text-gray-400 hover:text-gray-700 transition-colors">
             <Bell size={18} />

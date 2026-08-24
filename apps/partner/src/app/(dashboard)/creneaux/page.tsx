@@ -3,7 +3,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { Header } from '../../../components/layout/header';
 import { Ban, Info, X, CalendarDays } from 'lucide-react';
 import { apiFetch } from '../../../lib/api';
-import { ApiBlock, ApiReservation, ApiTerrain, ApiSlot } from '../../../lib/domain';
+import { ApiBlock, ApiReservation, ApiSlot } from '../../../lib/domain';
+import { useTerrain } from '../../../lib/terrain-context';
 
 type SlotStatut = 'dispo' | 'reserve' | 'attente' | 'bloque' | 'ferme';
 type Cell = { statut: SlotStatut; label?: string; sub?: string };
@@ -42,9 +43,9 @@ function mondayOfWeek(base = new Date()): Date {
 }
 
 export default function CreneauxPage() {
+  const { selectedTerrain: terrain } = useTerrain();
   const [vue, setVue] = useState<'semaine' | 'jour'>('semaine');
   const [modal, setModal] = useState(false);
-  const [terrain, setTerrain] = useState<ApiTerrain | null>(null);
   const [blocks, setBlocks] = useState<ApiBlock[]>([]);
   const [reservations, setReservations] = useState<ApiReservation[]>([]);
 
@@ -68,20 +69,22 @@ export default function CreneauxPage() {
   }
 
   useEffect(() => {
+    if (!terrain) {
+      setBlocks([]);
+      setReservations([]);
+      return;
+    }
     let cancelled = false;
     (async () => {
       try {
-        const terrains = await apiFetch<ApiTerrain[]>('/terrains/mine');
-        if (cancelled || !Array.isArray(terrains) || terrains.length === 0) return;
-        const t = terrains[0];
-        setTerrain(t);
         const [b, resas] = await Promise.all([
-          apiFetch<ApiBlock[]>(`/terrains/${t.id}/blocks`).catch(() => [] as ApiBlock[]),
+          apiFetch<ApiBlock[]>(`/terrains/${terrain.id}/blocks`).catch(() => [] as ApiBlock[]),
           apiFetch<ApiReservation[]>('/reservations').catch(() => [] as ApiReservation[]),
         ]);
         if (cancelled) return;
         if (Array.isArray(b)) setBlocks(b);
-        if (Array.isArray(resas)) setReservations(resas);
+        // Réservations du terrain sélectionné uniquement (l'endpoint renvoie tous les terrains du partenaire).
+        if (Array.isArray(resas)) setReservations(resas.filter((r) => r.terrain?.id === terrain.id));
       } catch {
         /* état vide */
       }
@@ -89,7 +92,7 @@ export default function CreneauxPage() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [terrain]);
 
   const slots: ApiSlot[] = terrain?.slots ?? [];
 

@@ -10,6 +10,7 @@ import {
   fcfa,
   todayISO,
 } from '../../../lib/domain';
+import { useTerrain } from '../../../lib/terrain-context';
 
 const RESA_BADGE: Record<string, { bg: string; color: string; icon?: React.ReactNode }> = {
   Terminée: { bg: '#D1FAE5', color: '#065F46', icon: <Check size={12} /> },
@@ -27,29 +28,32 @@ interface ResaRow {
 }
 
 export default function LivePage() {
+  const { selectedTerrain } = useTerrain();
   const [stats, setStats] = useState<ApiOperationalStats | null>(null);
   const [resas, setResas] = useState<ResaRow[]>([]);
   const [totalCreneaux, setTotalCreneaux] = useState<number>(0);
+
+  // Nombre de créneaux ouverts aujourd'hui pour le terrain sélectionné.
+  useEffect(() => {
+    const day = (new Date().getDay() + 6) % 7; // 0 = lundi
+    const count = (selectedTerrain?.slots ?? []).filter((sl) => sl.day_of_week === day && sl.is_active).length;
+    setTotalCreneaux(count);
+  }, [selectedTerrain]);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const [s, terrains, today] = await Promise.all([
+        const [s, today] = await Promise.all([
           apiFetch<ApiOperationalStats>('/reservations/stats/operational-summary'),
-          apiFetch<{ slots?: { day_of_week: number; is_active: boolean }[] }[]>('/terrains/mine'),
           apiFetch<ApiReservation[]>(`/reservations?date=${todayISO()}`),
         ]);
         if (cancelled) return;
         setStats(s);
-        if (Array.isArray(terrains) && terrains.length > 0) {
-          const day = (new Date().getDay() + 6) % 7; // 0 = lundi
-          const count = (terrains[0].slots ?? []).filter((sl) => sl.day_of_week === day && sl.is_active).length;
-          setTotalCreneaux(count);
-        }
         if (Array.isArray(today)) {
           setResas(
             today
+              .filter((r) => !selectedTerrain || r.terrain?.id === selectedTerrain.id)
               .slice()
               .sort((a, b) => a.start_hour - b.start_hour)
               .map((r) => ({
@@ -66,7 +70,7 @@ export default function LivePage() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [selectedTerrain]);
 
   const nbResa = stats ? stats.today_count : resas.length;
   const taux = stats ? `${Math.round(stats.occupancy_rate)}%` : '—';
