@@ -126,9 +126,19 @@ export default function MonTerrainPage() {
           <Card>
             <h2 className="font-semibold text-gray-900 text-[14px] mb-4">Photos</h2>
             <div className="grid grid-cols-3 gap-3">
-              {[0, 1, 2].map((i) => (
-                <div key={i} className="aspect-[4/3] rounded-lg" style={{ background: 'linear-gradient(135deg,#1E7A3A,#0F3D1E)' }} />
-              ))}
+              {(terrain?.photos && terrain.photos.length > 0 ? terrain.photos.slice(0, 6) : [null, null, null]).map((url, i) =>
+                url ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    key={i}
+                    src={url}
+                    alt={`Photo ${i + 1} du terrain`}
+                    className="aspect-[4/3] w-full rounded-lg object-cover"
+                  />
+                ) : (
+                  <div key={i} className="aspect-[4/3] rounded-lg" style={{ background: 'linear-gradient(135deg,#1E7A3A,#0F3D1E)' }} />
+                ),
+              )}
             </div>
           </Card>
 

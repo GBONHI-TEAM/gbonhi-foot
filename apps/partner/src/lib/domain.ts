@@ -33,6 +33,7 @@ export interface ApiTerrain {
   format: string; // ex: '5vs5'
   capacity: number;
   price_per_hour: number;
+  photos: string[];
   amenities: string[];
   description: string | null;
   phone_contact: string | null;
