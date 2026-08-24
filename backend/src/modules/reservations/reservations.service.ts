@@ -279,21 +279,45 @@ export class ReservationsService {
     const total = Math.round(unit * duration);
     const fee = Math.round(total * PLATFORM_FEE_RATE);
 
-    const reservation = await this.prisma.reservation.create({
-      data: {
+    // La contrainte @@unique([terrain_id, reservation_date, start_hour]) couvre
+    // TOUTES les lignes, y compris les annulées/expirées. Une ancienne ligne
+    // annulée au créneau EXACT bloquerait donc une nouvelle réservation (erreur
+    // P2002 « existe déjà »). On la réutilise au lieu d'en insérer une nouvelle.
+    const staleExact = await this.prisma.reservation.findFirst({
+      where: {
         terrain_id: dto.terrain_id,
-        user_id: user.id,
         reservation_date: reservationDate,
         start_hour: dto.start_hour,
-        end_hour: dto.end_hour,
-        unit_price: unit,
-        total_price: total,
-        platform_fee: fee,
-        partner_amount: total - fee,
-        status: 'pending',
-        notes: dto.notes,
+        status: { notIn: ['pending', 'confirmed'] },
       },
+      select: { id: true },
     });
+
+    const reservationData = {
+      user_id: user.id,
+      end_hour: dto.end_hour,
+      unit_price: unit,
+      total_price: total,
+      platform_fee: fee,
+      partner_amount: total - fee,
+      status: 'pending',
+      cancel_reason: null,
+      notes: dto.notes,
+    };
+
+    const reservation = staleExact
+      ? await this.prisma.reservation.update({
+          where: { id: staleExact.id },
+          data: { ...reservationData, updated_at: new Date() },
+        })
+      : await this.prisma.reservation.create({
+          data: {
+            terrain_id: dto.terrain_id,
+            reservation_date: reservationDate,
+            start_hour: dto.start_hour,
+            ...reservationData,
+          },
+        });
     try {
       await this.analytics.track(user, { type: 'RESERVATION_CREATED', mode: 'reservation' });
     } catch {
