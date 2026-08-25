@@ -1,4 +1,5 @@
 import { RECEIPT_LOGO_JPEG_BASE64 } from './receipt-logo';
+import { RECEIPT_HEADER_MOTIF_JPEG_BASE64 } from './receipt-header-motif';
 
 interface ReceiptPdfInput {
   reference: string;
@@ -31,6 +32,9 @@ interface PartnerRevenueStatementPdfInput {
 }
 
 const LOGO = { data: Buffer.from(RECEIPT_LOGO_JPEG_BASE64, 'base64'), width: 150, height: 150 };
+const HEADER_MOTIF = { data: Buffer.from(RECEIPT_HEADER_MOTIF_JPEG_BASE64, 'base64'), width: 1190, height: 194 };
+// Bandeau vert de l'en-tête (haut de page A4) : y 745, hauteur 97, largeur 595.
+const HEADER_BAND = 'q 595 0 0 97 0 745 cm /Im1 Do Q';
 
 // Quelques caractères WinAnsi hors Latin-1 direct (apostrophes typographiques, œ…).
 const WINANSI_SPECIAL: Record<string, number> = {
@@ -106,13 +110,17 @@ function receiptObjects(content: string): PdfObject[] {
   return [
     '<< /Type /Catalog /Pages 2 0 R >>',
     '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
-    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 4 0 R /F2 5 0 R >> /XObject << /Im0 7 0 R >> >> /Contents 6 0 R >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 4 0 R /F2 5 0 R >> /XObject << /Im0 7 0 R /Im1 8 0 R >> >> /Contents 6 0 R >>',
     '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>',
     '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>',
     { head: `<< /Length ${contentBuf.length} >>`, stream: contentBuf },
     {
       head: `<< /Type /XObject /Subtype /Image /Width ${LOGO.width} /Height ${LOGO.height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${LOGO.data.length} >>`,
       stream: LOGO.data,
+    },
+    {
+      head: `<< /Type /XObject /Subtype /Image /Width ${HEADER_MOTIF.width} /Height ${HEADER_MOTIF.height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${HEADER_MOTIF.data.length} >>`,
+      stream: HEADER_MOTIF.data,
     },
   ];
 }
@@ -122,6 +130,8 @@ export function createReservationReceiptPdf(input: ReceiptPdfInput): Buffer {
   const content = [
     '0.051 0.122 0.051 rg 0 0 595 842 re f',
     '0.118 0.478 0.227 rg 0 745 595 97 re f',
+    // Motif ivoirien couvrant tout le bandeau vert
+    HEADER_BAND,
     // Logo GBONHI FOOT (à droite du bandeau vert)
     drawLogo(474, 758, 64),
     '1 1 1 rg',
@@ -163,6 +173,7 @@ export function createLeagueRegistrationReceiptPdf(input: LeagueReceiptPdfInput)
   const content = [
     '0.051 0.122 0.051 rg 0 0 595 842 re f',
     '0.118 0.478 0.227 rg 0 745 595 97 re f',
+    HEADER_BAND,
     drawLogo(474, 758, 64),
     '1 1 1 rg',
     text(42, 804, 21, 'GBONHI FOOT', 'F2'),
