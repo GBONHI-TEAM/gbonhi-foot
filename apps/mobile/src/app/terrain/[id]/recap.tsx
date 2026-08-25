@@ -46,6 +46,7 @@ export default function RecapPage() {
   const [terrain, setTerrain] = useState<TerrainDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [added, setAdded] = useState(false);
 
   useEffect(() => {
     let mounted = true;
@@ -76,16 +77,19 @@ export default function RecapPage() {
         start_hour: startHour,
         end_hour: endHour,
       });
-      // Le panier recharge la liste complète des réservations en attente.
-      router.replace('/(tabs)/cart');
+      // Retour visuel : petit toast « Ajouté au panier ✅ » puis redirection.
+      setAdded(true);
+      setTimeout(() => router.replace('/(tabs)/cart'), 850);
+      return;
     } catch (e: unknown) {
       const error = e as { response?: { status?: number; data?: { message?: string } } };
       const message = error.response?.data?.message ?? 'La réservation a échoué. Réessaie.';
       // 409 = ce créneau précis est déjà pris → on informe simplement.
       Alert.alert('Créneau indisponible', message);
-    } finally {
       setSubmitting(false);
     }
+    // En cas de succès, on laisse `submitting` actif : la redirection suit dans
+    // ~850 ms et on évite ainsi un double-tap.
   }
 
   if (loading) {
@@ -182,6 +186,22 @@ export default function RecapPage() {
           )}
         </Pressable>
       </View>
+
+      {/* Toast de confirmation « Ajouté au panier » */}
+      {added ? (
+        <View
+          pointerEvents="none"
+          style={{ position: 'absolute', left: 0, right: 0, bottom: 110, alignItems: 'center' }}
+        >
+          <View
+            className="flex-row items-center gap-2 px-5 py-3 rounded-full"
+            style={{ backgroundColor: '#1E7A3A', shadowColor: '#000', shadowOpacity: 0.35, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 6 }}
+          >
+            <Text style={{ fontSize: 16 }}>✅</Text>
+            <Text className="text-white font-bold text-base">Ajouté au panier</Text>
+          </View>
+        </View>
+      ) : null}
     </ScreenBackground>
   );
 }
