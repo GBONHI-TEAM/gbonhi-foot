@@ -280,7 +280,7 @@ export class PaymentsService {
       dates,
       location: payment.tournament.location ?? 'Lieu à confirmer',
       amount: `${payment.amount.toLocaleString('fr-FR')} FCFA`,
-      paymentMethod: payment.payment_method ?? 'Paiement simulé',
+      paymentMethod: this.paymentMethodLabel(payment.payment_method),
     });
   }
 
@@ -309,12 +309,26 @@ export class PaymentsService {
       time,
       duration,
       amount: `${reservation.total_price.toLocaleString('fr-FR')} FCFA`,
-      paymentMethod: reservation.payment.payment_method ?? 'Paiement simulé',
+      paymentMethod: this.paymentMethodLabel(reservation.payment.payment_method),
     });
   }
 
   private isSimulationEnabled() {
     return this.config.get<string>('PAYMENT_SIMULATION_ENABLED')?.trim().toLowerCase() !== 'false';
+  }
+
+  /** Libellé lisible du moyen de paiement pour l'affichage (reçu, confirmations). */
+  private paymentMethodLabel(code?: string | null): string {
+    const map: Record<string, string> = {
+      cash: 'Espèces',
+      wave: 'Wave',
+      orange: 'Orange Money',
+      mtn: 'MTN MoMo',
+      moov: 'Moov Money',
+      simulation: 'Paiement simulé',
+    };
+    const key = (code ?? '').toLowerCase();
+    return map[key] ?? (code ? code.charAt(0).toUpperCase() + code.slice(1) : 'Paiement simulé');
   }
 
   private async assertTeamRegistrationAuthority(
