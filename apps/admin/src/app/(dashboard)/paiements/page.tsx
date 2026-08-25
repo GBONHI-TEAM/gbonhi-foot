@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { CreditCard, RefreshCw, Info } from 'lucide-react';
+import { Banknote, RefreshCw, Info } from 'lucide-react';
 import { Header } from '../../../components/layout/header';
 import { apiFetch } from '../../../lib/api';
 
@@ -10,6 +10,13 @@ interface PaymentMethod {
   label: string;
   enabled: boolean;
 }
+
+/** Logos officiels (servis depuis /public/payment). */
+const METHOD_LOGO: Record<string, string> = {
+  wave: '/payment/wave.png',
+  orange: '/payment/orange.webp',
+  mtn: '/payment/mtn.png',
+};
 
 export default function PaiementsPage() {
   const [methods, setMethods] = useState<PaymentMethod[]>([]);
@@ -79,8 +86,15 @@ export default function PaiementsPage() {
           methods.map((method) => (
             <div key={method.code} className="flex items-center justify-between border-b border-slate-100 px-5 py-4 last:border-b-0">
               <div className="flex items-center gap-3">
-                <span className="flex h-10 w-10 items-center justify-center rounded-lg" style={{ backgroundColor: method.enabled ? '#EAF6EE' : '#F1F5F9' }}>
-                  <CreditCard size={18} style={{ color: method.enabled ? '#1E7A3A' : '#94A3B8' }} />
+                <span className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-lg border border-slate-200 bg-white" style={{ opacity: method.enabled ? 1 : 0.5 }}>
+                  {METHOD_LOGO[method.code] ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={METHOD_LOGO[method.code]} alt={method.label} className="h-10 w-10 object-cover" />
+                  ) : method.code === 'moov' ? (
+                    <span className="flex h-full w-full items-center justify-center text-[10px] font-black text-white" style={{ backgroundColor: '#0A6DD8' }}>Moov</span>
+                  ) : (
+                    <Banknote size={18} style={{ color: method.enabled ? '#1E7A3A' : '#94A3B8' }} />
+                  )}
                 </span>
                 <div>
                   <p className="text-sm font-bold text-slate-900">{method.label}</p>
@@ -109,7 +123,7 @@ export default function PaiementsPage() {
       <div className="mt-4 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3">
         <Info size={15} className="mt-0.5 flex-shrink-0 text-amber-500" />
         <p className="text-xs leading-5 text-amber-700">
-          Les paiements Mobile Money sont en mode simulé tant que l&apos;intégration CinetPay n&apos;est pas active. Le paiement en espèces confirme la réservation (à régler sur place au partenaire).
+          Les paiements Mobile Money sont en mode simulé. Le paiement en espèces confirme la réservation (à régler sur place au partenaire).
         </p>
       </div>
     </>
