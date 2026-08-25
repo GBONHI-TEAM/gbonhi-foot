@@ -23,6 +23,7 @@ interface Reservation {
   start_hour: number;
   end_hour: number;
   status: string;
+  cancel_reason?: string | null;
   terrain: { id: string; name: string; city: string; surface: string } | null;
 }
 interface FavoriteTerrain { id: string; name: string; city: string; surface: string }
@@ -49,7 +50,10 @@ function hh(h: number) {
 }
 
 const LEAGUE_TABS = ['Activité', 'Équipes', 'Historique'] as const;
-const RES_TABS = ['À venir', 'Passées', 'Favoris'] as const;
+const RES_TABS = ['À venir', 'Passées', 'Annulées', 'Favoris'] as const;
+// Réservations expirées faute de validation dans le délai du panier : ce sont
+// des « non-actions », on ne les affiche ni dans Passées ni dans Annulées.
+const EXPIRED_CART_REASON = 'Délai de validation du panier expiré';
 
 export default function ProfileScreen() {
   const router = useRouter();
@@ -104,8 +108,12 @@ export default function ProfileScreen() {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   }, []);
+  // À venir : réservations non annulées dont la date n'est pas passée.
   const upcoming = reservations.filter((r) => r.reservation_date >= todayYmd && r.status !== 'cancelled');
-  const past = reservations.filter((r) => r.reservation_date < todayYmd || r.status === 'cancelled');
+  // Passées : uniquement celles VALIDÉES (confirmées) dont la date est déjà passée.
+  const past = reservations.filter((r) => r.status === 'confirmed' && r.reservation_date < todayYmd);
+  // Annulées : vraies annulations (clic « Annuler » / annulation partenaire), pas les expirations de panier.
+  const cancelledList = reservations.filter((r) => r.status === 'cancelled' && r.cancel_reason !== EXPIRED_CART_REASON);
   async function submitReview() {
     if (!pendingReview || reviewRating === 0) {
       Alert.alert('Note requise', 'Choisis une note entre 1 et 5 étoiles.');
@@ -173,6 +181,7 @@ export default function ProfileScreen() {
           reservations={reservations}
           upcoming={upcoming}
           past={past}
+          cancelled={cancelledList}
           favTerrains={favorites}
           tab={resTab}
           setTab={setResTab}
@@ -209,18 +218,19 @@ function ResDateBadge({ ymd, index }: { ymd: string; index: number }) {
 }
 
 function ReservationBody({
-  reservations, upcoming, past, favTerrains, tab, setTab, onOpenTerrain, onOpenReservation,
+  reservations, upcoming, past, cancelled, favTerrains, tab, setTab, onOpenTerrain, onOpenReservation,
 }: {
   reservations: Reservation[];
   upcoming: Reservation[];
   past: Reservation[];
+  cancelled: Reservation[];
   favTerrains: { id: string; name: string; city: string; surface: string }[];
   tab: (typeof RES_TABS)[number];
   setTab: (t: (typeof RES_TABS)[number]) => void;
   onOpenTerrain: (id: string) => void;
   onOpenReservation: (id: string) => void;
 }) {
-  const list = tab === 'À venir' ? upcoming : tab === 'Passées' ? past : [];
+  const list = tab === 'À venir' ? upcoming : tab === 'Passées' ? past : tab === 'Annulées' ? cancelled : [];
 
   return (
     <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 100 }} showsVerticalScrollIndicator={false}>
@@ -267,7 +277,7 @@ function ReservationBody({
         <View className="items-center py-10 px-8">
           <Text style={{ fontSize: 36, marginBottom: 8 }}>📅</Text>
           <Text className="text-white/50 text-center text-sm">
-            {tab === 'À venir' ? 'Aucune réservation à venir.' : 'Aucune réservation passée.'}
+            {tab === 'À venir' ? 'Aucune réservation à venir.' : tab === 'Annulées' ? 'Aucune réservation annulée.' : 'Aucune réservation passée.'}
           </Text>
         </View>
       ) : (
