@@ -8,27 +8,29 @@ import { PendingReservationCart, useReservationCartStore } from '../../store/res
 export default function TabsLayout() {
   const mode = useUserModeStore((state) => state.mode);
   const isReservation = mode === 'reservation';
-  const pendingReservation = useReservationCartStore((state) => state.pendingReservation);
-  const setPendingReservation = useReservationCartStore((state) => state.setPendingReservation);
+  const pendingReservations = useReservationCartStore((state) => state.pendingReservations);
+  const setPendingReservations = useReservationCartStore((state) => state.setPendingReservations);
 
   useEffect(() => {
     if (!isReservation) {
-      setPendingReservation(null);
+      setPendingReservations(null);
       return;
     }
 
     let mounted = true;
     apiClient
-      .get<PendingReservationCart | null>('/api/v1/reservations/mine/pending')
+      .get<PendingReservationCart[]>('/api/v1/reservations/mine/cart')
       .then(({ data }) => {
-        if (mounted) setPendingReservation(data);
+        if (mounted) setPendingReservations(Array.isArray(data) ? data : []);
       })
       .catch(() => {
         // L'écran Panier affichera son erreur détaillée si l'utilisateur
         // l'ouvre ; on ne perturbe pas toute la navigation pour un badge.
       });
     return () => { mounted = false; };
-  }, [isReservation, setPendingReservation]);
+  }, [isReservation, setPendingReservations]);
+
+  const cartCount = pendingReservations.length;
 
   const icon = (name: React.ComponentProps<typeof Ionicons>['name']) => ({ color }: { color: string }) => (
     <Ionicons name={name} size={22} color={color} />
@@ -59,7 +61,7 @@ export default function TabsLayout() {
         options={{
           title: 'Mon panier',
           tabBarIcon: icon('cart-outline'),
-          tabBarBadge: pendingReservation ? '1' : undefined,
+          tabBarBadge: cartCount > 0 ? cartCount : undefined,
           href: isReservation ? undefined : null,
         }}
       />

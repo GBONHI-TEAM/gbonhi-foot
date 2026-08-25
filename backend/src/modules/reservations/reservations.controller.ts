@@ -85,6 +85,12 @@ export class ReservationsController {
     return this.reservationsService.findPendingMine(user);
   }
 
+  /** Panier multi : liste des réservations en attente de l'utilisateur. */
+  @Get('mine/cart')
+  findCartMine(@CurrentUser() user: UserPayload) {
+    return this.reservationsService.findCartMine(user);
+  }
+
   @Patch('mine/:id/cancel')
   cancelMinePending(@Param('id') id: string, @CurrentUser() user: UserPayload) {
     return this.reservationsService.cancelMinePending(id, user);

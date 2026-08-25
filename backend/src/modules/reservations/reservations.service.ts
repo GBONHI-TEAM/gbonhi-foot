@@ -197,6 +197,20 @@ export class ReservationsService {
     });
   }
 
+  /** Panier : toutes les réservations en attente de l'utilisateur (multi). */
+  async findCartMine(user: UserPayload) {
+    await this.releaseExpiredPendingReservations(user.id);
+    return this.prisma.reservation.findMany({
+      where: { user_id: user.id, status: 'pending' },
+      include: {
+        terrain: {
+          select: { id: true, name: true, city: true, address: true, surface: true, photos: true },
+        },
+      },
+      orderBy: { created_at: 'desc' },
+    });
+  }
+
   async findOne(id: string) {
     const reservation = await this.prisma.reservation.findUnique({
       where: { id },
@@ -219,15 +233,10 @@ export class ReservationsService {
   /** Création d'une réservation (côté joueur / app mobile). */
   async create(dto: CreateReservationDto, user: UserPayload) {
     await this.releaseExpiredPendingReservations(user.id, true);
-    const existingCart = await this.prisma.reservation.findFirst({
-      where: { user_id: user.id, status: 'pending' },
-      select: { id: true },
-    });
-    if (existingCart) {
-      throw new ConflictException(
-        'Tu as déjà une réservation en attente. Finalise-la ou annule-la dans ton panier.',
-      );
-    }
+    // Le panier peut contenir plusieurs réservations en attente : l'utilisateur
+    // valide ensuite individuellement celles qu'il souhaite. On ne bloque donc
+    // plus sur un pending existant — seul le double-booking du même créneau
+    // (vérifié plus bas) reste interdit.
 
     const terrain = await this.prisma.terrain.findUnique({
       where: { id: dto.terrain_id },

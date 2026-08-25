@@ -19,6 +19,12 @@ class CreatePostDto {
   @IsOptional()
   @IsString()
   team_id?: string;
+
+  // Filtre de destination : general (défaut, visible dans « Tout »),
+  // equipe, league ou terrain.
+  @IsOptional()
+  @IsString()
+  category?: string;
 }
 
 class CreateCommentDto {

@@ -20,6 +20,7 @@ export interface Post {
   created_at: string;
   author: Author;
   team?: { id: string; name: string } | null;
+  category?: string; // general | equipe | league | terrain
   liked_by_me: boolean;
   reactions?: ReactionCounts;
   my_reactions?: string[];
@@ -175,9 +176,15 @@ export default function CommunityScreen() {
   }
 
   const visible = useMemo(() => {
+    // « Tout » montre l'ensemble ; les autres onglets filtrent sur la catégorie
+    // choisie à la publication (equipe / league / terrain).
     if (tab === 'Tout') return posts;
-    if (tab === 'Mon équipe') return posts.filter((p) => myTeamId && p.team?.id === myTeamId);
-    return []; // Leagues / Terrains : catégorisation à venir côté backend
+    if (tab === 'Mon équipe') {
+      return posts.filter((p) => p.category === 'equipe' || (myTeamId && p.team?.id === myTeamId));
+    }
+    if (tab === 'Leagues') return posts.filter((p) => p.category === 'league');
+    if (tab === 'Terrains') return posts.filter((p) => p.category === 'terrain');
+    return [];
   }, [posts, tab, myTeamId]);
 
   return (
@@ -226,11 +233,13 @@ export default function CommunityScreen() {
             <View className="items-center py-24 px-8">
               <Text style={{ fontSize: 40, marginBottom: 12 }}>💬</Text>
               <Text className="text-white/50 text-center">
-                {tab === 'Leagues' || tab === 'Terrains'
-                  ? 'Catégorie bientôt disponible.'
-                  : tab === 'Mon équipe'
-                    ? 'Aucune publication de ton équipe pour le moment.'
-                    : 'Aucune publication pour le moment. Sois le premier à publier !'}
+                {tab === 'Leagues'
+                  ? 'Aucune publication « Leagues » pour le moment.'
+                  : tab === 'Terrains'
+                    ? 'Aucune publication « Terrains » pour le moment.'
+                    : tab === 'Mon équipe'
+                      ? 'Aucune publication de ton équipe pour le moment.'
+                      : 'Aucune publication pour le moment. Sois le premier à publier !'}
               </Text>
             </View>
           }

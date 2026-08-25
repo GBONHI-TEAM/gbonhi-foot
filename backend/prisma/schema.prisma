@@ -466,6 +466,7 @@ model CommunityPost {
   id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   author_id      String   @db.Uuid
   team_id        String?  @db.Uuid
+  category       String   @default("general") // general | equipe | league | terrain
   content        String
   image_url      String?
   likes_count    Int      @default(0)

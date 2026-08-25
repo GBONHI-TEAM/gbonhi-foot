@@ -45,6 +45,7 @@ export default function CreatePostScreen() {
   const [content, setContent] = useState('');
   const [teams, setTeams] = useState<MyTeam[]>([]);
   const [selectedTeam, setSelectedTeam] = useState<string | null>(null);
+  const [category, setCategory] = useState<'general' | 'equipe' | 'league' | 'terrain'>('general');
   const [imageUrl, setImageUrl] = useState('');
   const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -102,6 +103,7 @@ export default function CreatePostScreen() {
         content: content.trim(),
         image_url: imageUrl || undefined,
         team_id: selectedTeam || undefined,
+        category,
       });
       router.back();
     } catch {
@@ -172,6 +174,30 @@ export default function CreatePostScreen() {
             </>
           )}
         </Pressable>
+
+        {/* Publier dans — choisit le filtre de destination du post */}
+        <Text className="text-white font-bold text-base mb-3">Publier dans</Text>
+        <View className="flex-row flex-wrap gap-3 mb-6">
+          {([
+            { key: 'general', label: 'Général', emoji: '🌍' },
+            { key: 'equipe', label: 'Mon équipe', emoji: '🛡️' },
+            { key: 'league', label: 'Leagues', emoji: '🏆' },
+            { key: 'terrain', label: 'Terrains', emoji: '📍' },
+          ] as const).map((c) => {
+            const active = category === c.key;
+            return (
+              <Pressable
+                key={c.key}
+                onPress={() => setCategory(c.key)}
+                className="flex-row items-center gap-2 px-4 py-2.5 rounded-full"
+                style={{ backgroundColor: active ? 'rgba(247,146,30,0.15)' : 'rgba(255,255,255,0.05)', borderWidth: 1, borderColor: active ? '#F7921E' : 'rgba(255,255,255,0.15)' }}
+              >
+                <Text>{c.emoji}</Text>
+                <Text className="text-sm font-semibold" style={{ color: active ? '#F7921E' : 'rgba(255,255,255,0.7)' }}>{c.label}</Text>
+              </Pressable>
+            );
+          })}
+        </View>
 
         {/* Taguer */}
         {teams.length > 0 ? (

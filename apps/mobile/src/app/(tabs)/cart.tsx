@@ -43,20 +43,20 @@ function timeRemaining(createdAt: string, now: number): string {
 
 export default function ReservationCartScreen() {
   const router = useRouter();
-  const pendingReservation = useReservationCartStore((state) => state.pendingReservation);
-  const setPendingReservation = useReservationCartStore((state) => state.setPendingReservation);
-  const clearPendingReservation = useReservationCartStore((state) => state.clearPendingReservation);
+  const pendingReservations = useReservationCartStore((state) => state.pendingReservations);
+  const setPendingReservations = useReservationCartStore((state) => state.setPendingReservations);
+  const removePendingReservation = useReservationCartStore((state) => state.removePendingReservation);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [acting, setActing] = useState(false);
+  const [actingId, setActingId] = useState<string | null>(null);
   const [now, setNow] = useState(Date.now());
   const [methods, setMethods] = useState<{ code: string; label: string }[]>([]);
   const [selectedMethod, setSelectedMethod] = useState('cash');
 
   const loadCart = useCallback(async () => {
     try {
-      const { data } = await apiClient.get<PendingReservationCart | null>('/api/v1/reservations/mine/pending');
-      setPendingReservation(data);
+      const { data } = await apiClient.get<PendingReservationCart[]>('/api/v1/reservations/mine/cart');
+      setPendingReservations(Array.isArray(data) ? data : []);
     } catch {
       // On garde l'éventuel état local pendant qu'un problème réseau temporaire
       // se résout ; aucune action de paiement n'est permise sans API.
@@ -76,7 +76,7 @@ export default function ReservationCartScreen() {
     } catch {
       setMethods((current) => (current.length > 0 ? current : [{ code: 'cash', label: 'Espèces' }]));
     }
-  }, [setPendingReservation]);
+  }, [setPendingReservations]);
 
   useFocusEffect(
     useCallback(() => {
@@ -87,48 +87,50 @@ export default function ReservationCartScreen() {
   );
 
   useEffect(() => {
-    if (!pendingReservation) return undefined;
+    if (pendingReservations.length === 0) return undefined;
     const timer = setInterval(() => setNow(Date.now()), 1_000);
     return () => clearInterval(timer);
-  }, [pendingReservation]);
+  }, [pendingReservations.length]);
 
-  const expired = pendingReservation
-    ? new Date(pendingReservation.created_at).getTime() + HOLD_DURATION_MS <= now
-    : false;
+  const isExpired = useCallback(
+    (r: PendingReservationCart) => new Date(r.created_at).getTime() + HOLD_DURATION_MS <= now,
+    [now],
+  );
 
+  // Dès qu'une réservation expire, on recharge le panier (le backend l'a libérée).
+  const hasExpired = pendingReservations.some(isExpired);
   useEffect(() => {
-    if (expired) void loadCart();
-  }, [expired, loadCart]);
+    if (hasExpired) void loadCart();
+  }, [hasExpired, loadCart]);
 
-  async function cancelReservation(afterCancel?: () => void) {
-    if (!pendingReservation || acting) return;
+  async function cancelReservation(id: string, afterCancel?: () => void) {
+    if (actingId) return;
     try {
-      setActing(true);
-      await apiClient.patch(`/api/v1/reservations/mine/${pendingReservation.id}/cancel`);
-      clearPendingReservation();
+      setActingId(id);
+      await apiClient.patch(`/api/v1/reservations/mine/${id}/cancel`);
+      removePendingReservation(id);
       afterCancel?.();
     } catch (error: unknown) {
       const message = (error as { response?: { data?: { message?: string } } }).response?.data?.message
         ?? 'Impossible d’annuler la réservation. Réessaie.';
       Alert.alert('Annulation impossible', message);
     } finally {
-      setActing(false);
+      setActingId(null);
     }
   }
 
-  function confirmCancel() {
+  function confirmCancel(id: string) {
     Alert.alert(
       'Annuler la réservation ?',
       'Le créneau sera immédiatement libéré pour les autres joueurs.',
       [
         { text: 'Conserver', style: 'cancel' },
-        { text: 'Annuler le créneau', style: 'destructive', onPress: () => { void cancelReservation(); } },
+        { text: 'Annuler le créneau', style: 'destructive', onPress: () => { void cancelReservation(id); } },
       ],
     );
   }
 
-  function confirmEdit() {
-    if (!pendingReservation) return;
+  function confirmEdit(reservation: PendingReservationCart) {
     Alert.alert(
       'Modifier le créneau ?',
       'Le créneau actuel sera libéré. Tu pourras ensuite en choisir un autre.',
@@ -137,31 +139,30 @@ export default function ReservationCartScreen() {
         {
           text: 'Modifier',
           onPress: () => {
-            const terrainId = pendingReservation.terrain_id;
-            void cancelReservation(() => router.push(`/terrain/${terrainId}/creneau`));
+            void cancelReservation(reservation.id, () => router.push(`/terrain/${reservation.terrain_id}/creneau`));
           },
         },
       ],
     );
   }
 
-  async function checkout() {
-    if (!pendingReservation || acting || expired) return;
+  async function checkout(reservation: PendingReservationCart) {
+    if (actingId || isExpired(reservation)) return;
     try {
-      setActing(true);
+      setActingId(reservation.id);
       const { data } = await apiClient.post<{ reservation_id: string; status: 'accepted'; payment_method: string; cash: boolean }>(
-        `/api/v1/payments/reservations/${pendingReservation.id}/checkout`,
+        `/api/v1/payments/reservations/${reservation.id}/checkout`,
         { payment_method: selectedMethod },
       );
-      clearPendingReservation();
+      removePendingReservation(reservation.id);
       router.replace({
         pathname: '/terrain/[id]/confirmation',
         params: {
-          id: pendingReservation.terrain_id,
+          id: reservation.terrain_id,
           reservationId: data.reservation_id,
-          date: pendingReservation.reservation_date,
-          start: String(pendingReservation.start_hour),
-          total: String(pendingReservation.total_price),
+          date: reservation.reservation_date,
+          start: String(reservation.start_hour),
+          total: String(reservation.total_price),
           method: data.payment_method,
         },
       });
@@ -171,15 +172,20 @@ export default function ReservationCartScreen() {
       Alert.alert('Validation impossible', message);
       await loadCart();
     } finally {
-      setActing(false);
+      setActingId(null);
     }
   }
 
-  const photo = imageThumb(pendingReservation?.terrain?.photos?.[0], 700);
+  const empty = !loading && pendingReservations.length === 0;
 
   return (
     <ScreenBackground>
-      <AppHeader title="Mon panier" showLogo={false} centered />
+      <AppHeader
+        title="Mon panier"
+        showLogo={false}
+        centered
+        onBack={() => (router.canGoBack() ? router.back() : router.replace('/(tabs)'))}
+      />
       <ScrollView
         contentContainerStyle={{ padding: 20, paddingBottom: 42, gap: 16 }}
         refreshControl={
@@ -192,7 +198,7 @@ export default function ReservationCartScreen() {
       >
         {loading ? <ActivityIndicator color="#F7921E" /> : null}
 
-        {!loading && !pendingReservation ? (
+        {empty ? (
           <View className="rounded-card p-7 items-center" style={{ backgroundColor: 'rgba(255,255,255,0.06)' }}>
             <Text style={{ fontSize: 42 }}>🛒</Text>
             <Text className="text-white text-lg font-black mt-3">Ton panier est vide</Text>
@@ -203,38 +209,16 @@ export default function ReservationCartScreen() {
           </View>
         ) : null}
 
-        {pendingReservation ? (
+        {pendingReservations.length > 0 ? (
           <>
-            <View className="rounded-card overflow-hidden" style={{ backgroundColor: 'rgba(255,255,255,0.06)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' }}>
-              {photo ? (
-                <RemoteImageBackground uri={photo} contentFit="cover" style={{ height: 150 }}>
-                  <View style={{ flex: 1, backgroundColor: 'rgba(13,31,13,0.28)' }} />
-                </RemoteImageBackground>
-              ) : null}
-              <View className="p-5">
-                <Text className="text-white text-xl font-black">{pendingReservation.terrain?.name ?? 'Terrain'}</Text>
-                <Text className="text-white/60 text-sm mt-1">📍 {pendingReservation.terrain?.city ?? 'Abidjan'}</Text>
+            {/* En-tête : nombre de réservations + moyen de paiement partagé */}
+            <Text className="text-white/70 text-sm">
+              {pendingReservations.length} réservation{pendingReservations.length > 1 ? 's' : ''} en attente · valide celles que tu souhaites.
+            </Text>
 
-                <View className="h-px my-4" style={{ backgroundColor: 'rgba(255,255,255,0.1)' }} />
-                <CartRow label="Date" value={formatDate(pendingReservation.reservation_date)} />
-                <CartRow label="Créneau" value={`${time(pendingReservation.start_hour)} – ${time(pendingReservation.end_hour)}`} />
-                <CartRow label="Durée" value={`${pendingReservation.duration_hours % 1 === 0 ? pendingReservation.duration_hours : pendingReservation.duration_hours.toFixed(1).replace('.', ',')} h`} />
-                <View className="h-px my-3" style={{ backgroundColor: 'rgba(255,255,255,0.1)' }} />
-                <CartRow label="Total" value={formatFcfa(pendingReservation.total_price)} accent />
-              </View>
-            </View>
-
-            <View className="rounded-card p-4 flex-row items-center gap-3" style={{ backgroundColor: expired ? 'rgba(248,113,113,0.1)' : 'rgba(247,146,30,0.1)', borderWidth: 1, borderColor: expired ? 'rgba(248,113,113,0.55)' : 'rgba(247,146,30,0.5)' }}>
-              <Text style={{ fontSize: 24 }}>{expired ? '⌛' : '⏱️'}</Text>
-              <View className="flex-1">
-                <Text className="text-white font-bold">{expired ? 'Créneau expiré' : `Créneau réservé : ${timeRemaining(pendingReservation.created_at, now)}`}</Text>
-                <Text className="text-white/60 text-sm mt-0.5">{expired ? 'Actualisation du panier en cours…' : 'Valide ta réservation avant la fin du délai.'}</Text>
-              </View>
-            </View>
-
-            {/* Moyen de paiement */}
+            {/* Moyen de paiement (appliqué à la réservation que tu valides) */}
             <View>
-              <Text className="text-white font-bold text-base mb-2">Choisir un moyen de paiement</Text>
+              <Text className="text-white font-bold text-base mb-2">Moyen de paiement</Text>
               {methods.map((m) => {
                 const active = selectedMethod === m.code;
                 const meta = METHOD_META[m.code] ?? { subtitle: 'Mobile Money' };
@@ -270,18 +254,59 @@ export default function ReservationCartScreen() {
               })}
             </View>
 
-            <Pressable onPress={confirmEdit} disabled={acting || expired} className="h-13 rounded-btn items-center justify-center" style={{ borderWidth: 1, borderColor: 'rgba(46,158,79,0.65)', opacity: acting || expired ? 0.55 : 1 }}>
-              <Text style={{ color: '#4ADE80' }} className="font-bold">Modifier le créneau</Text>
-            </Pressable>
-            <Pressable onPress={confirmCancel} disabled={acting} className="h-13 rounded-btn items-center justify-center" style={{ borderWidth: 1, borderColor: 'rgba(248,113,113,0.65)', opacity: acting ? 0.55 : 1 }}>
-              <Text style={{ color: '#F87171' }} className="font-bold">Annuler la réservation</Text>
-            </Pressable>
-            <Pressable onPress={checkout} disabled={acting || expired} className="h-14 rounded-btn items-center justify-center" style={{ backgroundColor: '#F7921E', opacity: acting || expired ? 0.55 : 1 }}>
-              {acting ? <ActivityIndicator color="#FFFFFF" /> : <Text className="text-white font-bold text-base">Valider la réservation</Text>}
-            </Pressable>
+            {/* Une carte par réservation en attente */}
+            {pendingReservations.map((reservation) => {
+              const expired = isExpired(reservation);
+              const busy = actingId === reservation.id;
+              const anyBusy = actingId !== null;
+              const photo = imageThumb(reservation.terrain?.photos?.[0], 700);
+              return (
+                <View key={reservation.id} className="rounded-card overflow-hidden" style={{ backgroundColor: 'rgba(255,255,255,0.06)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' }}>
+                  {photo ? (
+                    <RemoteImageBackground uri={photo} contentFit="cover" style={{ height: 130 }}>
+                      <View style={{ flex: 1, backgroundColor: 'rgba(13,31,13,0.28)' }} />
+                    </RemoteImageBackground>
+                  ) : null}
+                  <View className="p-5">
+                    <Text className="text-white text-lg font-black">{reservation.terrain?.name ?? 'Terrain'}</Text>
+                    <Text className="text-white/60 text-sm mt-1">📍 {reservation.terrain?.city ?? 'Abidjan'}</Text>
+
+                    <View className="h-px my-4" style={{ backgroundColor: 'rgba(255,255,255,0.1)' }} />
+                    <CartRow label="Date" value={formatDate(reservation.reservation_date)} />
+                    <CartRow label="Créneau" value={`${time(reservation.start_hour)} – ${time(reservation.end_hour)}`} />
+                    <CartRow label="Durée" value={`${reservation.duration_hours % 1 === 0 ? reservation.duration_hours : reservation.duration_hours.toFixed(1).replace('.', ',')} h`} />
+                    <View className="h-px my-3" style={{ backgroundColor: 'rgba(255,255,255,0.1)' }} />
+                    <CartRow label="Total" value={formatFcfa(reservation.total_price)} accent />
+
+                    {/* Minuteur de maintien du créneau */}
+                    <View className="rounded-btn p-3 flex-row items-center gap-3 mt-4" style={{ backgroundColor: expired ? 'rgba(248,113,113,0.1)' : 'rgba(247,146,30,0.1)', borderWidth: 1, borderColor: expired ? 'rgba(248,113,113,0.55)' : 'rgba(247,146,30,0.5)' }}>
+                      <Text style={{ fontSize: 20 }}>{expired ? '⌛' : '⏱️'}</Text>
+                      <View className="flex-1">
+                        <Text className="text-white font-bold text-sm">{expired ? 'Créneau expiré' : `Créneau réservé : ${timeRemaining(reservation.created_at, now)}`}</Text>
+                        <Text className="text-white/60 text-xs mt-0.5">{expired ? 'Actualisation du panier en cours…' : 'Valide avant la fin du délai.'}</Text>
+                      </View>
+                    </View>
+
+                    {/* Actions par réservation */}
+                    <View className="flex-row gap-2.5 mt-4">
+                      <Pressable onPress={() => confirmEdit(reservation)} disabled={anyBusy || expired} className="flex-1 h-12 rounded-btn items-center justify-center" style={{ borderWidth: 1, borderColor: 'rgba(46,158,79,0.65)', opacity: anyBusy || expired ? 0.5 : 1 }}>
+                        <Text style={{ color: '#4ADE80' }} className="font-bold text-sm">Modifier</Text>
+                      </Pressable>
+                      <Pressable onPress={() => confirmCancel(reservation.id)} disabled={anyBusy} className="flex-1 h-12 rounded-btn items-center justify-center" style={{ borderWidth: 1, borderColor: 'rgba(248,113,113,0.65)', opacity: anyBusy ? 0.5 : 1 }}>
+                        <Text style={{ color: '#F87171' }} className="font-bold text-sm">Annuler</Text>
+                      </Pressable>
+                    </View>
+                    <Pressable onPress={() => checkout(reservation)} disabled={anyBusy || expired} className="h-13 rounded-btn items-center justify-center mt-2.5" style={{ backgroundColor: '#F7921E', opacity: (anyBusy && !busy) || expired ? 0.55 : 1 }}>
+                      {busy ? <ActivityIndicator color="#FFFFFF" /> : <Text className="text-white font-bold text-base">Valider la réservation</Text>}
+                    </Pressable>
+                  </View>
+                </View>
+              );
+            })}
+
             <Text className="text-white/45 text-center text-xs leading-5">
               {selectedMethod === 'cash'
-                ? 'Paiement en espèces : ta réservation est confirmée, à régler sur place au partenaire.'
+                ? 'Paiement en espèces : la réservation est confirmée, à régler sur place au partenaire.'
                 : 'Paiement Mobile Money en mode simulé pour l’instant (aucun débit réel).'}
             </Text>
           </>

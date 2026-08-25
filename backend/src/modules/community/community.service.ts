@@ -95,13 +95,16 @@ export class CommunityService {
     return posts.map((p) => this.decorateReactions(p, rmap.get(p.id)));
   }
 
-  async createPost(user: UserPayload, dto: { content: string; image_url?: string; team_id?: string }) {
+  async createPost(user: UserPayload, dto: { content: string; image_url?: string; team_id?: string; category?: string }) {
+    const allowed = ['general', 'equipe', 'league', 'terrain'];
+    const category = allowed.includes(dto.category ?? '') ? (dto.category as string) : 'general';
     return this.prisma.communityPost.create({
       data: {
         author_id: user.id,
         content: dto.content,
         image_url: dto.image_url ?? null,
         team_id: dto.team_id ?? null,
+        category,
       },
       include: { author: { select: AUTHOR_SELECT }, team: { select: { id: true, name: true } } },
     });

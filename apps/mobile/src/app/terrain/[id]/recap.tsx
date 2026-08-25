@@ -4,7 +4,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { ScreenBackground } from '../../../components/ui/screen-background';
 import { AppHeader } from '../../../components/ui/app-header';
 import { apiClient } from '../../../lib/api';
-import { PendingReservationCart, useReservationCartStore } from '../../../store/reservation-cart.store';
+import { PendingReservationCart } from '../../../store/reservation-cart.store';
 import { RemoteImageBackground } from '../../../components/ui/remote-image';
 import {
   type TerrainDetail,
@@ -38,7 +38,6 @@ export default function RecapPage() {
     duration: string;
   }>();
   const router = useRouter();
-  const setPendingReservation = useReservationCartStore((state) => state.setPendingReservation);
 
   const startHour = Number(start);
   const endHour = Number(end);
@@ -71,25 +70,19 @@ export default function RecapPage() {
     if (submitting) return;
     try {
       setSubmitting(true);
-      const { data } = await apiClient.post<PendingReservationCart>('/api/v1/reservations', {
+      await apiClient.post<PendingReservationCart>('/api/v1/reservations', {
         terrain_id: id,
         reservation_date: date,
         start_hour: startHour,
         end_hour: endHour,
       });
-      setPendingReservation(data);
+      // Le panier recharge la liste complète des réservations en attente.
       router.replace('/(tabs)/cart');
     } catch (e: unknown) {
       const error = e as { response?: { status?: number; data?: { message?: string } } };
       const message = error.response?.data?.message ?? 'La réservation a échoué. Réessaie.';
-      if (error.response?.status === 409) {
-        Alert.alert('Réservation en attente', message, [
-          { text: 'Plus tard', style: 'cancel' },
-          { text: 'Voir mon panier', onPress: () => router.replace('/(tabs)/cart') },
-        ]);
-      } else {
-        Alert.alert('Erreur', message);
-      }
+      // 409 = ce créneau précis est déjà pris → on informe simplement.
+      Alert.alert('Créneau indisponible', message);
     } finally {
       setSubmitting(false);
     }
