@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -8,6 +8,7 @@ import {
   Image,
   ActivityIndicator,
   KeyboardAvoidingView,
+  Keyboard,
   Platform,
   Alert,
   Share,
@@ -32,6 +33,7 @@ export default function PostDetailScreen() {
   const [loading, setLoading] = useState(true);
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
+  const scrollRef = useRef<ScrollView>(null);
 
   const isMine = !!post && !!user?.id && post.author.id === user.id;
 
@@ -64,7 +66,13 @@ export default function PostDetailScreen() {
     try {
       await apiClient.post(`/api/v1/community/posts/${id}/comments`, { content: text.trim() });
       setText('');
+      Keyboard.dismiss();
       await load();
+      // Retour visuel : on descend jusqu'au commentaire qui vient d'être ajouté
+      // pour que l'utilisateur voie que son message est bien parti.
+      requestAnimationFrame(() => {
+        setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 150);
+      });
     } catch {
       /* ignore */
     } finally {
@@ -138,7 +146,7 @@ export default function PostDetailScreen() {
           <View className="flex-1 items-center justify-center"><Text className="text-white/50">Publication introuvable.</Text></View>
         ) : (
           <>
-            <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 24 }} keyboardShouldPersistTaps="handled">
+            <ScrollView ref={scrollRef} contentContainerStyle={{ padding: 16, paddingBottom: 24 }} keyboardShouldPersistTaps="handled">
               {/* Post */}
               <View className="mb-4">
                 <View className="flex-row items-start gap-3 mb-3">

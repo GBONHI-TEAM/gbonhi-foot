@@ -190,22 +190,29 @@ export default function CommunityScreen() {
         <Text className="text-white font-black text-2xl text-center">Communauté</Text>
       </PatternedGreenHeader>
 
-      {/* Filtres */}
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10, paddingHorizontal: 16 }} className="mt-4 flex-grow-0">
-        {TABS.map((t) => {
-          const active = tab === t;
-          return (
-            <Pressable
-              key={t}
-              onPress={() => setTab(t)}
-              className="h-11 rounded-full items-center justify-center px-6"
-              style={{ backgroundColor: active ? '#1E7A3A' : 'rgba(255,255,255,0.06)', borderWidth: 1, borderColor: active ? '#1E7A3A' : 'rgba(255,255,255,0.15)' }}
-            >
-              <Text className="text-sm font-bold" style={{ color: active ? '#FFFFFF' : 'rgba(255,255,255,0.6)' }}>{t}</Text>
-            </Pressable>
-          );
-        })}
-      </ScrollView>
+      {/* Filtres — conteneur à hauteur fixe : la barre ne peut pas être rognée
+          ni chevauchée par la liste qui suit. */}
+      <View style={{ height: 64, justifyContent: 'center' }}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={{ gap: 10, paddingHorizontal: 16, alignItems: 'center' }}
+        >
+          {TABS.map((t) => {
+            const active = tab === t;
+            return (
+              <Pressable
+                key={t}
+                onPress={() => setTab(t)}
+                className="h-11 rounded-full items-center justify-center px-6"
+                style={{ backgroundColor: active ? '#1E7A3A' : 'rgba(255,255,255,0.06)', borderWidth: 1, borderColor: active ? '#1E7A3A' : 'rgba(255,255,255,0.15)' }}
+              >
+                <Text className="text-sm font-bold" style={{ color: active ? '#FFFFFF' : 'rgba(255,255,255,0.6)' }}>{t}</Text>
+              </Pressable>
+            );
+          })}
+        </ScrollView>
+      </View>
 
       {loading ? (
         <View className="flex-1 items-center justify-center"><ActivityIndicator color="#F7921E" /></View>

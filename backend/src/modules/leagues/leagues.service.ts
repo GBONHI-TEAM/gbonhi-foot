@@ -100,6 +100,7 @@ export class LeaguesService {
           include: { home_team: true, away_team: true },
           orderBy: [{ round: 'asc' }, { scheduled_at: 'asc' }],
         },
+        _count: { select: { teams: true, matches: true } },
         organizer: { select: { id: true, full_name: true } },
       },
     });
