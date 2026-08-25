@@ -283,16 +283,6 @@ export class ReservationsService {
     // TOUTES les lignes, y compris les annulées/expirées. Une ancienne ligne
     // annulée au créneau EXACT bloquerait donc une nouvelle réservation (erreur
     // P2002 « existe déjà »). On la réutilise au lieu d'en insérer une nouvelle.
-    const staleExact = await this.prisma.reservation.findFirst({
-      where: {
-        terrain_id: dto.terrain_id,
-        reservation_date: reservationDate,
-        start_hour: dto.start_hour,
-        status: { notIn: ['pending', 'confirmed'] },
-      },
-      select: { id: true },
-    });
-
     const reservationData = {
       user_id: user.id,
       end_hour: dto.end_hour,
@@ -305,19 +295,27 @@ export class ReservationsService {
       notes: dto.notes,
     };
 
-    const reservation = staleExact
-      ? await this.prisma.reservation.update({
-          where: { id: staleExact.id },
-          data: { ...reservationData, updated_at: new Date() },
-        })
-      : await this.prisma.reservation.create({
-          data: {
-            terrain_id: dto.terrain_id,
-            reservation_date: reservationDate,
-            start_hour: dto.start_hour,
-            ...reservationData,
-          },
-        });
+    // UPSERT atomique sur la clé unique (terrain, date, heure). Si une ligne
+    // existe déjà à ce créneau — forcément annulée/expirée à ce stade grâce aux
+    // gardes ci-dessus —, on la RÉACTIVE ; sinon on en crée une. Cela élimine
+    // définitivement le faux conflit « Cette information existe déjà » (P2002)
+    // quand on rechoisit un créneau qu'on vient d'annuler.
+    const reservation = await this.prisma.reservation.upsert({
+      where: {
+        terrain_id_reservation_date_start_hour: {
+          terrain_id: dto.terrain_id,
+          reservation_date: reservationDate,
+          start_hour: dto.start_hour,
+        },
+      },
+      create: {
+        terrain_id: dto.terrain_id,
+        reservation_date: reservationDate,
+        start_hour: dto.start_hour,
+        ...reservationData,
+      },
+      update: { ...reservationData, updated_at: new Date() },
+    });
     try {
       await this.analytics.track(user, { type: 'RESERVATION_CREATED', mode: 'reservation' });
     } catch {
