@@ -143,6 +143,7 @@ export default function RegisterScreen() {
         <ScrollView
           contentContainerStyle={{ flexGrow: 1 }}
           keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
           showsVerticalScrollIndicator={false}
           bounces={false}
         >

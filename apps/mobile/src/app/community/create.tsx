@@ -128,7 +128,8 @@ export default function CreatePostScreen() {
         </View>
       </PatternedGreenHeader>
 
-      <ScrollView contentContainerStyle={{ padding: 20, paddingBottom: 40 }} keyboardShouldPersistTaps="handled">
+      <ScrollView contentContainerStyle={{ padding: 20, paddingBottom: 40 }} keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag">
         {/* Auteur */}
         <View className="flex-row items-center gap-3 mb-4">
           <View className="w-12 h-12 rounded-full items-center justify-center" style={{ backgroundColor: '#1E7A3A' }}>

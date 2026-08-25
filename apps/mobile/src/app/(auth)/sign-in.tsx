@@ -105,6 +105,7 @@ export default function SignInScreen() {
         <ScrollView
           contentContainerStyle={{ flexGrow: 1 }}
           keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
           showsVerticalScrollIndicator={false}
           bounces={false}
         >

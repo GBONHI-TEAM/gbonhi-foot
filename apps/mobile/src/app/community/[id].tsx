@@ -146,7 +146,8 @@ export default function PostDetailScreen() {
           <View className="flex-1 items-center justify-center"><Text className="text-white/50">Publication introuvable.</Text></View>
         ) : (
           <>
-            <ScrollView ref={scrollRef} contentContainerStyle={{ padding: 16, paddingBottom: 24 }} keyboardShouldPersistTaps="handled">
+            <ScrollView ref={scrollRef} contentContainerStyle={{ padding: 16, paddingBottom: 24 }} keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag">
               {/* Post */}
               <View className="mb-4">
                 <View className="flex-row items-start gap-3 mb-3">

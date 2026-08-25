@@ -345,10 +345,21 @@ export default function PlayerProfileScreen() {
         style={{ flex: 1 }}
         imageStyle={{ opacity: 0.62 }}
       >
+        {/* Flèche de retour (reste fixe au-dessus du contenu qui défile) */}
+        {router.canGoBack() ? (
+          <Pressable
+            onPress={() => router.back()}
+            hitSlop={10}
+            style={{ position: 'absolute', top: 52, left: 20, zIndex: 20, width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.35)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)' }}
+          >
+            <Text style={{ color: '#FFFFFF', fontSize: 22, marginTop: -2 }}>←</Text>
+          </Pressable>
+        ) : null}
         <ScrollView
           className="flex-1 px-6"
           contentContainerStyle={{ paddingTop: 56, paddingBottom: 48 }}
           keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
         >
         {/* Logo officiel GBONHI FOOT centré avec halo doré (maquette s07) */}
         <View className="items-center mb-3">
@@ -396,7 +407,7 @@ export default function PlayerProfileScreen() {
           <Input placeholder="Prénom *" value={prenom} onChangeText={setPrenom} autoCapitalize="words" />
           <Input placeholder="Nom *" value={nom} onChangeText={setNom} autoCapitalize="words" />
           <Input
-            placeholder="jj/mm/aaaa"
+            placeholder="jj/mm/aaaa *"
             value={dateNaissance}
             onChangeText={setDateNaissance}
             keyboardType="numbers-and-punctuation"

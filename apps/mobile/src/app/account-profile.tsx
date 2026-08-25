@@ -108,7 +108,8 @@ export default function AccountProfileScreen() {
     <ScreenBackground>
       <AppHeader title="Modifier le profil" onBack={() => router.back()} showLogo={false} centered />
       <KeyboardAvoidingView className="flex-1" behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <ScrollView contentContainerStyle={{ padding: 20, gap: 14, paddingBottom: 42 }} keyboardShouldPersistTaps="handled">
+        <ScrollView contentContainerStyle={{ padding: 20, gap: 14, paddingBottom: 42 }} keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag">
           <Text className="text-white/65 leading-5 mb-2">Ces informations concernent ton compte GBONHI FOOT. Elles sont distinctes de ta fiche joueur et de tes informations football.</Text>
 
           {/* Photo de profil */}

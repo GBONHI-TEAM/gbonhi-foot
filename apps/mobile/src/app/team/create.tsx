@@ -193,7 +193,7 @@ export default function CreateTeamPage() {
     <ScreenBackground>
       <AppHeader title="Créer une équipe" onBack={() => router.back()} showLogo={false} centered />
 
-      <ScrollView className="flex-1" contentContainerStyle={{ padding: 20, paddingBottom: 40 }}>
+      <ScrollView className="flex-1" contentContainerStyle={{ padding: 20, paddingBottom: 40 }} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
         {/* Logo picker */}
         <View className="flex-row items-center gap-4 mb-6">
           <Pressable
