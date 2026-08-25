@@ -1,6 +1,9 @@
+import { useState } from 'react';
 import { View, Text, Pressable, Share, ImageBackground } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
+import * as Clipboard from 'expo-clipboard';
 import { teamInviteLink } from '../../lib/api';
+import { buildTeamInviteMessage } from '../../lib/team-invite';
 
 export default function TeamSuccessPage() {
   const router = useRouter();
@@ -9,15 +12,18 @@ export default function TeamSuccessPage() {
   const teamName = params.name?.trim() ? params.name : 'Ton équipe';
   const hasCode = !!params.code?.trim();
   const joinLink = hasCode ? teamInviteLink(invitationCode) : '';
+  const [copied, setCopied] = useState(false);
 
-  async function shareCode() {
+  async function copyCode() {
     if (!hasCode) return;
-    await Share.share({ message: `⚽ Rejoins ${teamName} sur GBONHI FOOT !\n\nCode d'invitation : ${invitationCode}\n\nOuvre ou télécharge l'application pour rejoindre l'équipe 👇\n${joinLink}` });
+    await Clipboard.setStringAsync(invitationCode);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1600);
   }
 
   async function shareLink() {
     if (!hasCode) return;
-    await Share.share({ message: `⚽ ${teamName} t'attend sur GBONHI FOOT !\n\nRejoins l'équipe directement dans l'application 👇\n${joinLink}\n\nCode d'invitation : ${invitationCode}` });
+    await Share.share({ message: buildTeamInviteMessage(teamName, invitationCode, joinLink) });
   }
 
   return (
@@ -48,33 +54,26 @@ export default function TeamSuccessPage() {
         className="w-full rounded-2xl p-6 items-center mb-8"
         style={{ backgroundColor: 'rgba(30,122,58,0.15)', borderWidth: 1, borderColor: 'rgba(30,122,58,0.35)' }}
       >
-        <Text className="text-sm font-semibold mb-2" style={{ color: 'rgba(255,255,255,0.5)' }}>
-          Code d&apos;invitation
+        <Text className="text-base font-bold mb-3 text-center" style={{ color: '#FFFFFF' }}>
+          Inviter des joueurs
         </Text>
-        <Text
-          className="font-black text-4xl tracking-[0.2em] mb-4"
-          style={{ color: '#F7921E' }}
+        {/* Code copiable au long-press */}
+        <Pressable onPress={copyCode} onLongPress={copyCode} className="items-center">
+          <Text className="font-black text-4xl tracking-[0.2em]" style={{ color: '#F7921E' }}>
+            {invitationCode}
+          </Text>
+          <Text className="text-xs mt-2" style={{ color: copied ? '#4ADE80' : 'rgba(255,255,255,0.5)' }}>
+            {copied ? '✓ Code copié !' : 'Maintiens le code pour le copier'}
+          </Text>
+        </Pressable>
+        <Pressable
+          onPress={shareLink}
+          className="flex-row items-center justify-center gap-2 px-5 py-3 rounded-xl mt-5 w-full"
+          style={{ backgroundColor: 'rgba(30,122,58,0.3)', borderWidth: 1, borderColor: 'rgba(30,122,58,0.55)' }}
         >
-          {invitationCode}
-        </Text>
-        <View className="flex-row gap-2.5">
-          <Pressable
-            onPress={shareCode}
-            className="flex-row items-center gap-2 px-4 py-2.5 rounded-xl"
-            style={{ backgroundColor: 'rgba(247,146,30,0.15)', borderWidth: 1, borderColor: 'rgba(247,146,30,0.3)' }}
-          >
-            <Text style={{ color: '#F7921E', fontSize: 14 }}>#️⃣</Text>
-            <Text className="text-sm font-semibold" style={{ color: '#F7921E' }}>Partager le code</Text>
-          </Pressable>
-          <Pressable
-            onPress={shareLink}
-            className="flex-row items-center gap-2 px-4 py-2.5 rounded-xl"
-            style={{ backgroundColor: 'rgba(30,122,58,0.25)', borderWidth: 1, borderColor: 'rgba(30,122,58,0.5)' }}
-          >
-            <Text style={{ color: '#4ADE80', fontSize: 14 }}>🔗</Text>
-            <Text className="text-sm font-semibold" style={{ color: '#4ADE80' }}>Partager le lien</Text>
-          </Pressable>
-        </View>
+          <Text style={{ color: '#4ADE80', fontSize: 15 }}>🔗</Text>
+          <Text className="text-sm font-bold" style={{ color: '#4ADE80' }}>Partager le lien</Text>
+        </Pressable>
       </View>
 
       <Pressable

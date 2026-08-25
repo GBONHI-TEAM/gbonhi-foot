@@ -3,7 +3,9 @@ import { View, Text, Pressable, ScrollView, Image, ActivityIndicator, Share, Ale
 import { useRouter, useFocusEffect } from 'expo-router';
 import { ScreenBackground } from '../../components/ui/screen-background';
 import { AppHeader } from '../../components/ui/app-header';
+import * as Clipboard from 'expo-clipboard';
 import { apiClient, teamInviteLink } from '../../lib/api';
+import { buildTeamInviteMessage } from '../../lib/team-invite';
 import { imageThumb } from '../../lib/image';
 import { RemoteImage } from '../../components/ui/remote-image';
 import { useAuthStore } from '../../store/auth.store';
@@ -62,13 +64,18 @@ export default function MonEquipePage() {
   const myMembership = (team?.members ?? []).find((m) => m.user?.id === user?.id);
   const myRequestPending = !isCaptain && myMembership?.status === 'pending';
   const joinLink = team?.invitation_code ? teamInviteLink(team.invitation_code) : '';
+  const [copiedCode, setCopiedCode] = useState(false);
 
-  async function shareInvite(kind: 'code' | 'link') {
+  async function copyCode() {
     if (!team?.invitation_code) return;
-    const msg = kind === 'link'
-      ? `⚽ ${team.name} t'attend sur GBONHI FOOT !\n\nRejoins l'équipe directement dans l'application 👇\n${joinLink}\n\nCode : ${team.invitation_code}`
-      : `⚽ Rejoins ${team.name} sur GBONHI FOOT !\n\nCode d'invitation : ${team.invitation_code}\n\nOuvre ou télécharge l'application pour rejoindre l'équipe 👇\n${joinLink}`;
-    await Share.share({ message: msg });
+    await Clipboard.setStringAsync(team.invitation_code);
+    setCopiedCode(true);
+    setTimeout(() => setCopiedCode(false), 1600);
+  }
+
+  async function shareInvite(_kind: 'code' | 'link') {
+    if (!team?.invitation_code) return;
+    await Share.share({ message: buildTeamInviteMessage(team.name, team.invitation_code, joinLink) });
   }
 
   function promoteCaptain(m: Member) {
@@ -210,17 +217,17 @@ export default function MonEquipePage() {
 
         {/* Invitation (capitaine) */}
         {isCaptain && team.invitation_code ? (
-          <View className="rounded-2xl p-4 mb-5" style={{ backgroundColor: 'rgba(30,122,58,0.12)', borderWidth: 1, borderColor: 'rgba(30,122,58,0.3)' }}>
-            <Text className="text-xs mb-1" style={{ color: 'rgba(255,255,255,0.5)' }}>Code d&apos;invitation</Text>
-            <Text className="font-black text-2xl tracking-[0.15em] mb-3" style={{ color: '#F7921E' }}>{team.invitation_code}</Text>
-            <View className="flex-row gap-2.5">
-              <Pressable onPress={() => shareInvite('code')} className="flex-1 h-10 rounded-xl items-center justify-center flex-row gap-1.5" style={{ backgroundColor: 'rgba(247,146,30,0.15)', borderWidth: 1, borderColor: 'rgba(247,146,30,0.3)' }}>
-                <Text style={{ color: '#F7921E' }}>#️⃣</Text><Text className="text-sm font-semibold" style={{ color: '#F7921E' }}>Code</Text>
-              </Pressable>
-              <Pressable onPress={() => shareInvite('link')} className="flex-1 h-10 rounded-xl items-center justify-center flex-row gap-1.5" style={{ backgroundColor: 'rgba(30,122,58,0.25)', borderWidth: 1, borderColor: 'rgba(30,122,58,0.5)' }}>
-                <Text style={{ color: '#4ADE80' }}>🔗</Text><Text className="text-sm font-semibold" style={{ color: '#4ADE80' }}>Lien</Text>
-              </Pressable>
-            </View>
+          <View className="rounded-2xl p-4 mb-5 items-center" style={{ backgroundColor: 'rgba(30,122,58,0.12)', borderWidth: 1, borderColor: 'rgba(30,122,58,0.3)' }}>
+            <Text className="text-base font-bold mb-2 text-center" style={{ color: '#FFFFFF' }}>Inviter des joueurs</Text>
+            <Pressable onPress={copyCode} onLongPress={copyCode} className="items-center mb-3">
+              <Text className="font-black text-2xl tracking-[0.15em]" style={{ color: '#F7921E' }}>{team.invitation_code}</Text>
+              <Text className="text-xs mt-1.5" style={{ color: copiedCode ? '#4ADE80' : 'rgba(255,255,255,0.5)' }}>
+                {copiedCode ? '✓ Code copié !' : 'Maintiens le code pour le copier'}
+              </Text>
+            </Pressable>
+            <Pressable onPress={() => shareInvite('link')} className="w-full h-11 rounded-xl items-center justify-center flex-row gap-1.5" style={{ backgroundColor: 'rgba(30,122,58,0.3)', borderWidth: 1, borderColor: 'rgba(30,122,58,0.55)' }}>
+              <Text style={{ color: '#4ADE80' }}>🔗</Text><Text className="text-sm font-bold" style={{ color: '#4ADE80' }}>Partager le lien</Text>
+            </Pressable>
           </View>
         ) : null}
 
