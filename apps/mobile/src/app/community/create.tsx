@@ -41,6 +41,9 @@ export default function CreatePostScreen() {
   const router = useRouter();
   const { user } = useAuthStore();
   const authorName = (user?.user_metadata?.full_name as string | undefined)?.trim() || 'Moi';
+  const authorPhoto = (user?.user_metadata?.photo_url as string | undefined)?.trim()
+    || (user?.user_metadata?.avatar_url as string | undefined)?.trim()
+    || '';
 
   const [content, setContent] = useState('');
   const [teams, setTeams] = useState<MyTeam[]>([]);
@@ -132,8 +135,12 @@ export default function CreatePostScreen() {
           keyboardDismissMode="on-drag">
         {/* Auteur */}
         <View className="flex-row items-center gap-3 mb-4">
-          <View className="w-12 h-12 rounded-full items-center justify-center" style={{ backgroundColor: '#1E7A3A' }}>
-            <Text className="text-white font-bold">{initials(authorName)}</Text>
+          <View className="w-12 h-12 rounded-full items-center justify-center overflow-hidden" style={{ backgroundColor: '#1E7A3A' }}>
+            {authorPhoto ? (
+              <RemoteImage uri={imageThumb(authorPhoto, 120)} contentFit="cover" style={{ width: '100%', height: '100%' }} />
+            ) : (
+              <Text className="text-white font-bold">{initials(authorName)}</Text>
+            )}
           </View>
           <View>
             <Text className="text-white font-bold text-base">{authorName}</Text>

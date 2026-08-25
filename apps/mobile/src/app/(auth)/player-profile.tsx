@@ -329,9 +329,11 @@ export default function PlayerProfileScreen() {
     useAuthStore.getState().setSession(sess.session);
 
     setLoading(false);
-    // 3) Fiche créée → mode Ligue + accueil.
+    // 3) Mode Ligue. Première création → accueil (onboarding) ; simple modification
+    // depuis le profil → retour au Profil.
     setMode('leagues');
-    router.replace('/(tabs)');
+    const wasCompleted = user?.user_metadata?.player_profile_completed === true;
+    router.replace(wasCompleted ? '/(tabs)/profile' : '/(tabs)');
   }
 
   return (
