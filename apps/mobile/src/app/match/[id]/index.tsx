@@ -8,7 +8,7 @@ import {
   Animated,
   Share,
 } from 'react-native';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import { apiClient, matchShareLink } from '../../../lib/api';
 import { supabase } from '../../../lib/supabase';
 import { PatternedGreenHeader } from '../../../components/ui/patterned-green-header';
@@ -35,6 +35,66 @@ function TeamBadge({ name, color, size = 56 }: { name: string; color: string; si
       <Text className="text-white font-black" style={{ fontSize: size * 0.32 }}>
         {teamInitials(name)}
       </Text>
+    </View>
+  );
+}
+
+interface LineupPlayer { name: string; role: 'starter' | 'sub'; number: number | null; position: string | null }
+interface LineupSide { team: { id: string; name: string }; editable: boolean; lineup: { formation: string | null; players: LineupPlayer[]; published: boolean } | null }
+interface LineupsResponse { kickoff: string; home: LineupSide | null; away: LineupSide | null }
+
+/** Carte de composition d'une équipe (formation + titulaires + remplaçants). */
+function LineupCard({ side, onEdit }: { side: LineupSide | null; onEdit: (teamId: string) => void }) {
+  if (!side) return null;
+  const l = side.lineup;
+  const starters = l?.players.filter((p) => p.role === 'starter') ?? [];
+  const subs = l?.players.filter((p) => p.role === 'sub') ?? [];
+  return (
+    <View className="rounded-2xl p-4 mb-3" style={{ backgroundColor: 'rgba(255,255,255,0.05)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' }}>
+      <View className="flex-row items-center justify-between mb-2">
+        <Text className="text-white font-black text-base flex-1" numberOfLines={1}>{side.team.name}</Text>
+        {l?.formation ? (
+          <Text className="text-xs font-bold px-2 py-0.5 rounded-full" style={{ color: '#F7921E', backgroundColor: 'rgba(247,146,30,0.12)' }}>{l.formation}</Text>
+        ) : null}
+      </View>
+
+      {l ? (
+        <>
+          {!l.published ? (
+            <Text className="text-xs mb-2" style={{ color: '#FFB830' }}>Brouillon — non publié</Text>
+          ) : null}
+          <Text className="text-white/50 text-xs font-bold uppercase mb-1.5">Titulaires</Text>
+          {starters.length ? starters.map((p, i) => (
+            <View key={`s${i}`} className="flex-row items-center py-1">
+              <Text className="text-white/40 text-xs" style={{ width: 26 }}>{p.number ?? '—'}</Text>
+              <Text className="text-white text-sm flex-1">{p.name}</Text>
+              {p.position ? <Text className="text-white/40 text-xs">{p.position}</Text> : null}
+            </View>
+          )) : <Text className="text-white/40 text-sm">—</Text>}
+          {subs.length ? (
+            <>
+              <Text className="text-white/50 text-xs font-bold uppercase mb-1.5 mt-3">Remplaçants</Text>
+              {subs.map((p, i) => (
+                <View key={`r${i}`} className="flex-row items-center py-1">
+                  <Text className="text-white/40 text-xs" style={{ width: 26 }}>{p.number ?? '—'}</Text>
+                  <Text className="text-white/85 text-sm flex-1">{p.name}</Text>
+                  {p.position ? <Text className="text-white/40 text-xs">{p.position}</Text> : null}
+                </View>
+              ))}
+            </>
+          ) : null}
+        </>
+      ) : (
+        <Text className="text-white/50 text-sm">Composition pas encore disponible. Les équipes peuvent la publier jusqu’à ~2 h avant le coup d’envoi.</Text>
+      )}
+
+      {side.editable ? (
+        <Pressable onPress={() => onEdit(side.team.id)} className="mt-3 h-11 rounded-btn items-center justify-center" style={{ backgroundColor: l?.published ? 'transparent' : '#F7921E', borderWidth: l?.published ? 1 : 0, borderColor: 'rgba(46,158,79,0.65)' }}>
+          <Text className="font-bold text-sm" style={{ color: l?.published ? '#4ADE80' : '#FFFFFF' }}>
+            {l ? 'Modifier ma composition' : 'Publier ma composition'}
+          </Text>
+        </Pressable>
+      ) : null}
     </View>
   );
 }
@@ -94,6 +154,20 @@ export default function MatchDetailPage() {
   const [match, setMatch] = useState<MatchDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [lineups, setLineups] = useState<LineupsResponse | null>(null);
+
+  const fetchLineups = useCallback(async () => {
+    if (!id) return;
+    try {
+      const { data } = await apiClient.get<LineupsResponse>(`/api/v1/matches/${id}/lineups`);
+      setLineups(data);
+    } catch {
+      /* section masquée en cas d'erreur réseau */
+    }
+  }, [id]);
+
+  // Recharge la composition à chaque retour sur l'écran (après publication).
+  useFocusEffect(useCallback(() => { fetchLineups(); }, [fetchLineups]));
 
   const fetchMatch = useCallback(
     async (opts?: { silent?: boolean }) => {
@@ -293,6 +367,11 @@ export default function MatchDetailPage() {
             ))}
           </View>
         )}
+
+        {/* Composition des équipes */}
+        <Text className="text-white font-black text-lg mb-3 mt-8">Composition des équipes</Text>
+        <LineupCard side={lineups?.home ?? null} onEdit={(teamId) => router.push(`/match/${id}/lineup?team=${teamId}`)} />
+        <LineupCard side={lineups?.away ?? null} onEdit={(teamId) => router.push(`/match/${id}/lineup?team=${teamId}`)} />
       </ScrollView>
     </View>
   );

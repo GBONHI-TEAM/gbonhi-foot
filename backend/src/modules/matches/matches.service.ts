@@ -9,6 +9,16 @@ import { UpdateMatchDto } from './dto/update-match.dto';
 import { ChangeMatchStatusDto } from './dto/change-status.dto';
 import { CreateEventDto } from './dto/create-event.dto';
 import { NotificationsService } from '../notifications/notifications.service';
+import { UserPayload } from '../../common/types/user-payload.type';
+import { ForbiddenException } from '@nestjs/common';
+
+interface LineupPlayerInput {
+  name?: string;
+  role?: string;
+  number?: number | null;
+  position?: string | null;
+  user_id?: string | null;
+}
 
 const MATCH_INCLUDE = {
   home_team: { select: { id: true, name: true, logo_url: true, primary_color: true } },
@@ -89,6 +99,117 @@ export class MatchesService {
         away: members.filter((member) => member.team_id === match.away_team_id),
       },
     };
+  }
+
+  /** L'utilisateur est-il capitaine de l'équipe (coach_id ou membre capitaine actif) ou staff ? */
+  private async canManageTeam(teamId: string, user: UserPayload): Promise<boolean> {
+    const isStaff = !['player', 'fan'].includes((user.role ?? '').toLowerCase());
+    if (isStaff) return true;
+    const team = await this.prisma.team.findUnique({ where: { id: teamId }, select: { coach_id: true } });
+    if (team?.coach_id === user.id) return true;
+    const captain = await this.prisma.teamMember.findFirst({
+      where: { team_id: teamId, user_id: user.id, role: 'captain', status: 'active' },
+      select: { id: true },
+    });
+    return !!captain;
+  }
+
+  /** Compositions des deux équipes d'un match (publiées, + brouillon du capitaine). */
+  async getLineups(matchId: string, user: UserPayload) {
+    const match = await this.prisma.match.findUnique({
+      where: { id: matchId },
+      select: {
+        id: true, scheduled_at: true,
+        home_team: { select: { id: true, name: true } },
+        away_team: { select: { id: true, name: true } },
+        lineups: { select: { team_id: true, formation: true, players: true, published_at: true } },
+      },
+    });
+    if (!match) throw new NotFoundException('Match introuvable');
+
+    const build = async (team: { id: string; name: string } | null) => {
+      if (!team) return null;
+      const row = match.lineups.find((l) => l.team_id === team.id) ?? null;
+      const editable = await this.canManageTeam(team.id, user);
+      const published = !!row?.published_at;
+      // Visible : composition publiée, ou brouillon si l'utilisateur gère l'équipe.
+      const lineup = row && (published || editable)
+        ? { formation: row.formation, players: row.players, published: published }
+        : null;
+      return { team, editable, lineup };
+    };
+
+    return {
+      kickoff: match.scheduled_at,
+      home: await build(match.home_team),
+      away: await build(match.away_team),
+    };
+  }
+
+  /** Publication / mise à jour de la composition d'une équipe par son capitaine. */
+  async upsertLineup(
+    matchId: string,
+    user: UserPayload,
+    dto: { team_id?: string; formation?: string; players?: LineupPlayerInput[]; publish?: boolean },
+  ) {
+    const match = await this.prisma.match.findUnique({
+      where: { id: matchId },
+      select: { id: true, home_team_id: true, away_team_id: true, status: true },
+    });
+    if (!match) throw new NotFoundException('Match introuvable');
+    if (['finished', 'TERMINÉ', 'completed'].includes(match.status)) {
+      throw new BadRequestException('Le match est terminé : la composition n’est plus modifiable.');
+    }
+
+    // Détermine l'équipe cible : celle fournie (parmi les 2), sinon celle que gère l'utilisateur.
+    const teamIds = [match.home_team_id, match.away_team_id];
+    let teamId = dto.team_id && teamIds.includes(dto.team_id) ? dto.team_id : undefined;
+    if (!teamId) {
+      for (const id of teamIds) {
+        if (await this.canManageTeam(id, user)) { teamId = id; break; }
+      }
+    }
+    if (!teamId) throw new ForbiddenException('Tu dois être capitaine d’une des deux équipes pour publier la composition.');
+    if (!(await this.canManageTeam(teamId, user))) {
+      throw new ForbiddenException('Seul le capitaine de cette équipe peut publier sa composition.');
+    }
+
+    const players = (Array.isArray(dto.players) ? dto.players : [])
+      .filter((p) => (p?.name ?? '').trim().length > 0)
+      .slice(0, 30)
+      .map((p) => ({
+        name: String(p.name).trim().slice(0, 60),
+        role: p.role === 'sub' ? 'sub' : 'starter',
+        number: typeof p.number === 'number' ? p.number : null,
+        position: p.position ? String(p.position).slice(0, 24) : null,
+        user_id: p.user_id ?? null,
+      }));
+
+    const data = {
+      formation: dto.formation?.trim().slice(0, 16) || null,
+      players,
+      published_at: dto.publish ? new Date() : null,
+      updated_at: new Date(),
+    };
+
+    const lineup = await this.prisma.matchLineup.upsert({
+      where: { match_id_team_id: { match_id: matchId, team_id: teamId } },
+      create: { match_id: matchId, team_id: teamId, ...data },
+      update: data,
+    });
+
+    // À la publication, notifier les membres de l'équipe.
+    if (dto.publish) {
+      const memberIds = await this.matchMemberIds(teamId, null);
+      await this.notifications.notify(memberIds, {
+        type: 'match_lineup',
+        title: 'Composition publiée',
+        body: 'La composition de ton équipe pour le prochain match est disponible.',
+        data: { match_id: matchId, team_id: teamId },
+      });
+    }
+
+    return lineup;
   }
 
   async create(dto: CreateMatchDto) {

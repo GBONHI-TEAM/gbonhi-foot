@@ -135,6 +135,7 @@ model Team {
   league_registration_payments LeagueRegistrationPayment[]
   league_participations        LeaguePlayerRegistration[]
   posts                        CommunityPost[]
+  match_lineups                MatchLineup[]
 
   @@map("teams")
 }
@@ -271,8 +272,28 @@ model Match {
   away_team  Team         @relation("AwayTeamRelation", fields: [away_team_id], references: [id])
   referee    Profile?     @relation("RefereeRelation", fields: [referee_id], references: [id])
   events     MatchEvent[]
+  lineups    MatchLineup[]
 
   @@map("matches")
+}
+
+/** Composition publiée par une équipe pour un match (formation + titulaires/remplaçants). */
+model MatchLineup {
+  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  match_id     String    @db.Uuid
+  team_id      String    @db.Uuid
+  formation    String?
+  // players = [{ name, role: 'starter'|'sub', number?, position?, user_id? }]
+  players      Json      @default("[]")
+  published_at DateTime? @db.Timestamptz(6)
+  created_at   DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at   DateTime  @default(now()) @db.Timestamptz(6)
+
+  match Match @relation(fields: [match_id], references: [id], onDelete: Cascade)
+  team  Team  @relation(fields: [team_id], references: [id], onDelete: Cascade)
+
+  @@unique([match_id, team_id])
+  @@map("match_lineups")
 }
 
 model MatchEvent {

@@ -18,6 +18,8 @@ import { SupabaseAuthGuard } from '../auth/supabase-auth.guard';
 import { IsString, MaxLength } from 'class-validator';
 import { RolesGuard } from '../../common/access/roles.guard';
 import { Roles } from '../../common/access/roles.decorator';
+import { CurrentUser } from '../auth/current-user.decorator';
+import { UserPayload } from '../../common/types/user-payload.type';
 
 class SetControllerDto {
   @IsString()
@@ -56,6 +58,22 @@ export class MatchesController {
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.matchesService.findOne(id);
+  }
+
+  /** Compositions des deux équipes (publiées + brouillon du capitaine). */
+  @Get(':id/lineups')
+  getLineups(@Param('id') id: string, @CurrentUser() user: UserPayload) {
+    return this.matchesService.getLineups(id, user);
+  }
+
+  /** Publication / mise à jour de la composition par le capitaine d'une équipe. */
+  @Post(':id/lineup')
+  upsertLineup(
+    @Param('id') id: string,
+    @Body() dto: { team_id?: string; formation?: string; players?: { name?: string; role?: string; number?: number | null; position?: string | null; user_id?: string | null }[]; publish?: boolean },
+    @CurrentUser() user: UserPayload,
+  ) {
+    return this.matchesService.upsertLineup(id, user, dto);
   }
 
   @Post()
