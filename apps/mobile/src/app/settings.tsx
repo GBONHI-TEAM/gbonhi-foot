@@ -161,9 +161,8 @@ export default function SettingsScreen() {
           <Row icon="📄" label="Conditions d'utilisation" isLast right={<Chevron />} onPress={() => setCguModal(true)} />
         </Card>
 
-        {/* Zone de danger */}
-        <SectionTitle danger>ZONE DE DANGER</SectionTitle>
-        <View className="rounded-2xl p-3" style={{ borderWidth: 1, borderColor: 'rgba(248,113,113,0.35)' }}>
+        {/* Déconnexion / suppression de compte */}
+        <View className="mt-6 rounded-2xl p-3" style={{ borderWidth: 1, borderColor: 'rgba(248,113,113,0.35)' }}>
           <Pressable onPress={signOut} className="h-14 rounded-xl items-center justify-center mb-3" style={{ borderWidth: 1, borderColor: 'rgba(248,113,113,0.6)' }}>
             <Text className="font-bold text-base" style={{ color: '#F87171' }}>Se déconnecter</Text>
           </Pressable>
