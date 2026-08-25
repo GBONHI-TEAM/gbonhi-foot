@@ -35,7 +35,7 @@
       "package": "com.gbonhifoot.app",
       "versionCode": 1,
       "permissions": [
-        "android.permission.NOTIFICATIONS",
+        "android.permission.POST_NOTIFICATIONS",
         "android.permission.CAMERA",
         "android.permission.READ_EXTERNAL_STORAGE",
         "android.permission.WRITE_EXTERNAL_STORAGE",
@@ -60,7 +60,9 @@
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#1E7A3A"
+          "image": "./assets/images/splash.png",
+          "resizeMode": "cover",
+          "backgroundColor": "#0D1F0D"
         }
       ],
       [
