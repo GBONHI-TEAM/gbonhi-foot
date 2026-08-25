@@ -14,6 +14,7 @@ import {
 import { useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { apiClient } from '../../lib/api';
+import { KB_DONE_ID } from '../../components/ui/keyboard-done-bar';
 import { signInWithGoogle } from '../../lib/auth-google';
 import { signInWithApple, isAppleCancel } from '../../lib/auth-apple';
 
@@ -198,6 +199,7 @@ export default function RegisterScreen() {
                 onChangeText={setTelephone}
                 keyboardType="phone-pad"
                 selectionColor="#F7921E"
+                inputAccessoryViewID={KB_DONE_ID}
               />
             </View>
 

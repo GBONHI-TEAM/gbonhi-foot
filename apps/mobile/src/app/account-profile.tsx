@@ -5,6 +5,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { AppHeader } from '../components/ui/app-header';
 import { ScreenBackground } from '../components/ui/screen-background';
 import { RemoteImage } from '../components/ui/remote-image';
+import { KB_DONE_ID } from '../components/ui/keyboard-done-bar';
 import { imageThumb } from '../lib/image';
 import { useAuthStore } from '../store/auth.store';
 import { supabase } from '../lib/supabase';
@@ -137,7 +138,7 @@ export default function AccountProfileScreen() {
           <TextInput value={lastName} onChangeText={setLastName} placeholder="Nom *" placeholderTextColor="rgba(255,255,255,0.45)" autoCapitalize="words" className="h-14 rounded-input px-4 text-white text-base" style={{ backgroundColor: 'rgba(255,255,255,0.08)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)' }} />
           <View className="h-14 rounded-input px-4 flex-row items-center" style={{ backgroundColor: 'rgba(255,255,255,0.08)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)' }}>
             <Text className="text-white font-bold mr-3">+225</Text>
-            <TextInput value={phone} onChangeText={setPhone} placeholder="Numéro de téléphone *" placeholderTextColor="rgba(255,255,255,0.45)" keyboardType="phone-pad" className="flex-1 text-white text-base" />
+            <TextInput value={phone} onChangeText={setPhone} placeholder="Numéro de téléphone *" placeholderTextColor="rgba(255,255,255,0.45)" keyboardType="phone-pad" inputAccessoryViewID={KB_DONE_ID} className="flex-1 text-white text-base" />
           </View>
           <TextInput value={email} onChangeText={setEmail} placeholder="Adresse e-mail *" placeholderTextColor="rgba(255,255,255,0.45)" keyboardType="email-address" autoCapitalize="none" className="h-14 rounded-input px-4 text-white text-base" style={{ backgroundColor: 'rgba(255,255,255,0.08)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)' }} />
           <Pressable onPress={saveAccount} disabled={saving} className="h-14 rounded-btn items-center justify-center mt-4" style={{ backgroundColor: '#F7921E', opacity: saving ? 0.6 : 1 }}>

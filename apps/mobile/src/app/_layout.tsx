@@ -13,6 +13,7 @@ import '../lib/supabase';
 import { registerForPushNotifications } from '../lib/push';
 import { handleOAuthDeepLink } from '../lib/auth-google';
 import { routeFromGbonhiLink } from '../lib/deep-link';
+import { KeyboardDoneBar } from '../components/ui/keyboard-done-bar';
 
 const INITIAL_SESSION_TIMEOUT_MS = 4_000;
 
@@ -149,6 +150,8 @@ export default function RootLayout() {
         <QueryClientProvider client={queryClient}>
           <AuthGate />
           <Stack screenOptions={{ headerShown: false }} />
+          {/* Barre « Terminé » globale au-dessus du clavier (iOS) */}
+          <KeyboardDoneBar />
         </QueryClientProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>

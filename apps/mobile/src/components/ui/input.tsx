@@ -1,11 +1,12 @@
-import { TextInput, View } from 'react-native';
+import { Platform, TextInput, View } from 'react-native';
 import type { TextInputProps } from 'react-native';
+import { KB_DONE_ID } from './keyboard-done-bar';
 
 interface InputProps extends TextInputProps {
   error?: boolean;
 }
 
-export function Input({ error, style, ...props }: InputProps) {
+export function Input({ error, style, inputAccessoryViewID, ...props }: InputProps) {
   return (
     <View
       className={`h-14 rounded-input border px-4 justify-center ${
@@ -16,6 +17,8 @@ export function Input({ error, style, ...props }: InputProps) {
         className="text-white text-base flex-1"
         placeholderTextColor="rgba(255,255,255,0.45)"
         style={style}
+        // Barre « Terminé » iOS par défaut (fermeture des claviers numériques).
+        inputAccessoryViewID={Platform.OS === 'ios' ? inputAccessoryViewID ?? KB_DONE_ID : undefined}
         {...props}
       />
     </View>
