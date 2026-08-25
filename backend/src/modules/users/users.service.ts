@@ -1,6 +1,5 @@
 import {
   ConflictException,
-  ForbiddenException,
   Injectable,
   NotFoundException,
   ServiceUnavailableException,
@@ -344,10 +343,9 @@ export class UsersService {
     });
     if (!profile) throw new NotFoundException('Compte introuvable');
 
-    const isPlayerAccount = ['player', 'fan'].includes(profile.role.toLowerCase());
-    if (!isPlayerAccount) {
-      throw new ForbiddenException('Un compte partenaire ou administrateur doit d’abord transférer ses responsabilités auprès du support.');
-    }
+    // Tout compte peut demander sa suppression. Les responsabilités actives
+    // (terrains, ligues, capitanat d'une équipe avec membres) doivent d'abord
+    // être transférées — vérifié ci-dessous avec des messages explicites.
 
     const [terrainCount, organizedLeagueCount, coachedTeams] = await Promise.all([
       this.prisma.terrain.count({ where: { partner_id: user.id } }),

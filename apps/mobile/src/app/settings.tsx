@@ -118,8 +118,17 @@ export default function SettingsScreen() {
               await supabase.auth.signOut();
               router.replace('/(auth)/login');
             } catch (e: unknown) {
-              const message = (e as { response?: { data?: { message?: string } } }).response?.data?.message;
-              Alert.alert('Suppression impossible', Array.isArray(message) ? message.join('\n') : message ?? 'Réessaie dans quelques instants.');
+              const raw = (e as { response?: { data?: { message?: string | string[] } } }).response?.data?.message;
+              const message = Array.isArray(raw) ? raw.join('\n') : raw ?? 'Réessaie dans quelques instants.';
+              // Si le blocage concerne le capitanat, on propose d'aller gérer l'équipe.
+              if (/capitan|capitaine|équipe/i.test(message)) {
+                Alert.alert('Transfère d’abord ton capitanat', message, [
+                  { text: 'Plus tard', style: 'cancel' },
+                  { text: 'Gérer mon équipe', onPress: () => router.push('/team') },
+                ]);
+              } else {
+                Alert.alert('Suppression impossible', message);
+              }
             } finally {
               setDeleting(false);
             }

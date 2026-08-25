@@ -71,6 +71,33 @@ export default function MonEquipePage() {
     await Share.share({ message: msg });
   }
 
+  function promoteCaptain(m: Member) {
+    if (!team || !m.user?.id) return;
+    Alert.alert(
+      'Nommer capitaine',
+      `Transférer le capitanat à ${m.user?.full_name ?? 'ce joueur'} ? Tu redeviendras un membre normal de l'équipe.`,
+      [
+        { text: 'Annuler', style: 'cancel' },
+        {
+          text: 'Nommer capitaine',
+          onPress: async () => {
+            setBusyId(m.id);
+            try {
+              await apiClient.patch(`/api/v1/teams/${team.id}/captain`, { user_id: m.user!.id });
+              await load();
+            } catch (e: unknown) {
+              const msg = (e as { response?: { data?: { message?: string } } }).response?.data?.message
+                ?? 'Impossible de transférer le capitanat.';
+              Alert.alert('Erreur', msg);
+            } finally {
+              setBusyId(null);
+            }
+          },
+        },
+      ],
+    );
+  }
+
   async function approve(m: Member) {
     if (!team) return;
     setBusyId(m.id);
@@ -248,6 +275,17 @@ export default function MonEquipePage() {
               <Text className="text-white font-semibold text-sm">{m.user?.full_name ?? 'Joueur'}</Text>
               {m.user?.position ? <Text className="text-xs" style={{ color: 'rgba(255,255,255,0.45)' }}>{m.user.position}</Text> : null}
             </View>
+            {/* Capitaine : peut nommer un autre membre capitaine */}
+            {isCaptain && m.role !== 'captain' && m.user?.id !== user?.id ? (
+              <Pressable
+                onPress={() => promoteCaptain(m)}
+                disabled={busyId === m.id}
+                className="px-3 py-1.5 rounded-full mr-1"
+                style={{ borderWidth: 1, borderColor: 'rgba(255,184,48,0.55)', opacity: busyId === m.id ? 0.5 : 1 }}
+              >
+                <Text className="text-xs font-bold" style={{ color: '#FFB830' }}>👑 Nommer</Text>
+              </Pressable>
+            ) : null}
             <Text className="text-xs px-2.5 py-1 rounded-full" style={{ color: m.role === 'captain' ? '#FFB830' : 'rgba(255,255,255,0.6)', backgroundColor: m.role === 'captain' ? 'rgba(255,184,48,0.12)' : 'rgba(255,255,255,0.06)' }}>
               {roleLabel(m.role)}
             </Text>

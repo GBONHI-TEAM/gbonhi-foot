@@ -84,6 +84,16 @@ export class TeamsController {
     return this.teamsService.leaveTeam(id, user);
   }
 
+  /** Transfert du capitanat vers un autre membre (capitaine actuel uniquement). */
+  @Patch(':id/captain')
+  transferCaptain(
+    @Param('id') id: string,
+    @Body() dto: { user_id: string },
+    @CurrentUser() user: UserPayload,
+  ) {
+    return this.teamsService.transferCaptaincy(id, dto?.user_id, user);
+  }
+
   @Post('join-by-code')
   joinByCode(@Body() dto: JoinByCodeDto, @CurrentUser() user: UserPayload) {
     return this.teamsService.joinByCode(dto, user);

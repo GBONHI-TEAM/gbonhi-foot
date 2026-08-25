@@ -189,6 +189,51 @@ export class TeamsService {
     return { message: 'Tu as quitté l\'équipe' };
   }
 
+  /**
+   * Transfert du capitanat vers un autre membre de l'équipe.
+   * Seul le capitaine actuel (ou un staff/admin) peut le faire.
+   */
+  async transferCaptaincy(teamId: string, newCaptainUserId: string, user: UserPayload) {
+    const team = await this.assertCaptain(teamId, user);
+    if (!newCaptainUserId) throw new BadRequestException('Nouveau capitaine manquant');
+    if (newCaptainUserId === team.coach_id) {
+      throw new BadRequestException('Ce joueur est déjà capitaine.');
+    }
+
+    const target = await this.prisma.teamMember.findUnique({
+      where: { team_id_user_id: { team_id: teamId, user_id: newCaptainUserId } },
+      include: { user: { select: { full_name: true } } },
+    });
+    if (!target || target.status !== 'active') {
+      throw new BadRequestException('Le nouveau capitaine doit être un membre actif de l\'équipe.');
+    }
+
+    const previousCoachId = team.coach_id;
+    await this.prisma.$transaction(async (tx) => {
+      await tx.team.update({ where: { id: teamId }, data: { coach_id: newCaptainUserId } });
+      await tx.teamMember.update({
+        where: { team_id_user_id: { team_id: teamId, user_id: newCaptainUserId } },
+        data: { role: 'captain' },
+      });
+      if (previousCoachId) {
+        await tx.teamMember.updateMany({
+          where: { team_id: teamId, user_id: previousCoachId },
+          data: { role: 'player' },
+        });
+      }
+    });
+
+    // Notifier le nouveau capitaine.
+    await this.notifications.notify(newCaptainUserId, {
+      type: 'team_captaincy',
+      title: 'Tu es maintenant capitaine',
+      body: `Tu as reçu le capitanat de ${team.name}.`,
+      data: { team_id: teamId },
+    });
+
+    return { success: true, team_id: teamId, captain_id: newCaptainUserId };
+  }
+
   /** Vérifie que l'utilisateur est le capitaine (coach_id) de l'équipe, ou un staff/admin. */
   private async assertCaptain(teamId: string, user: UserPayload) {
     const team = await this.prisma.team.findUnique({ where: { id: teamId } });
