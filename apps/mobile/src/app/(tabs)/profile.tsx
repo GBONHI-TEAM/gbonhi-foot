@@ -249,16 +249,24 @@ function ReservationBody({
       showsVerticalScrollIndicator={false}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#F7921E" />}
     >
-      {/* Stats */}
+      {/* Stats (cliquables : basculent sur l'onglet correspondant) */}
       <View className="flex-row gap-2.5 mb-5">
-        <View className="flex-1 rounded-2xl items-center py-5" style={{ backgroundColor: 'rgba(255,255,255,0.05)', borderWidth: 1, borderColor: '#F7921E' }}>
+        <Pressable
+          onPress={() => setTab('À venir')}
+          className="flex-1 rounded-2xl items-center py-5"
+          style={{ backgroundColor: 'rgba(255,255,255,0.05)', borderWidth: 1, borderColor: tab !== 'Favoris' ? '#F7921E' : 'rgba(255,255,255,0.08)' }}
+        >
           <Text className="font-black text-2xl" style={{ color: '#F7921E' }}>{reservations.length}</Text>
           <Text className="text-white/55 text-xs mt-1">Réservations</Text>
-        </View>
-        <View className="flex-1 rounded-2xl items-center py-5" style={{ backgroundColor: 'rgba(255,255,255,0.05)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' }}>
+        </Pressable>
+        <Pressable
+          onPress={() => setTab('Favoris')}
+          className="flex-1 rounded-2xl items-center py-5"
+          style={{ backgroundColor: 'rgba(255,255,255,0.05)', borderWidth: 1, borderColor: tab === 'Favoris' ? '#F7921E' : 'rgba(255,255,255,0.08)' }}
+        >
           <Text className="font-black text-2xl text-white">{favTerrains.length}</Text>
           <Text className="text-white/55 text-xs mt-1">Terrains favoris</Text>
-        </View>
+        </Pressable>
       </View>
 
       {/* Onglets */}
