@@ -12,6 +12,7 @@ import {
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { ScreenBackground } from '../../../components/ui/screen-background';
 import { apiClient } from '../../../lib/api';
+import { invalidateCached } from '../../../lib/api-cache';
 import { imageThumb } from '../../../lib/image';
 import { RemoteImageBackground } from '../../../components/ui/remote-image';
 import {
@@ -143,6 +144,9 @@ export default function TerrainDetailPage() {
         await apiClient.post(`/api/v1/terrains/${id}/favorite`);
       }
       setIsFavorite((value) => !value);
+      // Invalide le cache pour que Profil › Favoris se mette à jour tout seul.
+      invalidateCached('/api/v1/terrains/favorites');
+      invalidateCached('/api/v1/users/me/summary');
     } finally {
       setFavoriteLoading(false);
     }

@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from 'react';
-import { View, Text, Pressable, ScrollView, Image, Alert, Modal, TextInput } from 'react-native';
+import { View, Text, Pressable, ScrollView, Image, Alert, Modal, TextInput, RefreshControl } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { useUserModeStore } from '../../store/user-mode.store';
@@ -82,22 +82,29 @@ export default function ProfileScreen() {
   const photo = photoRaw?.startsWith('http') ? photoRaw : undefined;
   const subtitle = isReservation ? (city ?? '') : [city, position].filter(Boolean).join(' · ');
 
-  const load = useCallback(async () => {
+  const [refreshing, setRefreshing] = useState(false);
+
+  const load = useCallback(async (force = false) => {
     if (isReservation) {
       const [r, fav, pending] = await Promise.all([
-        getCached<Reservation[]>('/api/v1/reservations/mine', 20_000).catch(() => []),
-        getCached<FavoriteTerrain[]>('/api/v1/terrains/favorites', 30_000).catch(() => []),
-        getCached<PendingReview | null>('/api/v1/terrains/reviews/pending', 20_000).catch(() => null),
+        getCached<Reservation[]>('/api/v1/reservations/mine', 20_000, force).catch(() => []),
+        getCached<FavoriteTerrain[]>('/api/v1/terrains/favorites', 30_000, force).catch(() => []),
+        getCached<PendingReview | null>('/api/v1/terrains/reviews/pending', 20_000, force).catch(() => null),
       ]);
       setReservations(Array.isArray(r) ? r : []);
       setFavorites(Array.isArray(fav) ? fav : []);
       setPendingReview(pending);
     } else {
-      const sum = await getCached<Summary>('/api/v1/users/me/summary', 20_000).catch(() => null);
+      const sum = await getCached<Summary>('/api/v1/users/me/summary', 20_000, force).catch(() => null);
       setSummary(sum);
     }
   }, [isReservation]);
   useFocusEffect(useCallback(() => { load(); }, [load]));
+
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    void load(true).finally(() => setRefreshing(false));
+  }, [load]);
 
   function openSettings() {
     router.push('/settings');
@@ -185,11 +192,13 @@ export default function ProfileScreen() {
           favTerrains={favorites}
           tab={resTab}
           setTab={setResTab}
+          refreshing={refreshing}
+          onRefresh={onRefresh}
           onOpenTerrain={(id) => router.push(`/terrain/${id}`)}
           onOpenReservation={(id) => router.push(`/reservation/${id}`)}
         />
       ) : (
-        <LeaguesBody summary={summary} tab={leagueTab} setTab={setLeagueTab} router={router} />
+        <LeaguesBody summary={summary} tab={leagueTab} setTab={setLeagueTab} router={router} refreshing={refreshing} onRefresh={onRefresh} />
       )}
       <ReviewModal
         pending={pendingReview}
@@ -218,7 +227,7 @@ function ResDateBadge({ ymd, index }: { ymd: string; index: number }) {
 }
 
 function ReservationBody({
-  reservations, upcoming, past, cancelled, favTerrains, tab, setTab, onOpenTerrain, onOpenReservation,
+  reservations, upcoming, past, cancelled, favTerrains, tab, setTab, refreshing, onRefresh, onOpenTerrain, onOpenReservation,
 }: {
   reservations: Reservation[];
   upcoming: Reservation[];
@@ -227,13 +236,19 @@ function ReservationBody({
   favTerrains: { id: string; name: string; city: string; surface: string }[];
   tab: (typeof RES_TABS)[number];
   setTab: (t: (typeof RES_TABS)[number]) => void;
+  refreshing: boolean;
+  onRefresh: () => void;
   onOpenTerrain: (id: string) => void;
   onOpenReservation: (id: string) => void;
 }) {
   const list = tab === 'À venir' ? upcoming : tab === 'Passées' ? past : tab === 'Annulées' ? cancelled : [];
 
   return (
-    <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 100 }} showsVerticalScrollIndicator={false}>
+    <ScrollView
+      contentContainerStyle={{ padding: 16, paddingBottom: 100 }}
+      showsVerticalScrollIndicator={false}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#F7921E" />}
+    >
       {/* Stats */}
       <View className="flex-row gap-2.5 mb-5">
         <View className="flex-1 rounded-2xl items-center py-5" style={{ backgroundColor: 'rgba(255,255,255,0.05)', borderWidth: 1, borderColor: '#F7921E' }}>
@@ -353,11 +368,13 @@ function ReviewModal({
 }
 
 // ─────────────────────────── Mode Leagues (s30) ───────────────────────────
-function LeaguesBody({ summary, tab, setTab, router }: {
+function LeaguesBody({ summary, tab, setTab, router, refreshing, onRefresh }: {
   summary: Summary | null;
   tab: (typeof LEAGUE_TABS)[number];
   setTab: (t: (typeof LEAGUE_TABS)[number]) => void;
   router: ReturnType<typeof useRouter>;
+  refreshing: boolean;
+  onRefresh: () => void;
 }) {
   const s = summary?.stats;
   const goals = s?.goals ?? 0;
@@ -377,7 +394,11 @@ function LeaguesBody({ summary, tab, setTab, router }: {
   const unlockedAchievements = achievements.filter((achievement) => achievement.unlocked);
 
   return (
-    <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 100 }} showsVerticalScrollIndicator={false}>
+    <ScrollView
+      contentContainerStyle={{ padding: 16, paddingBottom: 100 }}
+      showsVerticalScrollIndicator={false}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#F7921E" />}
+    >
       <View className="flex-row gap-2.5 mb-5">
         {stats.map((st) => (
           <View key={st.label} className="flex-1 rounded-2xl items-center py-4" style={{ backgroundColor: 'rgba(255,255,255,0.05)', borderWidth: 1, borderColor: st.active ? '#F7921E' : 'rgba(255,255,255,0.08)' }}>

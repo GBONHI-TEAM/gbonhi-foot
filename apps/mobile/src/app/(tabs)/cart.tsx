@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Image, Pressable, ScrollView, Text, View, type ImageSourcePropType } from 'react-native';
+import { ActivityIndicator, Alert, Image, Pressable, RefreshControl, ScrollView, Text, View, type ImageSourcePropType } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { AppHeader } from '../../components/ui/app-header';
 import { ScreenBackground } from '../../components/ui/screen-background';
@@ -47,6 +47,7 @@ export default function ReservationCartScreen() {
   const setPendingReservation = useReservationCartStore((state) => state.setPendingReservation);
   const clearPendingReservation = useReservationCartStore((state) => state.clearPendingReservation);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [acting, setActing] = useState(false);
   const [now, setNow] = useState(Date.now());
   const [methods, setMethods] = useState<{ code: string; label: string }[]>([]);
@@ -179,7 +180,16 @@ export default function ReservationCartScreen() {
   return (
     <ScreenBackground>
       <AppHeader title="Mon panier" showLogo={false} centered />
-      <ScrollView contentContainerStyle={{ padding: 20, paddingBottom: 42, gap: 16 }}>
+      <ScrollView
+        contentContainerStyle={{ padding: 20, paddingBottom: 42, gap: 16 }}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => { setRefreshing(true); void loadCart().finally(() => setRefreshing(false)); }}
+            tintColor="#F7921E"
+          />
+        }
+      >
         {loading ? <ActivityIndicator color="#F7921E" /> : null}
 
         {!loading && !pendingReservation ? (
