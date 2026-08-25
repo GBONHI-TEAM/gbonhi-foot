@@ -12,12 +12,12 @@ import { RemoteImageBackground } from '../../components/ui/remote-image';
 const HOLD_DURATION_MS = 15 * 60 * 1000;
 
 // Habillage de marque des moyens de paiement (logo + sous-titre).
-const METHOD_META: Record<string, { logo?: ImageSourcePropType; emoji?: string; badge?: string; badgeBg?: string; subtitle: string }> = {
+const METHOD_META: Record<string, { logo?: ImageSourcePropType; fit?: 'cover' | 'contain'; emoji?: string; badge?: string; badgeBg?: string; subtitle: string }> = {
   cash: { emoji: '💵', subtitle: 'À régler sur place' },
   wave: { logo: require('../../../assets/images/pay-wave.png'), subtitle: 'Paiement mobile instantané' },
   orange: { logo: require('../../../assets/images/pay-orange.webp'), subtitle: 'Orange Money' },
   mtn: { logo: require('../../../assets/images/pay-mtn.png'), subtitle: 'MTN MoMo' },
-  moov: { badge: 'Moov', badgeBg: '#0A6DD8', subtitle: 'Moov Money' },
+  moov: { logo: require('../../../assets/images/pay-moov.png'), fit: 'contain', subtitle: 'Moov Money' },
 };
 const WEEKDAYS = ['dimanche', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi'];
 const MONTHS = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
@@ -241,7 +241,7 @@ export default function ReservationCartScreen() {
                   >
                     <View style={{ width: 46, height: 46, borderRadius: 12, alignItems: 'center', justifyContent: 'center', overflow: 'hidden', backgroundColor: meta.badgeBg ?? 'rgba(255,255,255,0.08)' }}>
                       {meta.logo ? (
-                        <Image source={meta.logo} style={{ width: 46, height: 46 }} resizeMode="cover" />
+                        <Image source={meta.logo} style={{ width: 46, height: 46 }} resizeMode={meta.fit ?? 'cover'} />
                       ) : meta.badge ? (
                         <Text className="text-white font-black" style={{ fontSize: 13 }}>{meta.badge}</Text>
                       ) : (

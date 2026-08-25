@@ -16,6 +16,7 @@ const METHOD_LOGO: Record<string, string> = {
   wave: '/payment/wave.png',
   orange: '/payment/orange.webp',
   mtn: '/payment/mtn.png',
+  moov: '/payment/moov.png',
 };
 
 export default function PaiementsPage() {
@@ -89,7 +90,7 @@ export default function PaiementsPage() {
                 <span className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-lg border border-slate-200 bg-white" style={{ opacity: method.enabled ? 1 : 0.5 }}>
                   {METHOD_LOGO[method.code] ? (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img src={METHOD_LOGO[method.code]} alt={method.label} className="h-10 w-10 object-cover" />
+                    <img src={METHOD_LOGO[method.code]} alt={method.label} className="h-10 w-10 object-contain p-0.5" />
                   ) : method.code === 'moov' ? (
                     <span className="flex h-full w-full items-center justify-center text-[10px] font-black text-white" style={{ backgroundColor: '#0A6DD8' }}>Moov</span>
                   ) : (
