@@ -52,17 +52,6 @@ export default function ReservationCartScreen() {
   const [methods, setMethods] = useState<{ code: string; label: string }[]>([]);
   const [selectedMethod, setSelectedMethod] = useState('cash');
 
-  useEffect(() => {
-    apiClient
-      .get<{ code: string; label: string }[]>('/api/v1/payments/methods')
-      .then(({ data }) => {
-        const list = Array.isArray(data) ? data : [];
-        setMethods(list);
-        setSelectedMethod((current) => (list.some((m) => m.code === current) ? current : list[0]?.code ?? 'cash'));
-      })
-      .catch(() => setMethods([{ code: 'cash', label: 'Espèces' }]));
-  }, []);
-
   const loadCart = useCallback(async () => {
     try {
       const { data } = await apiClient.get<PendingReservationCart | null>('/api/v1/reservations/mine/pending');
@@ -72,6 +61,19 @@ export default function ReservationCartScreen() {
       // se résout ; aucune action de paiement n'est permise sans API.
     } finally {
       setLoading(false);
+    }
+
+    // Moyens de paiement activés — ré-essayé à CHAQUE affichage du panier
+    // (évite de rester bloqué sur le repli si le 1er appel échoue au démarrage).
+    try {
+      const { data } = await apiClient.get<{ code: string; label: string }[]>('/api/v1/payments/methods');
+      const list = Array.isArray(data) ? data : [];
+      if (list.length > 0) {
+        setMethods(list);
+        setSelectedMethod((current) => (list.some((m) => m.code === current) ? current : list[0].code));
+      }
+    } catch {
+      setMethods((current) => (current.length > 0 ? current : [{ code: 'cash', label: 'Espèces' }]));
     }
   }, [setPendingReservation]);
 
