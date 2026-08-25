@@ -153,20 +153,29 @@ export default function TerrainDetailPage() {
   }
 
   // Créneaux d'ouverture du jour, marqués disponibles / indisponibles.
+  // Même logique que l'écran « Choisir un créneau » : on part des horaires du
+  // terrain, avec repli 6h–23h si aucun n'est renseigné, et on ne garde que les
+  // heures ENCORE à venir aujourd'hui (cohérence avec le bouton « Réserver »).
   const todaySlots = useMemo(() => {
-    if (!terrain?.slots) return [];
     const dow = (new Date().getDay() + 6) % 7; // 0 = lundi
+    const nowHour = new Date().getHours();
     const hours = new Set<number>();
-    for (const s of terrain.slots) {
+    for (const s of terrain?.slots ?? []) {
       if (s.day_of_week !== dow) continue;
       for (let h = s.start_hour; h < s.end_hour; h++) hours.add(h);
+    }
+    if (hours.size === 0) {
+      for (let h = 6; h < 23; h++) hours.add(h); // repli (terrains sans horaires configurés)
     }
     const unavailable = new Set<number>([
       ...(availability?.booked ?? []),
       ...(availability?.pending ?? []),
       ...(availability?.blocked ?? []),
     ]);
-    return Array.from(hours).sort((a, b) => a - b).map((h) => ({ hour: h, available: !unavailable.has(h) }));
+    return Array.from(hours)
+      .filter((h) => h >= nowHour)
+      .sort((a, b) => a - b)
+      .map((h) => ({ hour: h, available: !unavailable.has(h) }));
   }, [terrain, availability]);
 
   if (loading) {
