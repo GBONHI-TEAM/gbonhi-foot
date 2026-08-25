@@ -1,10 +1,19 @@
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable, ScrollView, Text, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { AppHeader } from '../../components/ui/app-header';
 import { ScreenBackground } from '../../components/ui/screen-background';
 import { apiClient } from '../../lib/api';
 import { formatFcfa } from '../../types/terrain';
+
+function toBase64(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer);
+  let binary = '';
+  for (let index = 0; index < bytes.length; index += 8192) {
+    binary += String.fromCharCode(...bytes.subarray(index, index + 8192));
+  }
+  return globalThis.btoa(binary);
+}
 
 interface ReservationDetail {
   id: string;
@@ -41,6 +50,7 @@ export default function ReservationDetailPage() {
   const router = useRouter();
   const [reservation, setReservation] = useState<ReservationDetail | null>(null);
   const [loading, setLoading] = useState(true);
+  const [downloading, setDownloading] = useState(false);
 
   useEffect(() => {
     apiClient.get<ReservationDetail>(`/api/v1/reservations/mine/${id}`)
@@ -48,6 +58,33 @@ export default function ReservationDetailPage() {
       .catch(() => setReservation(null))
       .finally(() => setLoading(false));
   }, [id]);
+
+  // Le reçu n'est disponible que si le paiement est validé.
+  const receiptAvailable = !!reservation
+    && ['confirmed', 'completed'].includes(reservation.status)
+    && reservation.payment?.status === 'accepted';
+
+  async function downloadReceipt() {
+    if (!reservation || !receiptAvailable) return;
+    try {
+      setDownloading(true);
+      const FileSystem = require('expo-file-system') as typeof import('expo-file-system');
+      const Sharing = require('expo-sharing') as typeof import('expo-sharing');
+      const response = await apiClient.get<ArrayBuffer>(`/api/v1/payments/reservations/${reservation.id}/receipt.pdf`, { responseType: 'arraybuffer' });
+      if (!FileSystem.documentDirectory) throw new Error('Dossier de téléchargement indisponible');
+      const uri = `${FileSystem.documentDirectory}gbonhi-foot-recu-${reservation.id}.pdf`;
+      await FileSystem.writeAsStringAsync(uri, toBase64(response.data), { encoding: FileSystem.EncodingType.Base64 });
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(uri, { mimeType: 'application/pdf', dialogTitle: 'Reçu GBONHI FOOT' });
+      } else {
+        Alert.alert('Reçu téléchargé', `Le reçu a été enregistré dans : ${uri}`);
+      }
+    } catch {
+      Alert.alert('Téléchargement impossible', 'Réessaie dans quelques instants.');
+    } finally {
+      setDownloading(false);
+    }
+  }
 
   if (loading) {
     return <View className="flex-1 items-center justify-center" style={{ backgroundColor: '#0D1F0D' }}><ActivityIndicator color="#F7921E" size="large" /></View>;
@@ -88,7 +125,13 @@ export default function ReservationDetailPage() {
           </View>
         </View>
 
-        <Pressable onPress={() => router.push(`/terrain/${reservation.terrain.id}`)} className="rounded-2xl py-4 mt-5 items-center" style={{ borderWidth: 1, borderColor: 'rgba(46,158,79,0.65)' }}>
+        {receiptAvailable ? (
+          <Pressable onPress={downloadReceipt} disabled={downloading} className="rounded-2xl py-4 mt-5 flex-row items-center justify-center gap-2" style={{ backgroundColor: '#F7921E', opacity: downloading ? 0.6 : 1 }}>
+            {downloading ? <ActivityIndicator color="#FFFFFF" /> : <><Text style={{ fontSize: 16 }}>📥</Text><Text className="text-white font-bold text-base">Télécharger / partager le reçu</Text></>}
+          </Pressable>
+        ) : null}
+
+        <Pressable onPress={() => router.push(`/terrain/${reservation.terrain.id}`)} className="rounded-2xl py-4 mt-3 items-center" style={{ borderWidth: 1, borderColor: 'rgba(46,158,79,0.65)' }}>
           <Text className="font-bold" style={{ color: '#4ADE80' }}>Voir le terrain</Text>
         </Pressable>
       </ScrollView>
