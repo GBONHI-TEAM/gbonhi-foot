@@ -103,7 +103,7 @@ function HomeLeagues({ summary, matches, loading }: { summary: Summary | null; m
     <>
       {/* Matches du jour (activité réelle des ligues) */}
       <View className="mt-5 px-4">
-        <SectionHeader title="Matches du jour" action="Voir tout →" onAction={() => router.push('/match')} />
+        <SectionHeader title="Matchs du jour" action="Voir tout →" onAction={() => router.push('/match')} />
         {today.length > 0 ? (
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 12 }}>
             {today.map((m) => (

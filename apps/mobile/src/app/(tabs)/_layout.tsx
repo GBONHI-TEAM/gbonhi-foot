@@ -53,7 +53,7 @@ export default function TabsLayout() {
       }}
     >
       <Tabs.Screen name="index" options={{ title: 'Accueil', tabBarIcon: icon('home-outline') }} />
-      <Tabs.Screen name="league" options={{ title: 'League', tabBarIcon: icon('trophy-outline'), href: isReservation ? null : undefined }} />
+      <Tabs.Screen name="league" options={{ title: 'Ligues', tabBarIcon: icon('trophy-outline'), href: isReservation ? null : undefined }} />
       <Tabs.Screen name="community" options={{ title: 'Communauté', tabBarIcon: icon('chatbubble-ellipses-outline') }} />
       <Tabs.Screen name="match" options={{ title: 'Match', tabBarIcon: icon('football-outline'), href: isReservation ? null : undefined }} />
       <Tabs.Screen
