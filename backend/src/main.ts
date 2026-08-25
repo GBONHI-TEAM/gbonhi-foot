@@ -45,7 +45,7 @@ async function bootstrap() {
 
   // API prefix. Les smart links HTTPS restent hors API pour être cliquables dans
   // WhatsApp/SMS et ouvrir l'app sur le contenu correspondant.
-  app.setGlobalPrefix('api/v1', { exclude: ['/', 'join', 'r/*'] });
+  app.setGlobalPrefix('api/v1', { exclude: ['/', 'join', 'r/*', 'brand/*'] });
 
   // Swagger — only in non-production
   if (process.env.NODE_ENV !== 'production') {
