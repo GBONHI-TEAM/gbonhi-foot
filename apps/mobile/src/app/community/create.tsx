@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { View, Text, TextInput, Pressable, Image, Alert, ActivityIndicator, ScrollView, Linking } from 'react-native';
+import { View, Text, TextInput, Pressable, Alert, ActivityIndicator, ScrollView } from 'react-native';
 import { useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { apiClient } from '../../lib/api';
@@ -111,21 +111,6 @@ export default function CreatePostScreen() {
     }
   }
 
-  async function shareWhatsApp() {
-    const text = content.trim() || 'Rejoins la communauté GBONHI FOOT ⚽';
-    const encoded = encodeURIComponent(text);
-    // openURL ouvre WhatsApp même sans whitelist canOpenURL ; repli wa.me sinon.
-    try {
-      await Linking.openURL(`whatsapp://send?text=${encoded}`);
-    } catch {
-      try {
-        await Linking.openURL(`https://wa.me/?text=${encoded}`);
-      } catch {
-        Alert.alert('WhatsApp indisponible', "Installe WhatsApp pour partager, ou copie ton texte manuellement.");
-      }
-    }
-  }
-
   return (
     <ScreenBackground>
       {/* Header vert à motifs triangulaires + croix */}
@@ -221,14 +206,6 @@ export default function CreatePostScreen() {
           style={{ backgroundColor: '#F7921E', opacity: saving ? 0.6 : 1 }}
         >
           {saving ? <ActivityIndicator color="#fff" /> : <Text className="text-white font-bold text-base">Publier</Text>}
-        </Pressable>
-        <Pressable
-          onPress={shareWhatsApp}
-          className="h-14 rounded-btn flex-row items-center justify-center gap-2 mt-3"
-          style={{ borderWidth: 1, borderColor: 'rgba(37,211,102,0.6)' }}
-        >
-          <Image source={require('../../../assets/images/whatsapp.png')} style={{ width: 22, height: 22 }} resizeMode="contain" />
-          <Text className="font-bold text-base" style={{ color: '#25D366' }}>Partager sur WhatsApp</Text>
         </Pressable>
       </View>
     </ScreenBackground>

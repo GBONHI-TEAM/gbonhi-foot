@@ -10,7 +10,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   Alert,
-  Linking,
+  Share,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { apiClient, postShareLink } from '../../lib/api';
@@ -108,20 +108,15 @@ export default function PostDetailScreen() {
     Alert.alert('Publication', undefined, options);
   }
 
-  async function inviteWhatsApp() {
-    const author = post?.author.full_name ?? 'Un joueur';
-    const text = post
-      ? `${author} sur GBONHI FOOT ⚽\n\n"${post.content}"\n\nVoir la publication sur GBONHI FOOT 👇\n${postShareLink(post.id)}`
-      : 'Rejoins la communauté GBONHI FOOT ⚽';
-    const encoded = encodeURIComponent(text);
+  async function sharePost() {
+    if (!post) return;
+    const author = post.author.full_name ?? 'Un joueur';
+    const message = `${author} sur GBONHI FOOT ⚽\n\n"${post.content}"\n\nVoir la publication sur GBONHI FOOT 👇\n${postShareLink(post.id)}`;
     try {
-      await Linking.openURL(`whatsapp://send?text=${encoded}`);
+      // Menu de partage natif : l'utilisateur choisit l'app (WhatsApp, SMS, etc.).
+      await Share.share({ message });
     } catch {
-      try {
-        await Linking.openURL(`https://wa.me/?text=${encoded}`);
-      } catch {
-        Alert.alert('WhatsApp indisponible', "Installe WhatsApp pour partager le post.");
-      }
+      /* partage annulé par l'utilisateur */
     }
   }
 
@@ -214,11 +209,11 @@ export default function PostDetailScreen() {
               )}
             </ScrollView>
 
-            {/* Inviter via WhatsApp */}
+            {/* Partager la publication (menu natif : WhatsApp, SMS, etc.) */}
             <View className="px-4 pt-2">
-              <Pressable onPress={inviteWhatsApp} className="h-14 rounded-btn flex-row items-center justify-center gap-2" style={{ backgroundColor: '#25D366' }}>
-                <Image source={require('../../../assets/images/whatsapp.png')} style={{ width: 22, height: 22 }} resizeMode="contain" />
-                <Text className="text-white font-bold text-base">Inviter via WhatsApp</Text>
+              <Pressable onPress={sharePost} className="h-14 rounded-btn flex-row items-center justify-center gap-2" style={{ backgroundColor: '#F7921E' }}>
+                <Text style={{ fontSize: 18 }}>📤</Text>
+                <Text className="text-white font-bold text-base">Partager la publication</Text>
               </Pressable>
             </View>
 
