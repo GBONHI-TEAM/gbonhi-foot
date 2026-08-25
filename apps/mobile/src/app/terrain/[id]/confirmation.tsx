@@ -20,7 +20,7 @@ function toBase64(buffer: ArrayBuffer): string {
 }
 
 export default function ConfirmationPage() {
-  const { reservationId, total } = useLocalSearchParams<{ reservationId: string; total: string }>();
+  const { reservationId, total, method } = useLocalSearchParams<{ reservationId: string; total: string; method?: string }>();
   const router = useRouter();
   const [payment, setPayment] = useState<PaymentStatus | null>(null);
   const [loading, setLoading] = useState(true);
@@ -71,10 +71,13 @@ export default function ConfirmationPage() {
 
   const accepted = payment?.status === 'accepted';
   const refused = payment?.status === 'refused' || payment?.status === 'cancelled';
+  const isCash = (payment?.payment_method ?? method) === 'cash';
   const amount = payment?.amount ?? Number(total);
   const title = accepted ? 'Réservation confirmée !' : refused ? 'Paiement non finalisé' : 'Paiement en attente';
   const body = accepted
-    ? 'Ton paiement est validé. Ta réservation est confirmée.'
+    ? isCash
+      ? 'Ta réservation est confirmée. Règle en espèces sur place au partenaire.'
+      : 'Ton paiement est validé. Ta réservation est confirmée.'
     : refused
       ? 'Le paiement a été refusé ou annulé. Tu peux choisir un autre créneau et réessayer.'
       : 'Nous vérifions la validation de ton paiement. Cette page se met à jour automatiquement.';
@@ -102,7 +105,7 @@ export default function ConfirmationPage() {
           <View className="flex-row items-center justify-between">
             <Text className="text-white/55 text-sm">Statut paiement</Text>
             <Text className="font-bold text-sm" style={{ color: accepted ? '#4ADE80' : refused ? '#F87171' : '#F7921E' }}>
-              {accepted ? 'Validé' : refused ? 'Refusé' : 'Vérification en cours'}
+              {accepted ? (isCash ? 'À régler sur place' : 'Validé') : refused ? 'Refusé' : 'Vérification en cours'}
             </Text>
           </View>
         </View>

@@ -12,6 +12,7 @@ import { UserPayload } from '../../common/types/user-payload.type';
 import { ReservationsService } from '../reservations/reservations.service';
 import { CreateReservationCheckoutDto } from './dto/create-reservation-checkout.dto';
 import { CreateLeagueCheckoutDto } from './dto/create-league-checkout.dto';
+import { CheckoutMethodDto } from './dto/checkout-method.dto';
 import { createLeagueRegistrationReceiptPdf, createReservationReceiptPdf } from './receipt-pdf';
 import { NotificationsService } from '../notifications/notifications.service';
 
@@ -30,20 +31,14 @@ export class PaymentsService {
    * paiement, mais valide celle-ci en simulation sans appel sortant.
    */
   async checkoutReservation(dto: CreateReservationCheckoutDto, user: UserPayload) {
-    if (!this.isSimulationEnabled()) {
-      throw new ServiceUnavailableException('Les paiements en ligne sont temporairement indisponibles.');
-    }
-
+    const method = await this.resolveEnabledMethod(dto.payment_method);
     const reservation = await this.reservations.create(dto, user);
-    return this.confirmSimulation(reservation.id, user);
+    return this.confirmReservationPayment(reservation.id, user, method);
   }
 
   /** Validation d'une réservation déjà placée dans le panier. */
-  async checkoutPendingReservation(reservationId: string, user: UserPayload) {
-    if (!this.isSimulationEnabled()) {
-      throw new ServiceUnavailableException('Les paiements en ligne sont temporairement indisponibles.');
-    }
-
+  async checkoutPendingReservation(reservationId: string, dto: CheckoutMethodDto, user: UserPayload) {
+    const method = await this.resolveEnabledMethod(dto?.payment_method);
     await this.reservations.releaseExpiredPendingReservations(user.id, true);
     const reservation = await this.prisma.reservation.findFirst({
       where: { id: reservationId, user_id: user.id, status: 'pending' },
@@ -52,17 +47,24 @@ export class PaymentsService {
     if (!reservation) {
       throw new NotFoundException('Cette réservation n’est plus disponible dans ton panier.');
     }
-    return this.confirmSimulation(reservation.id, user);
+    return this.confirmReservationPayment(reservation.id, user, method);
   }
 
-  private async confirmSimulation(reservationId: string, user: UserPayload) {
+  /**
+   * Confirme le paiement d'une réservation.
+   * - Espèces : réservation confirmée, à régler sur place au partenaire.
+   * - Mobile Money : simulé tant que CinetPay n'est pas branché.
+   */
+  private async confirmReservationPayment(reservationId: string, user: UserPayload, method: string) {
     const reservation = await this.prisma.reservation.findFirst({
       where: { id: reservationId, user_id: user.id },
       select: { id: true, total_price: true },
     });
     if (!reservation) throw new NotFoundException('Réservation introuvable');
 
-    const transactionId = `SIM-${reservation.id.replace(/-/g, '').slice(0, 20).toUpperCase()}`;
+    const isCash = method === 'cash';
+    const prefix = isCash ? 'CASH' : 'SIM';
+    const transactionId = `${prefix}-${reservation.id.replace(/-/g, '').slice(0, 20).toUpperCase()}`;
     const payment = await this.prisma.$transaction(async (tx) => {
       const confirmed = await tx.reservation.updateMany({
         where: { id: reservation.id, user_id: user.id, status: 'pending' },
@@ -78,14 +80,59 @@ export class PaymentsService {
           transaction_id: transactionId,
           amount: reservation.total_price,
           status: 'accepted',
-          payment_method: 'simulation',
-          cinetpay_data: { provider: 'simulation', validated_at: new Date().toISOString() },
+          payment_method: method,
+          cinetpay_data: { provider: isCash ? 'cash' : 'simulation', validated_at: new Date().toISOString() },
         },
       });
       return createdPayment;
     });
 
-    return { reservation_id: reservation.id, payment_id: payment.id, status: 'accepted' as const, simulation: true as const };
+    return {
+      reservation_id: reservation.id,
+      payment_id: payment.id,
+      status: 'accepted' as const,
+      payment_method: method,
+      cash: isCash,
+      simulation: !isCash,
+    };
+  }
+
+  // ─── Moyens de paiement (config) ─────────────────────────────────────────
+  /** Moyens ACTIVÉS, exposés à l'app mobile. */
+  listEnabledMethods() {
+    return this.prisma.paymentMethod.findMany({
+      where: { enabled: true },
+      orderBy: { sort_order: 'asc' },
+      select: { code: true, label: true },
+    });
+  }
+
+  /** Tous les moyens (vue admin, avec état activé/désactivé). */
+  listAllMethods() {
+    return this.prisma.paymentMethod.findMany({
+      orderBy: { sort_order: 'asc' },
+      select: { code: true, label: true, enabled: true },
+    });
+  }
+
+  async setMethodEnabled(code: string, enabled: boolean) {
+    const record = await this.prisma.paymentMethod.findUnique({ where: { code } });
+    if (!record) throw new NotFoundException('Moyen de paiement introuvable');
+    return this.prisma.paymentMethod.update({
+      where: { code },
+      data: { enabled, updated_at: new Date() },
+      select: { code: true, label: true, enabled: true },
+    });
+  }
+
+  /** Valide qu'un moyen est activé avant tout paiement (défaut : espèces). */
+  private async resolveEnabledMethod(code?: string): Promise<string> {
+    const method = code ?? 'cash';
+    const record = await this.prisma.paymentMethod.findUnique({ where: { code: method } });
+    if (!record || !record.enabled) {
+      throw new ServiceUnavailableException('Ce moyen de paiement est momentanément indisponible.');
+    }
+    return method;
   }
 
   async getReservationPayment(reservationId: string, user: UserPayload) {

@@ -6,8 +6,8 @@ export class CreateReservationCheckoutDto extends CreateReservationDto {
   // clients. Elles sont toutes ignorées : le backend enregistre uniquement
   // une validation simulée tant que CinetPay est désactivé.
   @IsOptional()
-  @IsIn(['simulation', 'wave', 'orange', 'mtn', 'card'])
-  payment_method?: 'simulation' | 'wave' | 'orange' | 'mtn' | 'card';
+  @IsIn(['cash', 'wave', 'orange', 'mtn', 'moov'])
+  payment_method?: 'cash' | 'wave' | 'orange' | 'mtn' | 'moov';
 
   @IsOptional()
   @IsString()

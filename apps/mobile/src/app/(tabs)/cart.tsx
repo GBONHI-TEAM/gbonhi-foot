@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, ScrollView, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Image, Pressable, ScrollView, Text, View, type ImageSourcePropType } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { AppHeader } from '../../components/ui/app-header';
 import { ScreenBackground } from '../../components/ui/screen-background';
@@ -10,6 +10,15 @@ import { PendingReservationCart, useReservationCartStore } from '../../store/res
 import { RemoteImageBackground } from '../../components/ui/remote-image';
 
 const HOLD_DURATION_MS = 15 * 60 * 1000;
+
+// Habillage de marque des moyens de paiement (logo + sous-titre).
+const METHOD_META: Record<string, { logo?: ImageSourcePropType; emoji?: string; badge?: string; badgeBg?: string; subtitle: string }> = {
+  cash: { emoji: '💵', subtitle: 'À régler sur place' },
+  wave: { logo: require('../../../assets/images/pay-wave.png'), subtitle: 'Paiement mobile instantané' },
+  orange: { logo: require('../../../assets/images/pay-orange.webp'), subtitle: 'Orange Money' },
+  mtn: { logo: require('../../../assets/images/pay-mtn.png'), subtitle: 'MTN MoMo' },
+  moov: { badge: 'Moov', badgeBg: '#0A6DD8', subtitle: 'Moov Money' },
+};
 const WEEKDAYS = ['dimanche', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi'];
 const MONTHS = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
 
@@ -40,6 +49,19 @@ export default function ReservationCartScreen() {
   const [loading, setLoading] = useState(true);
   const [acting, setActing] = useState(false);
   const [now, setNow] = useState(Date.now());
+  const [methods, setMethods] = useState<{ code: string; label: string }[]>([]);
+  const [selectedMethod, setSelectedMethod] = useState('cash');
+
+  useEffect(() => {
+    apiClient
+      .get<{ code: string; label: string }[]>('/api/v1/payments/methods')
+      .then(({ data }) => {
+        const list = Array.isArray(data) ? data : [];
+        setMethods(list);
+        setSelectedMethod((current) => (list.some((m) => m.code === current) ? current : list[0]?.code ?? 'cash'));
+      })
+      .catch(() => setMethods([{ code: 'cash', label: 'Espèces' }]));
+  }, []);
 
   const loadCart = useCallback(async () => {
     try {
@@ -124,8 +146,9 @@ export default function ReservationCartScreen() {
     if (!pendingReservation || acting || expired) return;
     try {
       setActing(true);
-      const { data } = await apiClient.post<{ reservation_id: string; status: 'accepted'; simulation: true }>(
+      const { data } = await apiClient.post<{ reservation_id: string; status: 'accepted'; payment_method: string; cash: boolean }>(
         `/api/v1/payments/reservations/${pendingReservation.id}/checkout`,
+        { payment_method: selectedMethod },
       );
       clearPendingReservation();
       router.replace({
@@ -136,6 +159,7 @@ export default function ReservationCartScreen() {
           date: pendingReservation.reservation_date,
           start: String(pendingReservation.start_hour),
           total: String(pendingReservation.total_price),
+          method: data.payment_method,
         },
       });
     } catch (error: unknown) {
@@ -196,6 +220,44 @@ export default function ReservationCartScreen() {
               </View>
             </View>
 
+            {/* Moyen de paiement */}
+            <View>
+              <Text className="text-white font-bold text-base mb-2">Choisir un moyen de paiement</Text>
+              {methods.map((m) => {
+                const active = selectedMethod === m.code;
+                const meta = METHOD_META[m.code] ?? { subtitle: 'Mobile Money' };
+                return (
+                  <Pressable
+                    key={m.code}
+                    onPress={() => setSelectedMethod(m.code)}
+                    className="flex-row items-center gap-3 rounded-btn p-3 mb-2.5"
+                    style={{
+                      borderWidth: 1.5,
+                      borderColor: active ? '#F7921E' : 'rgba(255,255,255,0.12)',
+                      backgroundColor: active ? 'rgba(247,146,30,0.08)' : 'rgba(255,255,255,0.04)',
+                    }}
+                  >
+                    <View style={{ width: 46, height: 46, borderRadius: 12, alignItems: 'center', justifyContent: 'center', overflow: 'hidden', backgroundColor: meta.badgeBg ?? 'rgba(255,255,255,0.08)' }}>
+                      {meta.logo ? (
+                        <Image source={meta.logo} style={{ width: 46, height: 46 }} resizeMode="cover" />
+                      ) : meta.badge ? (
+                        <Text className="text-white font-black" style={{ fontSize: 13 }}>{meta.badge}</Text>
+                      ) : (
+                        <Text style={{ fontSize: 22 }}>{meta.emoji ?? '💳'}</Text>
+                      )}
+                    </View>
+                    <View className="flex-1">
+                      <Text className="text-white font-bold text-base">{m.label}</Text>
+                      <Text className="text-white/50 text-xs mt-0.5">{meta.subtitle}</Text>
+                    </View>
+                    <View style={{ width: 22, height: 22, borderRadius: 11, borderWidth: 2, borderColor: active ? '#F7921E' : 'rgba(255,255,255,0.35)', alignItems: 'center', justifyContent: 'center' }}>
+                      {active ? <View style={{ width: 11, height: 11, borderRadius: 6, backgroundColor: '#F7921E' }} /> : null}
+                    </View>
+                  </Pressable>
+                );
+              })}
+            </View>
+
             <Pressable onPress={confirmEdit} disabled={acting || expired} className="h-13 rounded-btn items-center justify-center" style={{ borderWidth: 1, borderColor: 'rgba(46,158,79,0.65)', opacity: acting || expired ? 0.55 : 1 }}>
               <Text style={{ color: '#4ADE80' }} className="font-bold">Modifier le créneau</Text>
             </Pressable>
@@ -205,7 +267,11 @@ export default function ReservationCartScreen() {
             <Pressable onPress={checkout} disabled={acting || expired} className="h-14 rounded-btn items-center justify-center" style={{ backgroundColor: '#F7921E', opacity: acting || expired ? 0.55 : 1 }}>
               {acting ? <ActivityIndicator color="#FFFFFF" /> : <Text className="text-white font-bold text-base">Valider la réservation</Text>}
             </Pressable>
-            <Text className="text-white/45 text-center text-xs leading-5">Paiement simulé activé : les moyens Mobile Money seront disponibles prochainement.</Text>
+            <Text className="text-white/45 text-center text-xs leading-5">
+              {selectedMethod === 'cash'
+                ? 'Paiement en espèces : ta réservation est confirmée, à régler sur place au partenaire.'
+                : 'Paiement Mobile Money en mode simulé pour l’instant (aucun débit réel).'}
+            </Text>
           </>
         ) : null}
       </ScrollView>
