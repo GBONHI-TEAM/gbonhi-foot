@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { View, Text, Pressable, Share, ImageBackground } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import * as Clipboard from 'expo-clipboard';
+import { copyToClipboard } from '../../lib/clipboard';
 import { teamInviteLink } from '../../lib/api';
 import { buildTeamInviteMessage } from '../../lib/team-invite';
 
@@ -16,7 +16,8 @@ export default function TeamSuccessPage() {
 
   async function copyCode() {
     if (!hasCode) return;
-    await Clipboard.setStringAsync(invitationCode);
+    const ok = await copyToClipboard(invitationCode);
+    if (!ok) return;
     setCopied(true);
     setTimeout(() => setCopied(false), 1600);
   }

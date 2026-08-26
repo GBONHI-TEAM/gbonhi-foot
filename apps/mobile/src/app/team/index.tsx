@@ -3,7 +3,7 @@ import { View, Text, Pressable, ScrollView, Image, ActivityIndicator, Share, Ale
 import { useRouter, useFocusEffect } from 'expo-router';
 import { ScreenBackground } from '../../components/ui/screen-background';
 import { AppHeader } from '../../components/ui/app-header';
-import * as Clipboard from 'expo-clipboard';
+import { copyToClipboard } from '../../lib/clipboard';
 import { apiClient, teamInviteLink } from '../../lib/api';
 import { buildTeamInviteMessage } from '../../lib/team-invite';
 import { imageThumb } from '../../lib/image';
@@ -68,7 +68,8 @@ export default function MonEquipePage() {
 
   async function copyCode() {
     if (!team?.invitation_code) return;
-    await Clipboard.setStringAsync(team.invitation_code);
+    const ok = await copyToClipboard(team.invitation_code);
+    if (!ok) return;
     setCopiedCode(true);
     setTimeout(() => setCopiedCode(false), 1600);
   }
