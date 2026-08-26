@@ -4,6 +4,8 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { ScreenBackground } from '../../../components/ui/screen-background';
 import { apiClient } from '../../../lib/api';
 import { AppHeader } from '../../../components/ui/app-header';
+import { RemoteImage } from '../../../components/ui/remote-image';
+import { imageThumb } from '../../../lib/image';
 
 interface League {
   id: string;
@@ -13,7 +15,7 @@ interface League {
   registration_fee?: number | null;
   prize_info?: string | null;
 }
-interface MyTeam { id: string; name: string; primary_color?: string | null }
+interface MyTeam { id: string; name: string; primary_color?: string | null; logo_url?: string | null }
 interface Registration {
   team: MyTeam;
   league_payment?: { id: string; amount: number; status: string; transaction_id: string } | null;
@@ -168,8 +170,12 @@ export default function InscriptionLeaguePage() {
           <View className="h-px my-2" style={{ backgroundColor: 'rgba(255,255,255,0.08)' }} />
           {team ? (
             <View className="flex-row items-center gap-3">
-              <View className="w-11 h-11 rounded-xl items-center justify-center" style={{ backgroundColor: team.primary_color?.trim() || '#1E7A3A' }}>
-                <Text className="text-white font-black text-sm">{initials(team.name)}</Text>
+              <View className="w-11 h-11 rounded-xl items-center justify-center overflow-hidden" style={{ backgroundColor: team.primary_color?.trim() || '#1E7A3A' }}>
+                {team.logo_url?.trim() ? (
+                  <RemoteImage uri={imageThumb(team.logo_url, 120)} contentFit="cover" style={{ width: '100%', height: '100%' }} />
+                ) : (
+                  <Text className="text-white font-black text-sm">{initials(team.name)}</Text>
+                )}
               </View>
               <View>
                 <Text className="text-xs mb-0.5" style={{ color: 'rgba(255,255,255,0.45)' }}>Équipe inscrite</Text>

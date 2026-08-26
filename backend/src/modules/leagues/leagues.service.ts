@@ -218,7 +218,7 @@ export class LeaguesService {
               { members: { some: { user_id: user.id, role: 'captain', status: 'active' } } },
             ],
           },
-      select: { id: true, name: true, primary_color: true, home_terrain_id: true },
+      select: { id: true, name: true, primary_color: true, logo_url: true, home_terrain_id: true },
       orderBy: { created_at: 'asc' },
     });
     const teamIds = teams.map((team) => team.id);
@@ -227,7 +227,7 @@ export class LeaguesService {
         ? this.prisma.tournamentTeam.findMany({
           where: { tournament_id: leagueId, team_id: { in: teamIds } },
           include: {
-            team: { select: { id: true, name: true, primary_color: true } },
+            team: { select: { id: true, name: true, primary_color: true, logo_url: true } },
             league_payment: { select: { id: true, amount: true, status: true, transaction_id: true } },
           },
           orderBy: { registration_at: 'desc' },
@@ -239,7 +239,7 @@ export class LeaguesService {
         ? Promise.resolve(null)
         : this.prisma.leaguePlayerRegistration.findFirst({
             where: { tournament_id: leagueId, user_id: user.id },
-            include: { team: { select: { id: true, name: true, primary_color: true } } },
+            include: { team: { select: { id: true, name: true, primary_color: true, logo_url: true } } },
             orderBy: { created_at: 'desc' },
           }),
       // Compatibilité des inscriptions historiques, antérieures au verrou.
@@ -253,7 +253,7 @@ export class LeaguesService {
                 { team: { members: { some: { user_id: user.id, status: 'active' } } } },
               ],
             },
-            include: { team: { select: { id: true, name: true, primary_color: true } } },
+            include: { team: { select: { id: true, name: true, primary_color: true, logo_url: true } } },
             orderBy: { registration_at: 'desc' },
           }),
       this.prisma.tournamentTeam.count({ where: { tournament_id: leagueId } }),
