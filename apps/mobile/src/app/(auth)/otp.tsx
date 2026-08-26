@@ -59,7 +59,20 @@ export default function OtpScreen() {
   }
 
   function handleDigit(value: string, index: number) {
-    const digit = value.replace(/[^0-9]/g, '').slice(-1);
+    const digitsOnly = value.replace(/[^0-9]/g, '');
+
+    // Auto-remplissage / collage du code complet : on répartit TOUJOURS depuis
+    // la première case (sinon iOS peut commencer au milieu).
+    if (digitsOnly.length > 1) {
+      const next = Array(length).fill('');
+      for (let i = 0; i < Math.min(digitsOnly.length, length); i++) next[i] = digitsOnly[i];
+      setDigits(next);
+      const lastFilled = Math.min(digitsOnly.length, length) - 1;
+      inputRefs.current[lastFilled]?.focus();
+      return;
+    }
+
+    const digit = digitsOnly.slice(-1);
     const next = [...digits];
     next[index] = digit;
     setDigits(next);
@@ -180,7 +193,9 @@ export default function OtpScreen() {
                   onChangeText={(v) => handleDigit(v, i)}
                   onKeyPress={({ nativeEvent }) => handleKeyPress(nativeEvent.key, i)}
                   keyboardType="number-pad"
-                  maxLength={1}
+                  maxLength={i === 0 ? length : 1}
+                  textContentType="oneTimeCode"
+                  autoComplete={i === 0 ? 'sms-otp' : 'off'}
                   selectionColor="#F7921E"
                   style={{
                     position: 'absolute',
@@ -216,7 +231,9 @@ export default function OtpScreen() {
                     onChangeText={(v) => handleDigit(v, i)}
                     onKeyPress={({ nativeEvent }) => handleKeyPress(nativeEvent.key, i)}
                     keyboardType="number-pad"
-                    maxLength={1}
+                    maxLength={i === 0 ? length : 1}
+                    textContentType="oneTimeCode"
+                    autoComplete={i === 0 ? 'sms-otp' : 'off'}
                     selectionColor="#F7921E"
                     style={{
                       width: '14.5%',
