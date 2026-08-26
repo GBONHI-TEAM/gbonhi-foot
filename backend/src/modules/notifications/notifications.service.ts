@@ -68,6 +68,15 @@ export class NotificationsService {
       // On stocke quand même si format inattendu, mais on log.
       this.logger.warn(`Token push au format inattendu pour ${user.id}`);
     }
+    // Un token = un appareil. On le détache de tout AUTRE compte (cas des tests
+    // multi-comptes sur le même téléphone) pour que l'appareil ne reçoive que les
+    // notifications du compte connecté, et éviter les doublons.
+    if (token) {
+      await this.prisma.profile.updateMany({
+        where: { fcm_token: token, id: { not: user.id } },
+        data: { fcm_token: null },
+      });
+    }
     await this.prisma.profile.update({
       where: { id: user.id },
       data: { fcm_token: token, updated_at: new Date() },
@@ -104,7 +113,9 @@ export class NotificationsService {
         where: { id: { in: ids }, fcm_token: { not: null } },
         select: { fcm_token: true },
       });
-      const tokens = profiles.map((p) => p.fcm_token).filter((t): t is string => !!t);
+      // Dédup : un même token (appareil partagé entre comptes de test) ne doit
+      // recevoir qu'UN seul push par notification.
+      const tokens = Array.from(new Set(profiles.map((p) => p.fcm_token).filter((t): t is string => !!t)));
       if (tokens.length > 0) await this.sendExpoPush(tokens, payload);
     } catch (e) {
       this.logger.error(`Échec envoi push: ${(e as Error).message}`);
