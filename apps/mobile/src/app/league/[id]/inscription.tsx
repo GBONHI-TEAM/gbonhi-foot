@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { View, Text, Pressable, ScrollView, ActivityIndicator, Alert, ImageBackground } from 'react-native';
+import { View, Text, Pressable, ScrollView, ActivityIndicator, Alert, ImageBackground, Image, type ImageSourcePropType } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { ScreenBackground } from '../../../components/ui/screen-background';
 import { apiClient } from '../../../lib/api';
@@ -16,6 +16,15 @@ interface League {
   prize_info?: string | null;
 }
 interface MyTeam { id: string; name: string; primary_color?: string | null; logo_url?: string | null }
+
+// Habillage des moyens de paiement (identique au panier réservation).
+const METHOD_META: Record<string, { logo?: ImageSourcePropType; fit?: 'cover' | 'contain'; emoji?: string; subtitle: string }> = {
+  cash: { emoji: '💵', subtitle: 'À régler sur place' },
+  wave: { logo: require('../../../../assets/images/pay-wave.png'), subtitle: 'Paiement mobile instantané' },
+  orange: { logo: require('../../../../assets/images/pay-orange.webp'), subtitle: 'Orange Money' },
+  mtn: { logo: require('../../../../assets/images/pay-mtn.png'), subtitle: 'MTN MoMo' },
+  moov: { logo: require('../../../../assets/images/pay-moov.png'), fit: 'contain', subtitle: 'Moov Money' },
+};
 interface Registration {
   team: MyTeam;
   league_payment?: { id: string; amount: number; status: string; transaction_id: string } | null;
@@ -47,17 +56,23 @@ export default function InscriptionLeaguePage() {
   const [done, setDone] = useState(false);
   const [registration, setRegistration] = useState<Registration | null>(null);
   const [downloading, setDownloading] = useState(false);
+  const [methods, setMethods] = useState<{ code: string; label: string }[]>([]);
+  const [selectedMethod, setSelectedMethod] = useState('cash');
 
   useEffect(() => {
     (async () => {
-      const [l, state] = await Promise.all([
+      const [l, state, pm] = await Promise.all([
         apiClient.get<League>(`/api/v1/leagues/${id}`).then((r) => r.data).catch(() => null),
         apiClient.get<RegistrationState>(`/api/v1/leagues/${id}/my-registration`).then((r) => r.data).catch(() => null),
+        apiClient.get<{ code: string; label: string }[]>(`/api/v1/payments/methods`).then((r) => r.data).catch(() => null),
       ]);
       setLeague(l);
       setTeam(state?.participation?.team ?? state?.teams?.[0] ?? null);
       setRegistration(state?.registrations?.[0] ?? null);
       if (state?.already_registered) setDone(true);
+      const list = Array.isArray(pm) && pm.length > 0 ? pm : [{ code: 'cash', label: 'Espèces' }];
+      setMethods(list);
+      setSelectedMethod((cur) => (list.some((m) => m.code === cur) ? cur : list[0].code));
       setLoading(false);
     })();
   }, [id]);
@@ -66,7 +81,7 @@ export default function InscriptionLeaguePage() {
     if (!team || !league) return;
     setSubmitting(true);
     try {
-      const { data } = await apiClient.post<{ payment_id: string; status: 'accepted'; amount: number }>(`/api/v1/payments/leagues/${id}/checkout`, { team_id: team.id });
+      const { data } = await apiClient.post<{ payment_id: string; status: 'accepted'; amount: number }>(`/api/v1/payments/leagues/${id}/checkout`, { team_id: team.id, payment_method: selectedMethod });
       setRegistration({ team, league_payment: { id: data.payment_id, amount: data.amount, status: data.status, transaction_id: '' } });
       setDone(true);
     } catch (e: unknown) {
@@ -204,6 +219,40 @@ export default function InscriptionLeaguePage() {
             <Text className="font-black text-lg" style={{ color: '#F7921E' }}>{fcfa(fee)}</Text>
           </View>
         </View>
+
+        {/* Moyen de paiement */}
+        {team ? (
+          <View className="mb-4">
+            <Text className="text-white font-bold text-base mb-2">Moyen de paiement</Text>
+            {methods.map((m) => {
+              const active = selectedMethod === m.code;
+              const meta = METHOD_META[m.code] ?? { subtitle: 'Mobile Money' };
+              return (
+                <Pressable
+                  key={m.code}
+                  onPress={() => setSelectedMethod(m.code)}
+                  className="flex-row items-center gap-3 rounded-btn p-3 mb-2.5"
+                  style={{ borderWidth: 1.5, borderColor: active ? '#F7921E' : 'rgba(255,255,255,0.12)', backgroundColor: active ? 'rgba(247,146,30,0.08)' : 'rgba(255,255,255,0.04)' }}
+                >
+                  <View style={{ width: 46, height: 46, borderRadius: 12, alignItems: 'center', justifyContent: 'center', overflow: 'hidden', backgroundColor: 'rgba(255,255,255,0.08)' }}>
+                    {meta.logo ? (
+                      <Image source={meta.logo} style={{ width: 46, height: 46 }} resizeMode={meta.fit ?? 'cover'} />
+                    ) : (
+                      <Text style={{ fontSize: 22 }}>{meta.emoji ?? '💳'}</Text>
+                    )}
+                  </View>
+                  <View className="flex-1">
+                    <Text className="text-white font-bold text-base">{m.label}</Text>
+                    <Text className="text-white/50 text-xs mt-0.5">{meta.subtitle}</Text>
+                  </View>
+                  <View style={{ width: 22, height: 22, borderRadius: 11, borderWidth: 2, borderColor: active ? '#F7921E' : 'rgba(255,255,255,0.35)', alignItems: 'center', justifyContent: 'center' }}>
+                    {active ? <View style={{ width: 11, height: 11, borderRadius: 6, backgroundColor: '#F7921E' }} /> : null}
+                  </View>
+                </Pressable>
+              );
+            })}
+          </View>
+        ) : null}
 
         {/* Accept règlement */}
         <Pressable onPress={() => setAccepted(!accepted)} className="flex-row items-center gap-3 p-4 rounded-xl" style={{ backgroundColor: 'rgba(255,255,255,0.05)', borderWidth: 1, borderColor: accepted ? '#1E7A3A' : 'rgba(255,255,255,0.1)' }}>

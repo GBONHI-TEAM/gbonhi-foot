@@ -153,6 +153,8 @@ export class PaymentsService {
     if (!this.isSimulationEnabled()) {
       throw new ServiceUnavailableException('Les paiements en ligne sont temporairement indisponibles.');
     }
+    const method = await this.resolveEnabledMethod(dto.payment_method);
+    const isCash = method === 'cash';
 
     try {
       const result = await this.prisma.$transaction(async (tx) => {
@@ -216,8 +218,8 @@ export class PaymentsService {
             transaction_id: transactionId,
             amount: league.registration_fee,
             status: 'accepted',
-            payment_method: 'simulation',
-            provider_data: { provider: 'simulation', validated_at: new Date().toISOString() },
+            payment_method: method,
+            provider_data: { provider: isCash ? 'cash' : 'simulation', validated_at: new Date().toISOString() },
           },
           select: { id: true, amount: true, status: true, transaction_id: true },
         });
