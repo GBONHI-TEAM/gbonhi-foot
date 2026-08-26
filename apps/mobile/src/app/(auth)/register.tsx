@@ -90,8 +90,18 @@ export default function RegisterScreen() {
   const [loading, setLoading] = useState(false);
 
   async function handleRegister() {
-    if (!prenom || !nom || !telephone || !email) {
-      Alert.alert('Champs requis', 'Renseigne prénom, nom, téléphone et e-mail.');
+    if (!prenom || !nom || !telephone) {
+      Alert.alert('Champs requis', 'Renseigne prénom, nom et téléphone.');
+      return;
+    }
+    // L'e-mail est facultatif (la version publique utilisera la vérification par
+    // SMS via Orange). En attendant cette intégration, le code de vérification
+    // est envoyé par e-mail : il reste donc nécessaire pour l'instant.
+    if (!email.trim()) {
+      Alert.alert(
+        'E-mail temporairement nécessaire',
+        'La vérification par SMS arrive bientôt. Pour l’instant, renseigne un e-mail pour recevoir ton code de vérification.',
+      );
       return;
     }
     setLoading(true);
@@ -206,7 +216,7 @@ export default function RegisterScreen() {
             {/* E-mail (top 53.3 %) */}
             <TextInput
               style={[FIELD, { top: '53.2%' }]}
-              placeholder="Adresse e-mail *"
+              placeholder="Adresse e-mail (facultatif)"
               placeholderTextColor={PH_COLOR}
               value={email}
               onChangeText={setEmail}
