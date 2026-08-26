@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { supabase } from '../../lib/supabase';
+import { useAuthStore } from '../../store/auth.store';
 
 /**
  * Écran 4 — Vérification OTP. Fond = maquette `s04_otp.png` retravaillée
@@ -35,10 +36,12 @@ function formatPhone(p?: string) {
 
 export default function OtpScreen() {
   const router = useRouter();
-  const params = useLocalSearchParams<{ email?: string; phone?: string; channel?: string }>();
+  const params = useLocalSearchParams<{ email?: string; phone?: string; channel?: string; purpose?: string }>();
   const email = params.email;
   const phone = params.phone;
   const channel: 'email' | 'sms' = params.channel === 'sms' ? 'sms' : 'email';
+  // « verify-phone » : vérification du numéro d'un compte OAuth (Apple/Google).
+  const isVerifyPhone = params.purpose === 'verify-phone';
   const length = channel === 'sms' ? 4 : 6;
 
   const [digits, setDigits] = useState<string[]>(Array(length).fill(''));
@@ -96,9 +99,20 @@ export default function OtpScreen() {
       channel === 'sms'
         ? await supabase.auth.verifyOtp({ phone: phone ?? '', token: code, type: 'sms' })
         : await supabase.auth.verifyOtp({ email: email ?? '', token: code, type: 'email' });
+    if (error) {
+      setLoading(false);
+      Alert.alert('Code invalide', error.message);
+      return;
+    }
+    // Vérification d'un numéro (compte OAuth) : on enregistre le numéro validé
+    // AVANT que le layout ne réévalue l'accès, pour éviter de reboucler.
+    if (isVerifyPhone && phone) {
+      await supabase.auth.updateUser({ data: { phone } });
+      const { data: sess } = await supabase.auth.getSession();
+      useAuthStore.getState().setSession(sess.session);
+    }
     setLoading(false);
-    if (error) Alert.alert('Code invalide', error.message);
-    // Succès → redirection auto (onAuthStateChange dans le root layout).
+    // Succès → redirection auto (onAuthStateChange / AuthGate dans le root layout).
   }
 
   async function handleResend() {

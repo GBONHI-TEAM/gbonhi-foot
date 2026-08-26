@@ -113,6 +113,15 @@ function AuthGate() {
       return;
     }
 
+    // Vérification obligatoire du numéro : les comptes Apple/Google n'ont pas de
+    // numéro. Tant que `phone` n'est pas renseigné (et vérifié via OTP), on force
+    // l'écran de vérification. Les comptes e-mail ont déjà un numéro → ignorés.
+    const hasPhone = !!(session.user?.user_metadata?.phone as string | undefined)?.trim();
+    if (!hasPhone) {
+      if (segments[1] !== 'verify-phone' && segments[1] !== 'otp') router.replace('/(auth)/verify-phone');
+      return;
+    }
+
     // Connecté mais mode non choisi → étape Sélection de mode (ne pas sauter).
     if (!mode) {
       if (!onOnboarding) router.replace('/(auth)/mode-selection');
