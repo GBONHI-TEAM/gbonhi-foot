@@ -14,6 +14,13 @@ import { registerForPushNotifications } from '../lib/push';
 import { handleOAuthDeepLink } from '../lib/auth-google';
 import { routeFromGbonhiLink } from '../lib/deep-link';
 import { KeyboardDoneBar } from '../components/ui/keyboard-done-bar';
+import {
+  getPendingDeepRoute,
+  setPendingDeepRoute as persistDeepRoute,
+  clearPendingDeepRoute,
+  getPendingOtp,
+  type PendingOtp,
+} from '../lib/pending-flow';
 
 const INITIAL_SESSION_TIMEOUT_MS = 4_000;
 
@@ -29,8 +36,18 @@ function AuthGate() {
   const segments = useSegments();
   const router = useRouter();
   const [pendingDeepRoute, setPendingDeepRoute] = useState<string | null>(null);
+  const [pendingOtp, setPendingOtp] = useState<PendingOtp | null>(null);
   // Clé présente uniquement quand le navigateur racine est monté.
   const navState = useRootNavigationState();
+
+  // Reprise après une fermeture par le système : on recharge un éventuel deep
+  // link d'invitation et un contexte OTP en cours (persistés dans SecureStore).
+  useEffect(() => {
+    let mounted = true;
+    getPendingDeepRoute().then((r) => { if (mounted && r) setPendingDeepRoute((cur) => cur ?? r); });
+    getPendingOtp().then((o) => { if (mounted) setPendingOtp(o); });
+    return () => { mounted = false; };
+  }, []);
 
   useEffect(() => {
     // Règle produit : un relancement complet repart toujours par le choix de
@@ -88,7 +105,7 @@ function AuthGate() {
     const handleUrl = async (url: string) => {
       if (await handleOAuthDeepLink(url)) return;
       const route = routeFromGbonhiLink(url);
-      if (route) setPendingDeepRoute(route);
+      if (route) { setPendingDeepRoute(route); void persistDeepRoute(route); }
     };
     Linking.getInitialURL().then((url) => { if (url) void handleUrl(url); });
     const sub = Linking.addEventListener('url', ({ url }) => { void handleUrl(url); });
@@ -106,9 +123,27 @@ function AuthGate() {
 
     const inAuth = segments[0] === '(auth)';
     const onOnboarding = segments[1] === 'mode-selection' || segments[1] === 'player-profile';
+    // Écrans atteints via un lien partagé (invitation d'équipe, match, publication)
+    // : on n'y impose PAS la sélection de mode, pour ne pas éjecter l'utilisateur
+    // de l'écran d'invitation (ex. rejoindre une équipe avec le code pré-rempli).
+    const onDeepTarget = segments[0] === 'team' || segments[0] === 'match' || segments[0] === 'community';
 
     if (!session) {
-      // Non connecté → écrans d'auth.
+      // Non connecté. Si une vérification OTP était en cours (l'app a pu être
+      // fermée par le système pendant qu'on allait chercher le code en boîte
+      // mail), on rouvre l'écran de code au lieu de repartir de la connexion.
+      if (pendingOtp && segments[1] !== 'otp') {
+        router.replace({
+          pathname: '/(auth)/otp',
+          params: {
+            ...(pendingOtp.email ? { email: pendingOtp.email } : {}),
+            ...(pendingOtp.phone ? { phone: pendingOtp.phone } : {}),
+            channel: pendingOtp.channel,
+            ...(pendingOtp.purpose ? { purpose: pendingOtp.purpose } : {}),
+          },
+        });
+        return;
+      }
       if (!inAuth) router.replace('/(auth)/login');
       return;
     }
@@ -122,9 +157,21 @@ function AuthGate() {
       return;
     }
 
-    // Connecté mais mode non choisi → étape Sélection de mode (ne pas sauter).
+    // Deep link (invitation d'équipe, match, publication) : PRIORITAIRE sur la
+    // sélection de mode. Un utilisateur authentifié + numéro vérifié qui ouvre un
+    // lien d'invitation va DIRECTEMENT sur l'écran cible (code pré-rempli), sans
+    // passer par la sélection de mode.
+    if (pendingDeepRoute) {
+      router.replace(pendingDeepRoute as Href);
+      setPendingDeepRoute(null);
+      void clearPendingDeepRoute();
+      return;
+    }
+
+    // Connecté mais mode non choisi → étape Sélection de mode (ne pas sauter),
+    // sauf si on est sur un écran cible de lien partagé.
     if (!mode) {
-      if (!onOnboarding) router.replace('/(auth)/mode-selection');
+      if (!onOnboarding && !onDeepTarget) router.replace('/(auth)/mode-selection');
       return;
     }
 
@@ -136,18 +183,12 @@ function AuthGate() {
       return;
     }
 
-    if (pendingDeepRoute) {
-      router.replace(pendingDeepRoute as Href);
-      setPendingDeepRoute(null);
-      return;
-    }
-
     // Connecté + mode choisi (+ fiche si ligue) → application.
     // On NE renvoie PAS vers les tabs quand l'utilisateur est volontairement sur
     // un écran réutilisable (fiche joueur en édition, changement de mode) : sinon
     // « Modifier le profil » / « Modifier ma fiche joueur » rebondiraient vers l'accueil.
     if (inAuth && !onOnboarding) router.replace('/(tabs)');
-  }, [navState?.key, isLoading, hydrated, session, mode, segments, router, pendingDeepRoute]);
+  }, [navState?.key, isLoading, hydrated, session, mode, segments, router, pendingDeepRoute, pendingOtp]);
 
   return null;
 }

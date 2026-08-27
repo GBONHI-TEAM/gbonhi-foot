@@ -15,6 +15,7 @@ import { useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { apiClient } from '../../lib/api';
 import { KB_DONE_ID } from '../../components/ui/keyboard-done-bar';
+import { setPendingOtp } from '../../lib/pending-flow';
 import { signInWithGoogle } from '../../lib/auth-google';
 import { signInWithApple, isAppleCancel } from '../../lib/auth-apple';
 
@@ -141,6 +142,7 @@ export default function RegisterScreen() {
       'Code envoyé par e-mail',
       'La vérification par SMS sera activée prochainement. Pour le moment, utilise le code envoyé à ton adresse e-mail.',
     );
+    await setPendingOtp({ email, phone, channel: 'email' });
     router.push({ pathname: '/(auth)/otp', params: { email, phone } });
   }
 

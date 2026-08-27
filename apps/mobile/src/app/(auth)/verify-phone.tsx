@@ -5,6 +5,7 @@ import { supabase } from '../../lib/supabase';
 import { apiClient } from '../../lib/api';
 import { useAuthStore } from '../../store/auth.store';
 import { KB_DONE_ID } from '../../components/ui/keyboard-done-bar';
+import { setPendingOtp } from '../../lib/pending-flow';
 
 const CIV_PHONE = /^\d{8,10}$/;
 
@@ -55,7 +56,10 @@ export default function VerifyPhoneScreen() {
     Alert.alert(
       'Code envoyé par e-mail',
       'La vérification par SMS arrive bientôt. Pour l’instant, saisis le code envoyé à ton adresse e-mail.',
-      [{ text: 'OK', onPress: () => router.push({ pathname: '/(auth)/otp', params: { email, phone: full, channel: 'email', purpose: 'verify-phone' } }) }],
+      [{ text: 'OK', onPress: async () => {
+        await setPendingOtp({ email, phone: full, channel: 'email', purpose: 'verify-phone' });
+        router.push({ pathname: '/(auth)/otp', params: { email, phone: full, channel: 'email', purpose: 'verify-phone' } });
+      } }],
     );
   }
 

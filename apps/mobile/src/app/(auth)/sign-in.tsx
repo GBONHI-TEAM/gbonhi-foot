@@ -14,6 +14,7 @@ import {
 import { useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { apiClient } from '../../lib/api';
+import { setPendingOtp } from '../../lib/pending-flow';
 import { signInWithGoogle } from '../../lib/auth-google';
 import { signInWithApple, isAppleCancel } from '../../lib/auth-apple';
 
@@ -87,6 +88,7 @@ export default function SignInScreen() {
         Alert.alert('Connexion impossible', error.message);
         return;
       }
+      await setPendingOtp({ email: data.email, phone, channel: 'email' });
       router.push({ pathname: '/(auth)/otp', params: { email: data.email, phone, channel: 'email' } });
     } catch (e: unknown) {
       setLoading(false);

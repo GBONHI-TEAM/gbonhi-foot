@@ -14,6 +14,7 @@ import {
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { useAuthStore } from '../../store/auth.store';
+import { clearPendingOtp } from '../../lib/pending-flow';
 
 /**
  * Écran 4 — Vérification OTP. Fond = maquette `s04_otp.png` retravaillée
@@ -57,6 +58,8 @@ export default function OtpScreen() {
   }, [countdown]);
 
   function goBack() {
+    // L'utilisateur abandonne la saisie du code → on oublie le contexte OTP.
+    void clearPendingOtp();
     if (router.canGoBack()) router.back();
     else router.replace(channel === 'sms' ? '/(auth)/sign-in' : '/(auth)/register');
   }
@@ -111,6 +114,8 @@ export default function OtpScreen() {
       const { data: sess } = await supabase.auth.getSession();
       useAuthStore.getState().setSession(sess.session);
     }
+    // Vérification réussie → on efface le contexte OTP persistant.
+    await clearPendingOtp();
     setLoading(false);
     // Succès → redirection auto (onAuthStateChange / AuthGate dans le root layout).
   }
