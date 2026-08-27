@@ -34,6 +34,7 @@
       },
       "package": "com.gbonhifoot.app",
       "versionCode": 1,
+      "googleServicesFile": "./google-services.json",
       "permissions": [
         "android.permission.POST_NOTIFICATIONS",
         "android.permission.CAMERA",
