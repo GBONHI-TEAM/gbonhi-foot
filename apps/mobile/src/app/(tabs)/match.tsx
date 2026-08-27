@@ -11,6 +11,8 @@ import { useRouter } from 'expo-router';
 import { apiClient } from '../../lib/api';
 import { ScreenBackground } from '../../components/ui/screen-background';
 import { AppHeader } from '../../components/ui/app-header';
+import { RemoteImage } from '../../components/ui/remote-image';
+import { imageThumb } from '../../lib/image';
 import {
   type Match,
   type League,
@@ -22,13 +24,17 @@ import {
   isUpcoming,
 } from '../../types/match';
 
-function TeamPill({ name, color }: { name: string; color: string }) {
+function TeamPill({ name, color, logo }: { name: string; color: string; logo?: string | null }) {
   return (
     <View
-      className="w-9 h-9 rounded-full items-center justify-center"
+      className="w-9 h-9 rounded-full items-center justify-center overflow-hidden"
       style={{ backgroundColor: color }}
     >
-      <Text className="text-white font-black text-xs">{teamInitials(name)}</Text>
+      {logo ? (
+        <RemoteImage uri={imageThumb(logo, 96)} contentFit="cover" style={{ width: '100%', height: '100%' }} />
+      ) : (
+        <Text className="text-white font-black text-xs">{teamInitials(name)}</Text>
+      )}
     </View>
   );
 }
@@ -62,7 +68,7 @@ function MatchCard({ match, onPress }: { match: Match; onPress: () => void }) {
 
       <View className="flex-row items-center justify-between">
         <View className="flex-row items-center gap-2 flex-1">
-          <TeamPill name={match.home_team.name} color={teamColor(match.home_team)} />
+          <TeamPill name={match.home_team.name} color={teamColor(match.home_team)} logo={match.home_team.logo_url} />
           <Text className="text-white font-semibold flex-1" numberOfLines={1}>
             {match.home_team.name}
           </Text>
@@ -82,7 +88,7 @@ function MatchCard({ match, onPress }: { match: Match; onPress: () => void }) {
           <Text className="text-white font-semibold flex-1 text-right" numberOfLines={1}>
             {match.away_team.name}
           </Text>
-          <TeamPill name={match.away_team.name} color={teamColor(match.away_team)} />
+          <TeamPill name={match.away_team.name} color={teamColor(match.away_team)} logo={match.away_team.logo_url} />
         </View>
       </View>
 

@@ -18,7 +18,11 @@ export const PUSH_CHANNEL_ID = 'gbonhi-notifications';
 
 // Affiche les notifications même app au premier plan.
 Notifications.setNotificationHandler({
+  // SDK 52 : `shouldShowBanner` + `shouldShowList` remplacent `shouldShowAlert`
+  // pour afficher la notification même quand l'app est au premier plan.
   handleNotification: async () => ({
+    shouldShowBanner: true,
+    shouldShowList: true,
     shouldShowAlert: true,
     shouldPlaySound: true,
     shouldSetBadge: true,

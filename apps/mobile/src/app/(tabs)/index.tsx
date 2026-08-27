@@ -9,7 +9,7 @@ import {
   ActivityIndicator,
   RefreshControl,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { useUserModeStore } from '../../store/user-mode.store';
 import { useAuthStore } from '../../store/auth.store';
 import { getCached } from '../../lib/api-cache';
@@ -285,6 +285,14 @@ function HomeReservation() {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('all');
 
+  // Réservations rechargées à chaque retour sur l'accueil (force = ignore le
+  // cache) : une réservation qui vient d'être validée apparaît immédiatement.
+  const loadReservations = useCallback((force = false) => {
+    return getCached<MyReservation[]>('/api/v1/reservations/mine', 20_000, force)
+      .then((data) => setReservations(Array.isArray(data) ? data : []))
+      .catch(() => { /* on garde l'affichage précédent en cas d'erreur réseau */ });
+  }, []);
+
   useEffect(() => {
     let mounted = true;
     // Chaque section devient visible dès que SA donnée arrive : on ne bloque
@@ -293,14 +301,14 @@ function HomeReservation() {
       .then((data) => { if (mounted) setTerrains(Array.isArray(data) ? data : []); })
       .catch(() => { if (mounted) setTerrains([]); })
       .finally(() => { if (mounted) setLoading(false); });
-    void getCached<MyReservation[]>('/api/v1/reservations/mine', 20_000)
-      .then((data) => { if (mounted) setReservations(Array.isArray(data) ? data : []); })
-      .catch(() => { if (mounted) setReservations([]); });
+    void loadReservations();
     void getCached<FeedPost[]>('/api/v1/community/posts?limit=1', 20_000)
       .then((data) => { if (mounted) setLatestPost(Array.isArray(data) && data.length > 0 ? data[0] : null); })
       .catch(() => { if (mounted) setLatestPost(null); });
     return () => { mounted = false; };
-  }, []);
+  }, [loadReservations]);
+
+  useFocusEffect(useCallback(() => { void loadReservations(true); }, [loadReservations]));
 
   const visible = terrains.filter((terrain) => {
     const selectedFilter = RES_FILTERS.find((item) => item.key === filter);
@@ -311,6 +319,7 @@ function HomeReservation() {
   });
 
   const upcoming = reservations.filter((r) => {
+    if ((r.status ?? '').toLowerCase() === 'cancelled') return false;
     const d = new Date(r.reservation_date);
     return !Number.isNaN(d.getTime()) && d.getTime() >= Date.now() - 12 * 3600e3;
   });
