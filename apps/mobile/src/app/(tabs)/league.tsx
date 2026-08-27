@@ -141,7 +141,7 @@ export default function LeagueScreen() {
 
   return (
     <ScreenBackground>
-      <AppHeader title="Leagues" showLogo={false} centered />
+      <AppHeader title="Ligues" showLogo={false} centered />
 
       {/* Filtres */}
       <View className="px-4 pt-3 pb-1">

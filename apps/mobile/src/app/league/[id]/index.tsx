@@ -318,8 +318,12 @@ function TabMatchs({
 
                 <View className="flex-row items-center justify-between">
                   <View className="flex-row items-center gap-2 flex-1">
-                    <View className="w-8 h-8 rounded-full items-center justify-center" style={{ backgroundColor: teamColor(m.home_team) }}>
-                      <Text className="text-white font-black text-[10px]">{teamInitials(m.home_team.name)}</Text>
+                    <View className="w-8 h-8 rounded-full items-center justify-center overflow-hidden" style={{ backgroundColor: teamColor(m.home_team) }}>
+                      {m.home_team.logo_url ? (
+                        <RemoteImage uri={imageThumb(m.home_team.logo_url, 96)} contentFit="cover" style={{ width: '100%', height: '100%' }} />
+                      ) : (
+                        <Text className="text-white font-black text-[10px]">{teamInitials(m.home_team.name)}</Text>
+                      )}
                     </View>
                     <Text className="text-white font-bold flex-1" numberOfLines={1}>{m.home_team.name}</Text>
                   </View>
@@ -330,8 +334,12 @@ function TabMatchs({
                   )}
                   <View className="flex-row items-center gap-2 flex-1 justify-end">
                     <Text className="text-white font-bold flex-1 text-right" numberOfLines={1}>{m.away_team.name}</Text>
-                    <View className="w-8 h-8 rounded-full items-center justify-center" style={{ backgroundColor: teamColor(m.away_team) }}>
-                      <Text className="text-white font-black text-[10px]">{teamInitials(m.away_team.name)}</Text>
+                    <View className="w-8 h-8 rounded-full items-center justify-center overflow-hidden" style={{ backgroundColor: teamColor(m.away_team) }}>
+                      {m.away_team.logo_url ? (
+                        <RemoteImage uri={imageThumb(m.away_team.logo_url, 96)} contentFit="cover" style={{ width: '100%', height: '100%' }} />
+                      ) : (
+                        <Text className="text-white font-black text-[10px]">{teamInitials(m.away_team.name)}</Text>
+                      )}
                     </View>
                   </View>
                 </View>
