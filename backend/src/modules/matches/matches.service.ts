@@ -141,8 +141,8 @@ export class MatchesService {
     const build = async (team: { id: string; name: string } | null) => {
       if (!team) return null;
       const row = match.lineups.find((l) => l.team_id === team.id) ?? null;
-      // Seul LE capitaine de l'équipe peut publier/voir le brouillon (staff exclu).
-      const editable = await this.isTeamCaptain(team.id, user);
+      // Le capitaine de l'équipe OU le staff/admin (pour faciliter les tests).
+      const editable = await this.canManageTeam(team.id, user);
       const published = !!row?.published_at;
       // Visible : composition publiée, ou brouillon si l'utilisateur gère l'équipe.
       const lineup = row && (published || editable)
@@ -317,7 +317,8 @@ export class MatchesService {
     const match = await this.prisma.match.findUnique({ where: { id: matchId } });
     if (!match) throw new NotFoundException('Match introuvable');
 
-    const isGoal = dto.type === 'BUT' || dto.type === 'CSC';
+    // BUT, PENALTY (but sur penalty) et CSC comptent au score.
+    const isGoal = dto.type === 'BUT' || dto.type === 'PENALTY' || dto.type === 'CSC';
 
     return this.prisma.$transaction(async (tx) => {
       const event = await tx.matchEvent.create({
@@ -372,7 +373,7 @@ export class MatchesService {
 
     return this.prisma.$transaction(async (tx) => {
       await tx.matchEvent.delete({ where: { id: eventId } });
-      if ((event.type === 'BUT' || event.type === 'CSC') && match) {
+      if ((event.type === 'BUT' || event.type === 'PENALTY' || event.type === 'CSC') && match) {
         const scoringTeamIsHome =
           event.type === 'CSC'
             ? event.team_id === match.away_team_id

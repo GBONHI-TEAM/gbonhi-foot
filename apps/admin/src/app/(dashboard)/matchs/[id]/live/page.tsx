@@ -15,7 +15,7 @@ type MatchStatus =
   | 'REPORTÉ'
   | 'ANNULÉ';
 
-type EventType = 'BUT' | 'PASSE' | 'CARTON_JAUNE' | 'CARTON_ROUGE' | 'CSC' | 'BLESSURE';
+type EventType = 'BUT' | 'PENALTY' | 'PASSE' | 'CARTON_JAUNE' | 'CARTON_ROUGE' | 'CSC' | 'BLESSURE' | 'REMPLACEMENT';
 
 interface TeamRef {
   id: string;
@@ -28,6 +28,7 @@ interface MatchEvent {
   id: string;
   type: EventType;
   minute: number;
+  note?: string | null;
   team: { id: string; name: string } | null;
   player: { id: string; full_name: string } | null;
 }
@@ -54,11 +55,13 @@ interface TeamMember {
 
 const EVENT_META: Record<EventType, { icon: string; label: string; color: string }> = {
   BUT: { icon: '⚽', label: 'But', color: '#1E7A3A' },
+  PENALTY: { icon: '🎯', label: 'Penalty', color: '#1E7A3A' },
   PASSE: { icon: '🅰️', label: 'Passe décisive', color: '#6B7280' },
   CARTON_JAUNE: { icon: '🟨', label: 'Carton jaune', color: '#CA8A04' },
   CARTON_ROUGE: { icon: '🟥', label: 'Carton rouge', color: '#DC2626' },
-  CSC: { icon: '⚽', label: 'CSC', color: '#DC2626' },
+  CSC: { icon: '🥅', label: 'But c.s.c', color: '#DC2626' },
   BLESSURE: { icon: '➕', label: 'Blessure', color: '#DC2626' },
+  REMPLACEMENT: { icon: '🔁', label: 'Remplacement', color: '#2563EB' },
 };
 
 interface Control {
@@ -143,11 +146,13 @@ function EventModal({
   onClose: () => void;
   onSaved: () => void;
 }) {
-  const isGoal = eventType === 'BUT';
+  const isGoal = eventType === 'BUT' || eventType === 'PENALTY';
+  const isSub = eventType === 'REMPLACEMENT';
   const [teamId, setTeamId] = useState(match.home_team?.id ?? '');
   const [members, setMembers] = useState<TeamMember[]>([]);
   const [playerId, setPlayerId] = useState('');
   const [assistId, setAssistId] = useState('');
+  const [entrantId, setEntrantId] = useState('');
   const [minute, setMinute] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -163,6 +168,7 @@ function EventModal({
     let cancelled = false;
     setPlayerId('');
     setAssistId('');
+    setEntrantId('');
     (async () => {
       try {
         const data = await apiFetch<TeamMember[]>(`/teams/${teamId}/members`);
@@ -186,8 +192,13 @@ function EventModal({
       setError('Renseignez une minute valide.');
       return;
     }
+    if (isSub && (!playerId || !entrantId)) {
+      setError('Sélectionnez le joueur sortant et le joueur entrant.');
+      return;
+    }
     setSaving(true);
     setError(null);
+    const entrant = members.find((m) => m.user.id === entrantId);
     try {
       await apiFetch(`/matches/${match.id}/events`, {
         method: 'POST',
@@ -197,6 +208,7 @@ function EventModal({
           player_id: playerId || undefined,
           assist_player_id: isGoal && assistId ? assistId : undefined,
           minute: min,
+          note: isSub && entrant ? `Entré : ${entrant.user.full_name}` : undefined,
         }),
       });
       onSaved();
@@ -250,7 +262,7 @@ function EventModal({
 
           {/* 2 · Joueur */}
           <div>
-            <p className="text-[13px] font-semibold text-gray-500 mb-2">2 · {isGoal ? 'Buteur' : 'Joueur'}</p>
+            <p className="text-[13px] font-semibold text-gray-500 mb-2">2 · {isGoal ? 'Buteur' : isSub ? 'Joueur sortant' : 'Joueur'}</p>
             <div className="relative">
               <select value={playerId} onChange={(e) => setPlayerId(e.target.value)} className={`${INPUT_CLS} appearance-none pr-10`}>
                 <option value="">Sélectionner…</option>
@@ -261,6 +273,22 @@ function EventModal({
               <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
             </div>
           </div>
+
+          {/* Joueur entrant (remplacement) */}
+          {isSub && (
+            <div>
+              <p className="text-[13px] font-semibold text-gray-500 mb-2">3 · Joueur entrant</p>
+              <div className="relative">
+                <select value={entrantId} onChange={(e) => setEntrantId(e.target.value)} className={`${INPUT_CLS} appearance-none pr-10`}>
+                  <option value="">Sélectionner…</option>
+                  {members.filter((m) => m.user.id !== playerId).map((m) => (
+                    <option key={m.user.id} value={m.user.id}>{memberLabel(m)}</option>
+                  ))}
+                </select>
+                <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+              </div>
+            </div>
+          )}
 
           {/* 3 · Passeur (buts seulement) */}
           {isGoal && (
@@ -282,7 +310,7 @@ function EventModal({
 
           {/* Minute */}
           <div>
-            <p className="text-[13px] font-semibold text-gray-500 mb-2">{isGoal ? '4' : '3'} · Minute</p>
+            <p className="text-[13px] font-semibold text-gray-500 mb-2">{isGoal || isSub ? '4' : '3'} · Minute</p>
             <input
               value={minute}
               onChange={(e) => setMinute(e.target.value)}
@@ -566,6 +594,27 @@ export default function MatchLivePage() {
           <span className="text-lg">⚽</span> But
         </button>
         <button
+          onClick={() => setModalType('PENALTY')}
+          className="h-16 rounded-xl flex flex-col items-center justify-center gap-1 text-sm font-bold text-white transition hover:opacity-90"
+          style={{ backgroundColor: '#1E7A3A' }}
+        >
+          <span className="text-lg">🎯</span> Penalty
+        </button>
+        <button
+          onClick={() => setModalType('CSC')}
+          className="h-16 rounded-xl flex flex-col items-center justify-center gap-1 text-sm font-bold text-white transition hover:opacity-90"
+          style={{ backgroundColor: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)' }}
+        >
+          <span className="text-lg">🥅</span> But c.s.c
+        </button>
+        <button
+          onClick={() => setModalType('REMPLACEMENT')}
+          className="h-16 rounded-xl flex flex-col items-center justify-center gap-1 text-sm font-bold text-white transition hover:opacity-90"
+          style={{ backgroundColor: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)' }}
+        >
+          <span className="text-lg">🔁</span> Remplacement
+        </button>
+        <button
           onClick={() => setModalType('CARTON_JAUNE')}
           className="h-16 rounded-xl flex flex-col items-center justify-center gap-1 text-sm font-bold text-white transition hover:opacity-90"
           style={{ backgroundColor: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)' }}
@@ -602,7 +651,7 @@ export default function MatchLivePage() {
                   <span className="text-lg w-6 text-center flex-shrink-0">{meta.icon}</span>
                   <span className="font-bold text-gray-900 w-12 flex-shrink-0 tabular-nums">{ev.minute}&apos;</span>
                   <span className="font-semibold text-gray-800 flex-shrink-0">{ev.player?.full_name ?? meta.label}</span>
-                  <span className="text-sm text-gray-400 truncate flex-1">· {ev.team?.name ?? ''}</span>
+                  <span className="text-sm text-gray-400 truncate flex-1">· {ev.team?.name ?? ''}{ev.note ? ` · ${ev.note}` : ''}</span>
                   <button
                     onClick={() => deleteEvent(ev.id)}
                     className="p-1.5 rounded-lg text-gray-300 hover:text-red-600 hover:bg-red-50 opacity-0 group-hover:opacity-100 transition flex-shrink-0"

@@ -9,7 +9,7 @@ import { IsOptional, IsInt, IsString, IsIn, Min, Max } from 'class-validator';
  * variante hors [89ab]) que `@IsUUID()` rejetterait.
  */
 export class CreateEventDto {
-  @IsIn(['BUT', 'PASSE', 'CARTON_JAUNE', 'CARTON_ROUGE', 'CSC', 'BLESSURE'])
+  @IsIn(['BUT', 'PENALTY', 'PASSE', 'CARTON_JAUNE', 'CARTON_ROUGE', 'CSC', 'BLESSURE', 'REMPLACEMENT'])
   type: string;
 
   @IsString()

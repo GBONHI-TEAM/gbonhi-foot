@@ -189,8 +189,12 @@ export function eventIcon(type: MatchEventType): string {
   switch (type) {
     case 'BUT':
       return '⚽';
+    case 'PENALTY':
+      return '🎯';
     case 'CSC':
       return '🥅';
+    case 'REMPLACEMENT':
+      return '🔁';
     case 'PASSE':
       return '🅰️';
     case 'CARTON_JAUNE':
@@ -209,8 +213,12 @@ export function eventLabel(type: MatchEventType): string {
   switch (type) {
     case 'BUT':
       return 'But';
+    case 'PENALTY':
+      return 'But (penalty)';
     case 'CSC':
       return 'But contre son camp';
+    case 'REMPLACEMENT':
+      return 'Remplacement';
     case 'PASSE':
       return 'Passe décisive';
     case 'CARTON_JAUNE':

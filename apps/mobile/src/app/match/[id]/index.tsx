@@ -135,7 +135,7 @@ function EventRow({ event, homeTeamId }: { event: MatchEvent; homeTeamId: string
         {event.player?.full_name ?? event.team?.name ?? '—'}
       </Text>
       <Text className="text-xs mt-0.5" style={{ color: 'rgba(255,255,255,0.4)', textAlign: isHome ? 'left' : 'right' }}>
-        {eventLabel(event.type)}
+        {eventLabel(event.type)}{event.note ? ` · ${event.note}` : ''}
       </Text>
     </View>
   );
