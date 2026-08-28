@@ -138,15 +138,31 @@ export class MatchesService {
     });
     if (!match) throw new NotFoundException('Match introuvable');
 
+    // Avatars des joueurs cités dans les compos (par user_id).
+    const allPlayers = match.lineups.flatMap((l) => (Array.isArray(l.players) ? (l.players as LineupPlayerInput[]) : []));
+    const userIds = [...new Set(allPlayers.map((p) => p?.user_id).filter((v): v is string => !!v))];
+    const avatarById = new Map<string, string | null>();
+    if (userIds.length) {
+      const profiles = await this.prisma.profile.findMany({
+        where: { id: { in: userIds } },
+        select: { id: true, avatar_url: true },
+      });
+      profiles.forEach((p) => avatarById.set(p.id, p.avatar_url));
+    }
+
     const build = async (team: { id: string; name: string } | null) => {
       if (!team) return null;
       const row = match.lineups.find((l) => l.team_id === team.id) ?? null;
       // Le capitaine de l'équipe OU le staff/admin (pour faciliter les tests).
       const editable = await this.canManageTeam(team.id, user);
       const published = !!row?.published_at;
+      // Enrichit chaque joueur avec sa photo de profil.
+      const players = row && Array.isArray(row.players)
+        ? (row.players as LineupPlayerInput[]).map((p) => ({ ...p, avatar_url: p?.user_id ? avatarById.get(p.user_id) ?? null : null }))
+        : [];
       // Visible : composition publiée, ou brouillon si l'utilisateur gère l'équipe.
       const lineup = row && (published || editable)
-        ? { formation: row.formation, players: row.players, published: published }
+        ? { formation: row.formation, players, published }
         : null;
       return { team, editable, lineup };
     };

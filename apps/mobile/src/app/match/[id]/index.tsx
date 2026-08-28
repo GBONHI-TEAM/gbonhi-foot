@@ -46,7 +46,20 @@ function TeamBadge({ name, color, size = 56, logo }: { name: string; color: stri
   );
 }
 
-interface LineupPlayer { name: string; role: 'starter' | 'sub'; number: number | null; position: string | null }
+interface LineupPlayer { name: string; role: 'starter' | 'sub'; number: number | null; position: string | null; avatar_url?: string | null }
+
+/** Avatar rond d'un joueur de compo (photo ou initiales). */
+function PlayerAvatar({ name, avatar }: { name: string; avatar?: string | null }) {
+  return (
+    <View className="rounded-full items-center justify-center overflow-hidden" style={{ width: 30, height: 30, backgroundColor: '#1E7A3A' }}>
+      {avatar ? (
+        <RemoteImage uri={imageThumb(avatar, 80)} contentFit="cover" style={{ width: '100%', height: '100%' }} />
+      ) : (
+        <Text className="text-white font-bold" style={{ fontSize: 11 }}>{teamInitials(name)}</Text>
+      )}
+    </View>
+  );
+}
 interface LineupSide { team: { id: string; name: string }; editable: boolean; lineup: { formation: string | null; players: LineupPlayer[]; published: boolean } | null }
 interface LineupsResponse { kickoff: string; home: LineupSide | null; away: LineupSide | null }
 
@@ -72,8 +85,9 @@ function LineupCard({ side, onEdit }: { side: LineupSide | null; onEdit: (teamId
           ) : null}
           <Text className="text-white/50 text-xs font-bold uppercase mb-1.5">Titulaires</Text>
           {starters.length ? starters.map((p, i) => (
-            <View key={`s${i}`} className="flex-row items-center py-1">
-              <Text className="text-white/40 text-xs" style={{ width: 26 }}>{p.number ?? '—'}</Text>
+            <View key={`s${i}`} className="flex-row items-center py-1 gap-2">
+              <Text className="text-white/40 text-xs" style={{ width: 20 }}>{p.number ?? '—'}</Text>
+              <PlayerAvatar name={p.name} avatar={p.avatar_url} />
               <Text className="text-white text-sm flex-1">{p.name}</Text>
               {p.position ? <Text className="text-white/40 text-xs">{p.position}</Text> : null}
             </View>
@@ -82,8 +96,9 @@ function LineupCard({ side, onEdit }: { side: LineupSide | null; onEdit: (teamId
             <>
               <Text className="text-white/50 text-xs font-bold uppercase mb-1.5 mt-3">Remplaçants</Text>
               {subs.map((p, i) => (
-                <View key={`r${i}`} className="flex-row items-center py-1">
-                  <Text className="text-white/40 text-xs" style={{ width: 26 }}>{p.number ?? '—'}</Text>
+                <View key={`r${i}`} className="flex-row items-center py-1 gap-2">
+                  <Text className="text-white/40 text-xs" style={{ width: 20 }}>{p.number ?? '—'}</Text>
+                  <PlayerAvatar name={p.name} avatar={p.avatar_url} />
                   <Text className="text-white/85 text-sm flex-1">{p.name}</Text>
                   {p.position ? <Text className="text-white/40 text-xs">{p.position}</Text> : null}
                 </View>
