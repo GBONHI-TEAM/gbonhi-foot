@@ -25,6 +25,7 @@ import {
   eventIcon,
   eventLabel,
   isUpcoming,
+  phaseLabel,
 } from '../../../types/match';
 
 /** Pastille : logo de l'équipe si disponible, sinon couleur + initiales. */
@@ -162,6 +163,37 @@ export default function MatchDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [lineups, setLineups] = useState<LineupsResponse | null>(null);
 
+  // Animation légère : bannière à chaque nouveau fait de jeu en direct.
+  const flashAnim = useRef(new Animated.Value(0)).current;
+  const [flash, setFlash] = useState<{ icon: string; title: string; sub: string } | null>(null);
+  const seenEventIds = useRef<Set<string>>(new Set());
+  const primedRef = useRef(false);
+
+  useEffect(() => {
+    if (!match) return;
+    if (!primedRef.current) {
+      match.events.forEach((e) => seenEventIds.current.add(e.id));
+      primedRef.current = true;
+      return;
+    }
+    const fresh = match.events.filter((e) => !seenEventIds.current.has(e.id));
+    fresh.forEach((e) => seenEventIds.current.add(e.id));
+    if (fresh.length === 0 || !matchStatusMeta(match.status).live) return;
+    const latest = fresh[fresh.length - 1];
+    const titles: Record<string, string> = { BUT: 'BUT !', GOAL: 'BUT !', CARTON_JAUNE: 'CARTON JAUNE', YELLOW: 'CARTON JAUNE', CARTON_ROUGE: 'CARTON ROUGE', RED: 'CARTON ROUGE' };
+    setFlash({
+      icon: eventIcon(latest.type),
+      title: titles[latest.type] ?? eventLabel(latest.type).toUpperCase(),
+      sub: `${latest.player?.full_name ?? latest.team?.name ?? ''} · ${latest.minute}'`,
+    });
+    flashAnim.setValue(0);
+    Animated.sequence([
+      Animated.spring(flashAnim, { toValue: 1, useNativeDriver: true, friction: 6, tension: 80 }),
+      Animated.delay(2200),
+      Animated.timing(flashAnim, { toValue: 0, duration: 300, useNativeDriver: true }),
+    ]).start(() => setFlash(null));
+  }, [match, flashAnim]);
+
   const fetchLineups = useCallback(async () => {
     if (!id) return;
     try {
@@ -291,7 +323,7 @@ export default function MatchDetailPage() {
           </Pressable>
         </View>
 
-        {/* Badge statut */}
+        {/* Badge statut + bannière de phase (mi-temps, arrêt de jeu…) */}
         <View className="items-center mb-4">
           <View
             className="flex-row items-center gap-2 px-3 py-1 rounded-full"
@@ -302,6 +334,11 @@ export default function MatchDetailPage() {
               {status.label}
             </Text>
           </View>
+          {status.live && phaseLabel(match.phase) ? (
+            <View className="mt-2 px-3 py-1 rounded-full" style={{ backgroundColor: 'rgba(0,0,0,0.28)' }}>
+              <Text className="text-xs font-bold" style={{ color: '#FFB830' }}>{phaseLabel(match.phase)}</Text>
+            </View>
+          ) : null}
         </View>
 
         {/* Équipes + score */}
@@ -379,6 +416,30 @@ export default function MatchDetailPage() {
         <LineupCard side={lineups?.home ?? null} onEdit={(teamId) => router.push(`/match/${id}/lineup?team=${teamId}`)} />
         <LineupCard side={lineups?.away ?? null} onEdit={(teamId) => router.push(`/match/${id}/lineup?team=${teamId}`)} />
       </ScrollView>
+
+      {/* Bannière animée à chaque nouveau fait de jeu en direct */}
+      {flash ? (
+        <Animated.View
+          pointerEvents="none"
+          style={{
+            position: 'absolute', top: '38%', left: 24, right: 24, alignItems: 'center',
+            opacity: flashAnim,
+            transform: [
+              { scale: flashAnim.interpolate({ inputRange: [0, 1], outputRange: [0.7, 1] }) },
+              { translateY: flashAnim.interpolate({ inputRange: [0, 1], outputRange: [20, 0] }) },
+            ],
+          }}
+        >
+          <View
+            className="items-center px-6 py-4 rounded-3xl"
+            style={{ backgroundColor: 'rgba(13,31,13,0.95)', borderWidth: 2, borderColor: '#F7921E', shadowColor: '#000', shadowOpacity: 0.5, shadowRadius: 16, shadowOffset: { width: 0, height: 8 }, elevation: 12 }}
+          >
+            <Text style={{ fontSize: 46 }}>{flash.icon}</Text>
+            <Text className="text-white font-black mt-1" style={{ fontSize: 26, letterSpacing: 1 }}>{flash.title}</Text>
+            {flash.sub ? <Text className="text-white/70 text-sm mt-0.5">{flash.sub}</Text> : null}
+          </View>
+        </Animated.View>
+      ) : null}
     </View>
   );
 }

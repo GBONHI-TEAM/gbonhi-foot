@@ -63,6 +63,21 @@ export interface MatchEvent {
 
 export interface MatchDetail extends Match {
   events: MatchEvent[];
+  phase?: string | null;
+}
+
+/** Libellé lisible d'une phase de déroulement (bannière live). */
+export function phaseLabel(phase?: string | null): string | null {
+  switch (phase) {
+    case 'PREMIERE_MP': return '1re mi-temps';
+    case 'ARRET_JEU': return 'Arrêt de jeu';
+    case 'ADDITIONNEL_1': return 'Temps additionnel · 1re MT';
+    case 'MI_TEMPS': return 'Mi-temps';
+    case 'DEUXIEME_MP': return '2e mi-temps';
+    case 'ADDITIONNEL_2': return 'Temps additionnel · 2e MT';
+    case 'TERMINE': return 'Terminé';
+    default: return null;
+  }
 }
 
 export interface Standing {
