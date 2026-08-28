@@ -121,7 +121,9 @@ function MatchCard({ m }: { m: ApiMatch }) {
       {/* Équipes + score */}
       <div className="flex items-center justify-center gap-4 px-5 py-7">
         <span className="font-bold text-gray-900 text-right flex-1 min-w-0 truncate">{m.home_team?.name ?? '—'}</span>
-        <span className="w-7 h-7 rounded-md flex-shrink-0" style={{ backgroundColor: teamColor(m.home_team, '#1E7A3A') }} />
+        <span className="w-7 h-7 rounded-md flex-shrink-0 overflow-hidden inline-flex items-center justify-center" style={{ backgroundColor: teamColor(m.home_team, '#1E7A3A') }}>
+          {m.home_team?.logo_url ? <img src={m.home_team.logo_url} alt="" className="w-full h-full object-cover" /> : null}
+        </span>
         {scored ? (
           <span className="text-2xl font-black tabular-nums px-1" style={{ color: meta.live ? '#DC2626' : '#111827' }}>
             {m.home_score} <span className="text-gray-300">—</span> {m.away_score}
@@ -129,7 +131,9 @@ function MatchCard({ m }: { m: ApiMatch }) {
         ) : (
           <span className="text-sm font-bold text-gray-400 px-2">VS</span>
         )}
-        <span className="w-7 h-7 rounded-md flex-shrink-0" style={{ backgroundColor: teamColor(m.away_team, '#F7921E') }} />
+        <span className="w-7 h-7 rounded-md flex-shrink-0 overflow-hidden inline-flex items-center justify-center" style={{ backgroundColor: teamColor(m.away_team, '#F7921E') }}>
+          {m.away_team?.logo_url ? <img src={m.away_team.logo_url} alt="" className="w-full h-full object-cover" /> : null}
+        </span>
         <span className="font-bold text-gray-900 flex-1 min-w-0 truncate">{m.away_team?.name ?? '—'}</span>
       </div>
 

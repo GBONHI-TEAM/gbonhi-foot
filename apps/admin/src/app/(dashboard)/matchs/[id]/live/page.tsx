@@ -21,6 +21,7 @@ interface TeamRef {
   id: string;
   name: string;
   primary_color?: string | null;
+  logo_url?: string | null;
 }
 
 interface MatchEvent {
@@ -471,7 +472,9 @@ export default function MatchLivePage() {
       {/* Bandeau score */}
       <div className="rounded-2xl p-8 mb-5 flex items-center justify-between" style={{ backgroundColor: '#0F3D1E' }}>
         <div className="flex items-center gap-4 flex-1 min-w-0">
-          <span className="w-11 h-11 rounded-lg flex-shrink-0" style={{ backgroundColor: teamColor(match.home_team, '#1E7A3A') }} />
+          <span className="w-11 h-11 rounded-lg flex-shrink-0 overflow-hidden inline-flex items-center justify-center" style={{ backgroundColor: teamColor(match.home_team, '#1E7A3A') }}>
+            {match.home_team?.logo_url ? <img src={match.home_team.logo_url} alt="" className="w-full h-full object-cover" /> : null}
+          </span>
           <span className="text-xl font-bold text-white truncate">{match.home_team?.name ?? '—'}</span>
         </div>
         <div className="flex flex-col items-center px-6">
@@ -490,7 +493,9 @@ export default function MatchLivePage() {
         </div>
         <div className="flex items-center gap-4 flex-1 min-w-0 justify-end">
           <span className="text-xl font-bold text-white truncate text-right">{match.away_team?.name ?? '—'}</span>
-          <span className="w-11 h-11 rounded-lg flex-shrink-0" style={{ backgroundColor: teamColor(match.away_team, '#F7921E') }} />
+          <span className="w-11 h-11 rounded-lg flex-shrink-0 overflow-hidden inline-flex items-center justify-center" style={{ backgroundColor: teamColor(match.away_team, '#F7921E') }}>
+            {match.away_team?.logo_url ? <img src={match.away_team.logo_url} alt="" className="w-full h-full object-cover" /> : null}
+          </span>
         </div>
       </div>
 
