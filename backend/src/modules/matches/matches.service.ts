@@ -429,10 +429,10 @@ export class MatchesService {
     const matchIds = matches.map((m) => m.id);
     if (matchIds.length === 0) return { scorers: [], assisters: [] };
 
-    const build = async (type: string) => {
+    const build = async (types: string[]) => {
       const rows = await this.prisma.matchEvent.groupBy({
         by: ['player_id'],
-        where: { match_id: { in: matchIds }, type, player_id: { not: null } },
+        where: { match_id: { in: matchIds }, type: { in: types }, player_id: { not: null } },
         _count: { player_id: true },
       });
       const playerIds = rows.flatMap((row) => row.player_id ? [row.player_id] : []);
@@ -453,7 +453,9 @@ export class MatchesService {
         .slice(0, 10);
     };
 
-    return { scorers: await build('BUT'), assisters: await build('PASSE') };
+    // Un but sur penalty compte pour le buteur ; le CSC (but contre son camp)
+    // n'est pas crédité au joueur.
+    return { scorers: await build(['BUT', 'PENALTY']), assisters: await build(['PASSE']) };
   }
 
   private async ensureExists(id: string) {

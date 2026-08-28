@@ -7,8 +7,9 @@ import {
   ActivityIndicator,
   RefreshControl,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { apiClient } from '../../lib/api';
+import { supabase } from '../../lib/supabase';
 import { ScreenBackground } from '../../components/ui/screen-background';
 import { AppHeader } from '../../components/ui/app-header';
 import { RemoteImage } from '../../components/ui/remote-image';
@@ -171,6 +172,28 @@ export default function MatchScreen() {
     if (selectedLeagueId) await fetchMatches(selectedLeagueId, { silent: true });
     setRefreshing(false);
   }, [fetchLeagues, fetchMatches, selectedLeagueId]);
+
+  // Refetch (silencieux) quand l'onglet reprend le focus.
+  useFocusEffect(
+    useCallback(() => {
+      if (selectedLeagueId) void fetchMatches(selectedLeagueId, { silent: true });
+    }, [selectedLeagueId, fetchMatches]),
+  );
+
+  // Temps réel : coup d'envoi / fin / validation d'un match de la ligue
+  // sélectionnée met à jour les sections En direct / À venir / Résultats.
+  useEffect(() => {
+    if (!selectedLeagueId) return;
+    const channel = supabase
+      .channel(`matchtab-${selectedLeagueId}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'matches', filter: `tournament_id=eq.${selectedLeagueId}` },
+        () => { void fetchMatches(selectedLeagueId, { silent: true }); },
+      )
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [selectedLeagueId, fetchMatches]);
 
   const { live, upcoming, results } = useMemo(() => {
     const live: Match[] = [];
