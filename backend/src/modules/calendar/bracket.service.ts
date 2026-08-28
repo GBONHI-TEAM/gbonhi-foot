@@ -26,12 +26,17 @@ export class BracketService {
   constructor(private readonly prisma: PrismaService) {}
 
   /** Génère l'intégralité du tableau d'un tournoi (nodes + matchs du 1er tour
-   *  jouables + avancement automatique des exemptés). */
-  async generate(league: LeagueWithTeams) {
-    // Ordre de seeding = ordre d'inscription (1re inscrite = tête de série 1).
-    const seededTeams = [...league.teams]
-      .sort((a, b) => a.registration_at.getTime() - b.registration_at.getTime())
-      .map((t) => t.team_id);
+   *  jouables + avancement automatique des exemptés).
+   *  @param explicitSeed  ordre de seeding imposé (ex. qualifiés de poules) ;
+   *                       à défaut, ordre d'inscription. */
+  async generate(league: LeagueWithTeams, explicitSeed?: string[]) {
+    // Ordre de seeding : imposé (qualifiés) ou ordre d'inscription.
+    const seededTeams =
+      explicitSeed && explicitSeed.length
+        ? explicitSeed
+        : [...league.teams]
+            .sort((a, b) => a.registration_at.getTime() - b.registration_at.getTime())
+            .map((t) => t.team_id);
     const n = seededTeams.length;
     const size = bracketSizeFor(n);
 

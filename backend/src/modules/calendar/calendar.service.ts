@@ -3,13 +3,13 @@ import {
   NotFoundException,
   BadRequestException,
   ConflictException,
-  NotImplementedException,
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { generateChampionship, roundsCount } from './round-robin';
 import { scheduleMatches, ScheduledMatch } from './scheduler';
 import { buildScheduleConfig } from './schedule-config';
 import { BracketService } from './bracket.service';
+import { PoolsService } from './pools.service';
 
 /** Type de compétition normalisé à partir du champ libre `format`. */
 export type CompetitionType = 'CHAMPIONNAT' | 'ELIMINATION' | 'POULES';
@@ -33,6 +33,7 @@ export class CalendarService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly bracket: BracketService,
+    private readonly pools: PoolsService,
   ) {}
 
   async generateCalendar(leagueId: string) {
@@ -87,9 +88,30 @@ export class CalendarService {
       return result;
     }
     if (type === 'POULES') {
-      throw new NotImplementedException(
-        "Le format « poules + phase finale » sera disponible en phase 3. Utilise « championnat » pour l'instant.",
-      );
+      const poolMatches = await this.prisma.match.count({ where: { tournament_id: leagueId, pool: { not: null } } });
+      if (poolMatches > 0) {
+        throw new ConflictException('La phase de poules a déjà été générée pour cette ligue');
+      }
+      return this.pools.generate({
+        id: league.id,
+        start_date: league.start_date,
+        round_interval_days: league.round_interval_days,
+        match_duration_min: league.match_duration_min,
+        pool_count: league.pool_count,
+        qualifiers_per_pool: league.qualifiers_per_pool,
+        legs: league.legs,
+        teams: league.teams.map((t) => ({
+          team_id: t.team_id,
+          registration_at: t.registration_at,
+          team: {
+            id: t.team.id,
+            name: t.team.name,
+            logo_url: t.team.logo_url,
+            primary_color: t.team.primary_color,
+            home_terrain_id: t.team.home_terrain_id,
+          },
+        })),
+      });
     }
 
     // ── CHAMPIONNAT (aller / aller-retour) ──────────────────────────────────
@@ -148,6 +170,7 @@ export class CalendarService {
             away_team_id: m.away_team_id,
             round: m.round,
             leg: m.leg,
+            pool: m.pool ?? null,
             scheduled_at: m.scheduled_at,
             status: 'PROGRAMMÉ',
             venue: m.venue,

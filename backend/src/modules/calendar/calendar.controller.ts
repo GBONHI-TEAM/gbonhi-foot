@@ -1,6 +1,7 @@
 import { Controller, Get, Post, Param, Query, Body, UseGuards } from '@nestjs/common';
 import { CalendarService } from './calendar.service';
 import { BracketService } from './bracket.service';
+import { PoolsService } from './pools.service';
 import { SupabaseAuthGuard } from '../auth/supabase-auth.guard';
 import { RolesGuard } from '../../common/access/roles.guard';
 import { Roles } from '../../common/access/roles.decorator';
@@ -11,6 +12,7 @@ export class CalendarController {
   constructor(
     private readonly calendarService: CalendarService,
     private readonly bracketService: BracketService,
+    private readonly poolsService: PoolsService,
   ) {}
 
   @Post('generate')
@@ -60,5 +62,18 @@ export class CalendarController {
     @Body('team_id') teamId: string,
   ) {
     return this.bracketService.setWinnerManual(leagueId, nodeId, teamId);
+  }
+
+  /** Classements par poule (format POULES). */
+  @Get('pools')
+  getPoolStandings(@Param('leagueId') leagueId: string) {
+    return this.poolsService.getPoolStandings(leagueId);
+  }
+
+  /** Génère la phase finale (bracket) à partir des qualifiés des poules. */
+  @Post('final-phase')
+  @Roles('SUPER_ADMIN', 'ADMIN', 'OPERATEUR')
+  generateFinalPhase(@Param('leagueId') leagueId: string) {
+    return this.poolsService.generateFinalPhase(leagueId);
   }
 }

@@ -475,8 +475,106 @@ export default function CalendriersPage() {
         </div>
       </div>
 
+      <PoolsPanel leagueId={leagueId} />
       <BracketPanel leagueId={leagueId} />
     </>
+  );
+}
+
+// ─── Phase de poules ────────────────────────────────────────────────────────
+
+interface PoolStandingRow {
+  rank: number;
+  team: { id: string; name: string };
+  played: number;
+  won: number;
+  drawn: number;
+  lost: number;
+  goal_diff: number;
+  points: number;
+}
+interface PoolBlock {
+  pool: string;
+  standings: PoolStandingRow[];
+}
+
+function PoolsPanel({ leagueId }: { leagueId: string }) {
+  const [pools, setPools] = useState<PoolBlock[]>([]);
+  const [busy, setBusy] = useState(false);
+
+  async function load() {
+    if (!leagueId) return;
+    try {
+      const data = await apiFetch<{ pools: PoolBlock[] }>(`/leagues/${leagueId}/calendar/pools`);
+      setPools(data?.pools ?? []);
+    } catch {
+      setPools([]);
+    }
+  }
+  useEffect(() => {
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [leagueId]);
+
+  async function generateFinal() {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const res = await apiFetch<{ message?: string }>(`/leagues/${leagueId}/calendar/final-phase`, { method: 'POST' });
+      if (res?.message) alert(res.message);
+    } catch (e) {
+      alert('Phase finale impossible. ' + (e instanceof Error ? e.message : ''));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (pools.length === 0) return null;
+
+  return (
+    <div className="mt-6 bg-white rounded-2xl border border-gray-100 p-6">
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="font-bold text-gray-900">Classements des poules</h2>
+        <button
+          onClick={generateFinal}
+          disabled={busy}
+          className="h-10 px-4 rounded-lg text-sm font-semibold text-white disabled:opacity-60"
+          style={{ backgroundColor: '#1E7A3A' }}
+        >
+          {busy ? '…' : 'Générer la phase finale'}
+        </button>
+      </div>
+      <div className="grid gap-6 md:grid-cols-2">
+        {pools.map((p) => (
+          <div key={p.pool} className="border border-gray-100 rounded-xl overflow-hidden">
+            <div className="px-4 py-2 bg-gray-50 font-bold text-gray-800 text-sm">Poule {p.pool}</div>
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-[11px] uppercase text-gray-400">
+                  <th className="text-left px-4 py-2">Équipe</th>
+                  <th className="px-2">J</th>
+                  <th className="px-2">Diff</th>
+                  <th className="px-2">Pts</th>
+                </tr>
+              </thead>
+              <tbody>
+                {p.standings.map((s) => (
+                  <tr key={s.team.id} className="border-t border-gray-50">
+                    <td className="px-4 py-2 text-gray-800">
+                      <span className="inline-block w-5 text-gray-400">{s.rank}</span>
+                      {s.team.name}
+                    </td>
+                    <td className="px-2 text-center text-gray-600">{s.played}</td>
+                    <td className="px-2 text-center text-gray-600">{s.goal_diff > 0 ? `+${s.goal_diff}` : s.goal_diff}</td>
+                    <td className="px-2 text-center font-bold text-gray-900">{s.points}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 

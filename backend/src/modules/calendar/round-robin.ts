@@ -14,6 +14,7 @@ export interface Fixture {
   away_team_id: string;
   round: number;
   leg: number; // 1 = aller, 2 = retour
+  pool?: string | null; // libellé de poule (format POULES), sinon null
 }
 
 const BYE = '__BYE__';

@@ -199,6 +199,7 @@ const INPUT_CLS =
 const FORMATS: { value: string; label: string }[] = [
   { value: 'round_robin', label: 'Championnat (round-robin)' },
   { value: 'single_elimination', label: 'Coupe (élimination directe)' },
+  { value: 'groups', label: 'Poules + phase finale' },
   { value: 'double_elimination', label: 'Coupe (double élimination)' },
   { value: 'league', label: 'Championnat + Play-offs' },
 ];
@@ -214,6 +215,8 @@ function LeagueFormModal({ leagueId, onClose, onSaved }: { leagueId?: string | n
   const [legs, setLegs] = useState('1'); // 1 = aller simple, 2 = aller-retour
   const [matchDuration, setMatchDuration] = useState('60');
   const [roundInterval, setRoundInterval] = useState('7');
+  const [poolCount, setPoolCount] = useState('2');
+  const [qualifiersPerPool, setQualifiersPerPool] = useState('2');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [fee, setFee] = useState('');
@@ -241,6 +244,8 @@ function LeagueFormModal({ leagueId, onClose, onSaved }: { leagueId?: string | n
         setLegs(String((l.legs as number) ?? 1));
         setMatchDuration(String((l.match_duration_min as number) ?? 60));
         setRoundInterval(String((l.round_interval_days as number) ?? 7));
+        setPoolCount(String((l.pool_count as number) ?? 2));
+        setQualifiersPerPool(String((l.qualifiers_per_pool as number) ?? 2));
         setStartDate(l.start_date ? String(l.start_date).slice(0, 10) : '');
         setEndDate(l.end_date ? String(l.end_date).slice(0, 10) : '');
         setFee(l.registration_fee != null ? String(l.registration_fee) : '');
@@ -302,6 +307,12 @@ function LeagueFormModal({ leagueId, onClose, onSaved }: { leagueId?: string | n
     if (Number.isFinite(dur) && dur >= 30) payload.match_duration_min = dur;
     const interval = parseInt(roundInterval, 10);
     if (Number.isFinite(interval) && interval >= 1) payload.round_interval_days = interval;
+    if (format === 'groups') {
+      const pc = parseInt(poolCount, 10);
+      if (Number.isFinite(pc) && pc >= 2) payload.pool_count = pc;
+      const qpp = parseInt(qualifiersPerPool, 10);
+      if (Number.isFinite(qpp) && qpp >= 1) payload.qualifiers_per_pool = qpp;
+    }
 
     setSaving(true);
     try {
@@ -355,7 +366,14 @@ function LeagueFormModal({ leagueId, onClose, onSaved }: { leagueId?: string | n
             <Field label="Matchs par équipe"><input className={INPUT_CLS} type="number" min={1} placeholder="Ex : 6" value={matchesPerTeam} onChange={(e) => setMatchesPerTeam(e.target.value)} /></Field>
           </div>
 
-          {(format === 'round_robin' || format === 'league') && (
+          {format === 'groups' && (
+            <div className="grid grid-cols-2 gap-6">
+              <Field label="Nombre de poules"><input className={INPUT_CLS} type="number" min={2} value={poolCount} onChange={(e) => setPoolCount(e.target.value)} /></Field>
+              <Field label="Qualifiés par poule"><input className={INPUT_CLS} type="number" min={1} value={qualifiersPerPool} onChange={(e) => setQualifiersPerPool(e.target.value)} /></Field>
+            </div>
+          )}
+
+          {(format === 'round_robin' || format === 'league' || format === 'groups') && (
             <Field label="Type de matchs">
               <div className="flex gap-2">
                 {[
