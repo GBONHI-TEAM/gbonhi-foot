@@ -125,6 +125,70 @@ export interface League {
   organizer?: { id: string; full_name: string | null } | null;
 }
 
+// ─── Formats de compétition ────────────────────────────────────────────────
+
+export type CompetitionType = 'CHAMPIONNAT' | 'ELIMINATION' | 'POULES';
+
+/** Normalise le champ libre `format` d'une ligue (aligné sur le backend). */
+export function leagueFormatType(format?: string | null): CompetitionType {
+  const f = (format ?? '').toLowerCase();
+  if (/(elim|knock|single_elimination|coupe|bracket)/.test(f)) return 'ELIMINATION';
+  if (/(poule|group)/.test(f)) return 'POULES';
+  return 'CHAMPIONNAT';
+}
+
+// ─── Tableau à élimination directe ──────────────────────────────────────────
+
+export interface BracketMatchTeam {
+  id: string;
+  name: string;
+  logo_url?: string | null;
+  primary_color?: string | null;
+}
+export interface BracketMatch {
+  id: string;
+  slot: number;
+  match_id: string | null;
+  home: BracketMatchTeam | null;
+  away: BracketMatchTeam | null;
+  home_source: string | null;
+  away_source: string | null;
+  winner: BracketMatchTeam | null;
+}
+export interface BracketRound {
+  round_size: number;
+  round_name: string;
+  matches: BracketMatch[];
+}
+
+/** Libellé lisible d'un tour d'élimination. */
+export function bracketRoundLabel(roundSize: number): string {
+  switch (roundSize) {
+    case 2: return 'Finale';
+    case 4: return 'Demi-finales';
+    case 8: return 'Quarts';
+    case 16: return '8es de finale';
+    case 32: return '16es de finale';
+    case 64: return '32es de finale';
+    default: return `Tour de ${roundSize}`;
+  }
+}
+
+/** "seed:3" / "winner:8#0" → libellé pour un emplacement encore vide. */
+export function bracketSourceLabel(source?: string | null): string {
+  if (!source) return 'À déterminer';
+  if (source.startsWith('seed:')) return `Tête de série ${source.slice(5)}`;
+  if (source.startsWith('winner:')) return 'Vainqueur qualifié';
+  return 'À déterminer';
+}
+
+// ─── Poules ─────────────────────────────────────────────────────────────────
+
+export interface PoolBlock {
+  pool: string;
+  standings: Standing[];
+}
+
 // ─── Helpers d'affichage ────────────────────────────────────────────────────
 
 const WEEKDAYS = ['Dim', 'Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam'];
