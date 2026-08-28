@@ -213,8 +213,8 @@ function EventModal({
       });
       onSaved();
       onClose();
-    } catch {
-      setError("Échec de l'enregistrement de l'événement. Réessayez.");
+    } catch (e) {
+      setError(`Échec de l'enregistrement de l'événement. ${e instanceof Error ? e.message : 'Réessayez.'}`);
     } finally {
       setSaving(false);
     }
