@@ -292,7 +292,7 @@ export class LeaguesService {
       where: { id: leagueId },
       include: {
         teams: { include: { team: { select: { id: true, name: true, logo_url: true, primary_color: true } } } },
-        matches: { where: { status: 'VALIDÉ' } },
+        matches: { where: { status: { in: ['TERMINÉ', 'VALIDÉ'] } } },
       },
     });
     if (!league) throw new NotFoundException('Ligue introuvable');

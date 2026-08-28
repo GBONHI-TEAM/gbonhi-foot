@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState, useCallback } from 'react';
 import { View, Text, ScrollView, Pressable, ActivityIndicator } from 'react-native';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import { ScreenBackground } from '../../../components/ui/screen-background';
 import { apiClient } from '../../../lib/api';
+import { supabase } from '../../../lib/supabase';
 import { imageThumb } from '../../../lib/image';
 import { RemoteImage } from '../../../components/ui/remote-image';
 import { PatternedGreenHeader } from '../../../components/ui/patterned-green-header';
@@ -836,6 +837,50 @@ export default function LeagueDetailPage() {
       else loadStandings();
     } else if (activeTab === 'Stats') loadScorers();
   }, [activeTab, formatType, loadMatches, loadStandings, loadScorers, loadBracket, loadPools]);
+
+  // Rafraîchissement silencieux (sans spinner) des données de l'onglet actif.
+  const refreshActive = useCallback(async () => {
+    try {
+      if (activeTab === 'Matchs') {
+        const { data } = await apiClient.get<Match[]>('/api/v1/matches', { params: { tournament_id: id } });
+        setMatches(data);
+      } else if (activeTab === 'Tableau') {
+        const { data } = await apiClient.get<{ rounds: BracketRound[] }>(`/api/v1/leagues/${id}/calendar/bracket`);
+        setBracket(data?.rounds ?? []);
+      } else if (activeTab === 'Classement') {
+        if (formatType === 'POULES') {
+          const { data } = await apiClient.get<{ pools: PoolBlock[] }>(`/api/v1/leagues/${id}/calendar/pools`);
+          setPoolStandings(data?.pools ?? []);
+        } else {
+          const { data } = await apiClient.get<Standing[]>(`/api/v1/leagues/${id}/standings`);
+          setStandings(data);
+        }
+      } else if (activeTab === 'Stats') {
+        const { data } = await apiClient.get<ScorersResponse>('/api/v1/matches/scorers', { params: { tournament_id: id } });
+        setScorers(data);
+      }
+    } catch {
+      /* rafraîchissement silencieux : on ignore les erreurs ponctuelles */
+    }
+  }, [activeTab, formatType, id]);
+
+  // Refetch quand l'écran reprend le focus (retour depuis un match, etc.).
+  useFocusEffect(useCallback(() => { void refreshActive(); }, [refreshActive]));
+
+  // Temps réel : tout changement sur un match de cette ligue met à jour
+  // classement / tableau / poules / matchs sans rechargement manuel.
+  useEffect(() => {
+    if (!id) return;
+    const channel = supabase
+      .channel(`league-${id}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'matches', filter: `tournament_id=eq.${id}` },
+        () => { void refreshActive(); },
+      )
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [id, refreshActive]);
 
   if (loadingLeague) {
     return (

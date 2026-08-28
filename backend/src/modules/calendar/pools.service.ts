@@ -121,7 +121,10 @@ export class PoolsService {
     });
     const teamById = new Map<string, StandingTeam>(teams.map((t) => [t.id, t]));
 
-    const validated = matches.filter((m) => (m.status ?? '').toUpperCase().includes('VALID'));
+    const validated = matches.filter((m) => {
+      const s = (m.status ?? '').toUpperCase();
+      return s.includes('VALID') || s.includes('TERMIN');
+    });
     const labels = [...new Set([...teamPool.values()])].sort();
 
     const pools = labels.map((label) => {

@@ -13,6 +13,7 @@ import { useRouter, useFocusEffect } from 'expo-router';
 import { useUserModeStore } from '../../store/user-mode.store';
 import { useAuthStore } from '../../store/auth.store';
 import { getCached } from '../../lib/api-cache';
+import { supabase } from '../../lib/supabase';
 import { imageThumb } from '../../lib/image';
 import { ScreenBackground } from '../../components/ui/screen-background';
 import { AppHeader, HeaderAction } from '../../components/ui/app-header';
@@ -485,6 +486,23 @@ export default function HomeScreen() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  // Refetch (en contournant le cache) à chaque retour sur l'accueil.
+  useFocusEffect(useCallback(() => { void load(true); }, [load]));
+
+  // Temps réel : au coup d'envoi / fin d'un match, l'accueil se met à jour
+  // automatiquement (Matchs du jour, EN DIRECT) sans rechargement manuel.
+  useEffect(() => {
+    const channel = supabase
+      .channel('home-matches')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'matches' },
+        () => { void load(true); },
+      )
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [load]);
 
   return (
     <ScreenBackground>
