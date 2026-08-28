@@ -153,8 +153,18 @@ export default function CalendriersPage() {
     if (!leagueId || busy) return;
     setBusy(true);
     try {
-      await apiFetch(`/leagues/${leagueId}/calendar/generate`, { method: 'POST' });
+      const res = await apiFetch<{ message?: string; unplaced_warnings?: string[] }>(
+        `/leagues/${leagueId}/calendar/generate`,
+        { method: 'POST' },
+      );
       await loadMatches(leagueId);
+      const warnings = res?.unplaced_warnings ?? [];
+      if (res?.message) {
+        alert(
+          res.message +
+            (warnings.length ? `\n\n⚠️ ${warnings.length} avertissement(s) de planification :\n- ${warnings.join('\n- ')}` : ''),
+        );
+      }
     } catch (e) {
       alert('Génération impossible. ' + (e instanceof Error ? e.message : ''));
     } finally {

@@ -57,6 +57,36 @@ export class UpdateLeagueDto {
   matches_per_team?: number;
 
   @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(2)
+  legs?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(16)
+  pool_count?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(8)
+  qualifiers_per_pool?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(30)
+  @Max(240)
+  match_duration_min?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(30)
+  round_interval_days?: number;
+
+  @IsOptional()
   @IsString()
   @MaxLength(20000)
   rules?: string;

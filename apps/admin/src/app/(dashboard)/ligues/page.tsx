@@ -211,6 +211,9 @@ function LeagueFormModal({ leagueId, onClose, onSaved }: { leagueId?: string | n
   const [format, setFormat] = useState('round_robin');
   const [maxTeams, setMaxTeams] = useState('10');
   const [matchesPerTeam, setMatchesPerTeam] = useState('');
+  const [legs, setLegs] = useState('1'); // 1 = aller simple, 2 = aller-retour
+  const [matchDuration, setMatchDuration] = useState('60');
+  const [roundInterval, setRoundInterval] = useState('7');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [fee, setFee] = useState('');
@@ -235,6 +238,9 @@ function LeagueFormModal({ leagueId, onClose, onSaved }: { leagueId?: string | n
         setFormat((l.format as string) ?? 'Championnat');
         setMaxTeams(String((l.max_teams as number) ?? 10));
         setMatchesPerTeam(l.matches_per_team != null ? String(l.matches_per_team) : '');
+        setLegs(String((l.legs as number) ?? 1));
+        setMatchDuration(String((l.match_duration_min as number) ?? 60));
+        setRoundInterval(String((l.round_interval_days as number) ?? 7));
         setStartDate(l.start_date ? String(l.start_date).slice(0, 10) : '');
         setEndDate(l.end_date ? String(l.end_date).slice(0, 10) : '');
         setFee(l.registration_fee != null ? String(l.registration_fee) : '');
@@ -291,6 +297,11 @@ function LeagueFormModal({ leagueId, onClose, onSaved }: { leagueId?: string | n
     };
     const mpt = parseInt(matchesPerTeam, 10);
     if (Number.isFinite(mpt) && mpt > 0) payload.matches_per_team = mpt;
+    payload.legs = parseInt(legs, 10) === 2 ? 2 : 1;
+    const dur = parseInt(matchDuration, 10);
+    if (Number.isFinite(dur) && dur >= 30) payload.match_duration_min = dur;
+    const interval = parseInt(roundInterval, 10);
+    if (Number.isFinite(interval) && interval >= 1) payload.round_interval_days = interval;
 
     setSaving(true);
     try {
@@ -342,6 +353,31 @@ function LeagueFormModal({ leagueId, onClose, onSaved }: { leagueId?: string | n
           <div className="grid grid-cols-2 gap-6">
             <Field label="Max équipes"><input className={INPUT_CLS} type="number" min={4} value={maxTeams} onChange={(e) => setMaxTeams(e.target.value)} /></Field>
             <Field label="Matchs par équipe"><input className={INPUT_CLS} type="number" min={1} placeholder="Ex : 6" value={matchesPerTeam} onChange={(e) => setMatchesPerTeam(e.target.value)} /></Field>
+          </div>
+
+          {(format === 'round_robin' || format === 'league') && (
+            <Field label="Type de matchs">
+              <div className="flex gap-2">
+                {[
+                  { v: '1', label: 'Aller simple' },
+                  { v: '2', label: 'Aller-retour' },
+                ].map((opt) => {
+                  const active = legs === opt.v;
+                  return (
+                    <button key={opt.v} type="button" onClick={() => setLegs(opt.v)}
+                      className="px-5 h-11 rounded-lg text-sm font-semibold border transition"
+                      style={{ backgroundColor: active ? '#F0FDF4' : 'white', borderColor: active ? '#1E7A3A' : '#E5E7EB', color: active ? '#1E7A3A' : '#9CA3AF' }}>
+                      {opt.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </Field>
+          )}
+
+          <div className="grid grid-cols-2 gap-6">
+            <Field label="Durée d'un match (min)"><input className={INPUT_CLS} type="number" min={30} step={15} value={matchDuration} onChange={(e) => setMatchDuration(e.target.value)} /></Field>
+            <Field label="Écart entre journées (jours)"><input className={INPUT_CLS} type="number" min={1} value={roundInterval} onChange={(e) => setRoundInterval(e.target.value)} /></Field>
           </div>
 
           <div className="grid grid-cols-2 gap-6">

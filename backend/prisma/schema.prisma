@@ -175,6 +175,12 @@ model Tournament {
   matches_per_team Int?
   rules            String?
   rewards          String?
+  // Configuration de génération du calendrier
+  legs                Int  @default(1) // 1 = aller simple, 2 = aller-retour (championnat / phase de poules)
+  pool_count          Int? // Nombre de poules (format POULES)
+  qualifiers_per_pool Int? // Qualifiés par poule pour la phase finale (format POULES)
+  match_duration_min  Int  @default(60) // Durée d'un match (créneaux de planification)
+  round_interval_days Int  @default(7) // Écart en jours entre deux journées
   created_at       DateTime @default(now()) @db.Timestamptz(6)
   updated_at       DateTime @default(now()) @db.Timestamptz(6)
 
@@ -263,8 +269,16 @@ model Match {
   started_at    DateTime? @db.Timestamptz(6)
   finished_at   DateTime? @db.Timestamptz(6)
   venue         String?
+  venue_terrain_id String? @db.Uuid
   phase           String?
   controller_name String?
+  // Structure de compétition
+  leg           Int?      // 1 = match aller, 2 = match retour
+  pool          String?   // Libellé de poule (ex. "A") pour le format POULES
+  bracket_round String?   // Tour d'élimination : "32es","16es","8es","quarts","demies","finale","petite_finale"
+  bracket_slot  Int?      // Position dans le tour (0-based) pour relier les tours
+  home_source   String?   // Provenance équipe dom. avant qualif (ex. "W:quarts#0" = vainqueur quart 0)
+  away_source   String?   // Provenance équipe ext. avant qualif
   referee_id    String?   @db.Uuid
   created_at    DateTime  @default(now()) @db.Timestamptz(6)
   updated_at    DateTime  @default(now()) @db.Timestamptz(6)
