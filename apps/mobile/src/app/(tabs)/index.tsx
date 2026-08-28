@@ -40,10 +40,14 @@ interface Summary {
 
 /* ---------- helpers UI ---------- */
 
-function Avatar({ initials, color, size = 40 }: { initials: string; color: string; size?: number }) {
+function Avatar({ initials, color, size = 40, logo }: { initials: string; color: string; size?: number; logo?: string | null }) {
   return (
-    <View style={{ width: size, height: size, borderRadius: size / 2, backgroundColor: color }} className="items-center justify-center">
-      <Text className="text-white text-xs font-bold">{initials}</Text>
+    <View style={{ width: size, height: size, borderRadius: size / 2, backgroundColor: color, overflow: 'hidden' }} className="items-center justify-center">
+      {logo ? (
+        <RemoteImage uri={imageThumb(logo, 120)} contentFit="cover" style={{ width: '100%', height: '100%' }} />
+      ) : (
+        <Text className="text-white text-xs font-bold">{initials}</Text>
+      )}
     </View>
   );
 }
@@ -111,12 +115,12 @@ function HomeLeagues({ summary, matches, loading }: { summary: Summary | null; m
               <Pressable key={m.id} onPress={() => router.push(`/match/${m.id}`)} className="active:opacity-90">
                 <Card style={{ width: 250 }}>
                   <View className="flex-row items-center gap-3">
-                    <Avatar initials={teamInitials(m.home_team.name)} color={teamColor(m.home_team)} size={32} />
+                    <Avatar initials={teamInitials(m.home_team.name)} color={teamColor(m.home_team)} size={32} logo={m.home_team.logo_url} />
                     <Text className="text-white text-base font-bold flex-1" numberOfLines={1}>{m.home_team.name}</Text>
                   </View>
                   <Text className="text-accent text-lg font-black text-center my-1">{formatMatchTime(m.scheduled_at)}</Text>
                   <View className="flex-row items-center gap-3">
-                    <Avatar initials={teamInitials(m.away_team.name)} color={teamColor(m.away_team)} size={32} />
+                    <Avatar initials={teamInitials(m.away_team.name)} color={teamColor(m.away_team)} size={32} logo={m.away_team.logo_url} />
                     <Text className="text-white text-base font-bold flex-1" numberOfLines={1}>{m.away_team.name}</Text>
                   </View>
                   {m.venue ? <Text className="text-white/45 text-xs mt-2" numberOfLines={1}>{m.venue}</Text> : null}
@@ -141,13 +145,13 @@ function HomeLeagues({ summary, matches, loading }: { summary: Summary | null; m
               </View>
               <View className="flex-row items-center justify-between">
                 <View className="flex-row items-center gap-2 flex-1">
-                  <Avatar initials={teamInitials(m.home_team.name)} color={teamColor(m.home_team)} />
+                  <Avatar initials={teamInitials(m.home_team.name)} color={teamColor(m.home_team)} logo={m.home_team.logo_url} />
                   <Text className="text-white text-base font-bold flex-1" numberOfLines={1}>{m.home_team.name}</Text>
                 </View>
                 <Text className="text-white text-3xl font-black mx-2">{m.home_score} : {m.away_score}</Text>
                 <View className="flex-row items-center gap-2 flex-1 justify-end">
                   <Text className="text-white text-base font-bold flex-1 text-right" numberOfLines={1}>{m.away_team.name}</Text>
-                  <Avatar initials={teamInitials(m.away_team.name)} color={teamColor(m.away_team)} />
+                  <Avatar initials={teamInitials(m.away_team.name)} color={teamColor(m.away_team)} logo={m.away_team.logo_url} />
                 </View>
               </View>
               <Text className="text-accent text-sm font-bold text-center mt-3">Voir le match →</Text>
