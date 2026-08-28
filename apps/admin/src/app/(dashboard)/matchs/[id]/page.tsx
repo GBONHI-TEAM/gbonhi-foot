@@ -22,6 +22,20 @@ interface TeamRef {
   id: string;
   name: string;
   primary_color?: string | null;
+  logo_url?: string | null;
+}
+
+/** Pastille d'équipe : logo si disponible, sinon carré de couleur. */
+function TeamBadge({ team, fallback }: { team: TeamRef | null; fallback: string }) {
+  const color = team?.primary_color?.trim() ? team.primary_color! : fallback;
+  return (
+    <span className="w-10 h-10 rounded-lg flex-shrink-0 overflow-hidden flex items-center justify-center" style={{ backgroundColor: color }}>
+      {team?.logo_url ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={team.logo_url} alt={team.name} className="w-full h-full object-cover" />
+      ) : null}
+    </span>
+  );
 }
 
 interface MatchEvent {
@@ -185,7 +199,7 @@ export default function MatchDetailPage() {
       {/* Bandeau score */}
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-8 mb-5 flex items-center justify-between">
         <div className="flex items-center gap-4 flex-1 min-w-0">
-          <span className="w-10 h-10 rounded-lg flex-shrink-0" style={{ backgroundColor: teamColor(match.home_team, '#1E7A3A') }} />
+          <TeamBadge team={match.home_team} fallback="#1E7A3A" />
           <span className="text-lg font-bold text-gray-900 truncate">{match.home_team?.name ?? '—'}</span>
         </div>
         <div className="flex flex-col items-center px-6">
@@ -202,7 +216,7 @@ export default function MatchDetailPage() {
         </div>
         <div className="flex items-center gap-4 flex-1 min-w-0 justify-end">
           <span className="text-lg font-bold text-gray-900 truncate text-right">{match.away_team?.name ?? '—'}</span>
-          <span className="w-10 h-10 rounded-lg flex-shrink-0" style={{ backgroundColor: teamColor(match.away_team, '#F7921E') }} />
+          <TeamBadge team={match.away_team} fallback="#F7921E" />
         </div>
       </div>
 
