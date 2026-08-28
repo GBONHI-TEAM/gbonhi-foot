@@ -9,6 +9,7 @@ import { UpdateMatchDto } from './dto/update-match.dto';
 import { ChangeMatchStatusDto } from './dto/change-status.dto';
 import { CreateEventDto } from './dto/create-event.dto';
 import { NotificationsService } from '../notifications/notifications.service';
+import { BracketService } from '../calendar/bracket.service';
 import { UserPayload } from '../../common/types/user-payload.type';
 import { ForbiddenException } from '@nestjs/common';
 
@@ -32,6 +33,7 @@ export class MatchesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationsService,
+    private readonly bracket: BracketService,
   ) {}
 
   /** IDs des membres actifs des deux équipes d'un match. */
@@ -305,6 +307,19 @@ export class MatchesService {
         body: `${match.home_team?.name ?? 'Domicile'} ${match.home_score ?? 0} - ${match.away_score ?? 0} ${match.away_team?.name ?? 'Extérieur'}.`,
         data: { match_id: match.id, tournament_id: match.tournament_id },
       });
+
+      // Tournoi à élimination : propager le vainqueur dans le tableau.
+      const bracketResult = await this.bracket.onMatchDecided({
+        id: match.id,
+        home_team_id: match.home_team_id,
+        away_team_id: match.away_team_id,
+        home_score: match.home_score ?? 0,
+        away_score: match.away_score ?? 0,
+        tournament_id: match.tournament_id,
+      });
+      if (bracketResult.tie) {
+        return { ...match, bracket_tie: true };
+      }
     }
 
     return match;

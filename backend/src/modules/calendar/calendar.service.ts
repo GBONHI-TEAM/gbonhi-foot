@@ -7,12 +7,9 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { generateChampionship, roundsCount } from './round-robin';
-import {
-  scheduleMatches,
-  ScheduledMatch,
-  TerrainInput,
-  ScheduleConfig,
-} from './scheduler';
+import { scheduleMatches, ScheduledMatch } from './scheduler';
+import { buildScheduleConfig } from './schedule-config';
+import { BracketService } from './bracket.service';
 
 /** Type de compétition normalisé à partir du champ libre `format`. */
 export type CompetitionType = 'CHAMPIONNAT' | 'ELIMINATION' | 'POULES';
@@ -33,7 +30,10 @@ function resolveLegs(format: string | null | undefined, legs: number | null | un
 
 @Injectable()
 export class CalendarService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly bracket: BracketService,
+  ) {}
 
   async generateCalendar(leagueId: string) {
     const league = await this.prisma.tournament.findUnique({
@@ -65,9 +65,26 @@ export class CalendarService {
     const type = normalizeFormat(league.format);
 
     if (type === 'ELIMINATION') {
-      throw new NotImplementedException(
-        "Le format « élimination directe » sera disponible en phase 2. Utilise « championnat » pour l'instant.",
-      );
+      const existingNodes = await this.prisma.bracketNode.count({ where: { tournament_id: leagueId } });
+      if (existingNodes > 0) {
+        throw new ConflictException('Le tableau a déjà été généré pour cette ligue');
+      }
+      const result = await this.bracket.generate({
+        id: league.id,
+        start_date: league.start_date,
+        round_interval_days: league.round_interval_days,
+        match_duration_min: league.match_duration_min,
+        teams: league.teams.map((t) => ({
+          team_id: t.team_id,
+          registration_at: t.registration_at,
+          team: { home_terrain_id: t.team.home_terrain_id },
+        })),
+      });
+      await this.prisma.tournament.update({
+        where: { id: leagueId },
+        data: { status: 'INSCRIPTIONS_CLOSES', updated_at: new Date() },
+      });
+      return result;
     }
     if (type === 'POULES') {
       throw new NotImplementedException(
@@ -81,7 +98,7 @@ export class CalendarService {
 
     const fixtures = generateChampionship(teamIds, legs);
 
-    const scheduleConfig = await this.buildScheduleConfig(league);
+    const scheduleConfig = await buildScheduleConfig(this.prisma, league);
     const scheduled = scheduleMatches(fixtures, scheduleConfig);
 
     await this.persistMatches(leagueId, scheduled);
@@ -99,67 +116,6 @@ export class CalendarService {
       matches_count: scheduled.length,
       rounds,
       unplaced_warnings: this.collisionWarnings(scheduled),
-    };
-  }
-
-  /** Construit la config de planification : terrains + créneaux + blocages. */
-  private async buildScheduleConfig(league: {
-    start_date: Date;
-    round_interval_days: number;
-    match_duration_min: number;
-    teams: { team_id: string; team: { home_terrain_id: string | null } }[];
-  }): Promise<ScheduleConfig> {
-    const startDate = new Date(
-      Date.UTC(
-        league.start_date.getUTCFullYear(),
-        league.start_date.getUTCMonth(),
-        league.start_date.getUTCDate(),
-      ),
-    );
-
-    const homeTerrainByTeam = new Map<string, string | null>();
-    const terrainIds = new Set<string>();
-    for (const t of league.teams) {
-      homeTerrainByTeam.set(t.team_id, t.team.home_terrain_id);
-      if (t.team.home_terrain_id) terrainIds.add(t.team.home_terrain_id);
-    }
-
-    // Pool de terrains = terrains « domicile » des équipes participantes.
-    // (À défaut de créneaux configurés, le planificateur retombe sur 16h.)
-    const terrains: TerrainInput[] = [];
-    if (terrainIds.size > 0) {
-      const rows = await this.prisma.terrain.findMany({
-        where: { id: { in: [...terrainIds] }, is_active: true },
-        include: {
-          slots: { where: { is_active: true } },
-          blocks: { where: { blocked_date: { gte: startDate } } },
-        },
-      });
-      for (const r of rows) {
-        terrains.push({
-          id: r.id,
-          name: r.name,
-          slots: r.slots.map((s) => ({
-            day_of_week: s.day_of_week,
-            start_hour: s.start_hour,
-            end_hour: s.end_hour,
-            is_active: s.is_active,
-          })),
-          blocks: r.blocks.map((b) => ({
-            blocked_date: b.blocked_date,
-            start_hour: b.start_hour,
-            end_hour: b.end_hour,
-          })),
-        });
-      }
-    }
-
-    return {
-      startDate,
-      roundIntervalDays: league.round_interval_days ?? 7,
-      matchDurationMin: league.match_duration_min ?? 60,
-      homeTerrainByTeam,
-      terrains,
     };
   }
 

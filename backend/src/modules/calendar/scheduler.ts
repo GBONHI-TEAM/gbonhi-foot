@@ -60,10 +60,82 @@ export interface ScheduledMatch extends Fixture {
   venue: string | null;
 }
 
-function addDays(date: Date, days: number): Date {
+export function addDays(date: Date, days: number): Date {
   const d = new Date(date);
   d.setUTCDate(d.getUTCDate() + days);
   return d;
+}
+
+/** Clé d'occupation d'un créneau (terrain + jour + heure). */
+export function slotUsageKey(terrainId: string, date: Date, hour: number): string {
+  return `${terrainId}|${dayKey(date)}|${hour}`;
+}
+export function teamBusyKey(teamId: string, date: Date): string {
+  return `${teamId}|${dayKey(date)}`;
+}
+
+export interface FreeSlotResult {
+  scheduled_at: Date;
+  venue_terrain_id: string;
+  venue: string;
+  usageKeys: string[]; // clés à ajouter dans `used`
+}
+
+/**
+ * Cherche le premier créneau libre pour une affiche à partir de `targetDate`,
+ * en tenant compte de l'occupation déjà connue (`used`, `teamBusy`).
+ * Retourne null si aucun terrain n'a de créneau exploitable dans la fenêtre.
+ */
+export function findFreeSlot(params: {
+  homeTeamId: string;
+  awayTeamId: string;
+  targetDate: Date;
+  terrains: TerrainInput[];
+  preferredTerrainId: string | null;
+  durationHours: number;
+  used: Set<string>;
+  teamBusy: Set<string>;
+  maxDaySpill: number;
+}): FreeSlotResult | null {
+  const { homeTeamId, awayTeamId, targetDate, terrains, preferredTerrainId, durationHours, used, teamBusy, maxDaySpill } = params;
+
+  const ordered = [...terrains].sort((a, b) => {
+    if (a.id === preferredTerrainId) return -1;
+    if (b.id === preferredTerrainId) return 1;
+    return 0;
+  });
+
+  for (let offset = 0; offset <= maxDaySpill; offset++) {
+    const date = addDays(targetDate, offset);
+    if (teamBusy.has(teamBusyKey(homeTeamId, date)) || teamBusy.has(teamBusyKey(awayTeamId, date))) continue;
+    const dow = date.getUTCDay();
+
+    for (const terrain of ordered) {
+      const hours = candidateHours(terrain, dow, durationHours);
+      for (const h of hours) {
+        const hourEnd = h + durationHours;
+        if (isBlocked(terrain, date, h, hourEnd)) continue;
+        let free = true;
+        const keys: string[] = [];
+        for (let hh = h; hh < hourEnd; hh++) {
+          const k = slotUsageKey(terrain.id, date, hh);
+          if (used.has(k)) {
+            free = false;
+            break;
+          }
+          keys.push(k);
+        }
+        if (!free) continue;
+        return {
+          scheduled_at: atHour(date, h),
+          venue_terrain_id: terrain.id,
+          venue: terrain.name,
+          usageKeys: keys,
+        };
+      }
+    }
+  }
+  return null;
 }
 
 /** Clé jour (UTC) pour comparer/indexer les dates sans l'heure. */
@@ -144,49 +216,27 @@ export function scheduleMatches(fixtures: Fixture[], config: ScheduleConfig): Sc
       };
     }
 
-    // Ordre de préférence des terrains : domicile de l'hôte d'abord.
-    const orderedTerrains = [...terrains].sort((a, b) => {
-      if (a.id === preferredTerrainId) return -1;
-      if (b.id === preferredTerrainId) return 1;
-      return 0;
+    const found = findFreeSlot({
+      homeTeamId: fx.home_team_id,
+      awayTeamId: fx.away_team_id,
+      targetDate,
+      terrains,
+      preferredTerrainId,
+      durationHours,
+      used,
+      teamBusy,
+      maxDaySpill: maxSpill,
     });
-
-    for (let offset = 0; offset <= maxSpill; offset++) {
-      const date = addDays(targetDate, offset);
-      const dk = dayKey(date);
-      // Une équipe déjà occupée ce jour ? on saute directement au jour suivant.
-      if (teamBusy.has(`${fx.home_team_id}|${dk}`) || teamBusy.has(`${fx.away_team_id}|${dk}`)) {
-        continue;
-      }
-      const dow = date.getUTCDay();
-
-      for (const terrain of orderedTerrains) {
-        const hours = candidateHours(terrain, dow, durationHours);
-        for (const h of hours) {
-          const hourEnd = h + durationHours;
-          if (isBlocked(terrain, date, h, hourEnd)) continue;
-          // toutes les heures du match doivent être libres sur ce terrain
-          let free = true;
-          for (let hh = h; hh < hourEnd; hh++) {
-            if (used.has(`${terrain.id}|${dk}|${hh}`)) {
-              free = false;
-              break;
-            }
-          }
-          if (!free) continue;
-
-          // Réservation
-          for (let hh = h; hh < hourEnd; hh++) used.add(`${terrain.id}|${dk}|${hh}`);
-          teamBusy.add(`${fx.home_team_id}|${dk}`);
-          teamBusy.add(`${fx.away_team_id}|${dk}`);
-          return {
-            ...fx,
-            scheduled_at: atHour(date, h),
-            venue_terrain_id: terrain.id,
-            venue: terrain.name,
-          };
-        }
-      }
+    if (found) {
+      for (const k of found.usageKeys) used.add(k);
+      teamBusy.add(teamBusyKey(fx.home_team_id, found.scheduled_at));
+      teamBusy.add(teamBusyKey(fx.away_team_id, found.scheduled_at));
+      return {
+        ...fx,
+        scheduled_at: found.scheduled_at,
+        venue_terrain_id: found.venue_terrain_id,
+        venue: found.venue,
+      };
     }
 
     // Dernier recours : capacité saturée sur la fenêtre → placement forcé 16h

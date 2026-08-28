@@ -1,5 +1,6 @@
-import { Controller, Get, Post, Param, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Param, Query, Body, UseGuards } from '@nestjs/common';
 import { CalendarService } from './calendar.service';
+import { BracketService } from './bracket.service';
 import { SupabaseAuthGuard } from '../auth/supabase-auth.guard';
 import { RolesGuard } from '../../common/access/roles.guard';
 import { Roles } from '../../common/access/roles.decorator';
@@ -7,7 +8,10 @@ import { Roles } from '../../common/access/roles.decorator';
 @UseGuards(SupabaseAuthGuard, RolesGuard)
 @Controller('leagues/:leagueId/calendar')
 export class CalendarController {
-  constructor(private readonly calendarService: CalendarService) {}
+  constructor(
+    private readonly calendarService: CalendarService,
+    private readonly bracketService: BracketService,
+  ) {}
 
   @Post('generate')
   @Roles('SUPER_ADMIN', 'ADMIN', 'OPERATEUR')
@@ -39,5 +43,22 @@ export class CalendarController {
     @Query('round') round?: string,
   ) {
     return this.calendarService.getCalendar(leagueId, round ? parseInt(round) : undefined);
+  }
+
+  /** Arbre du tournoi à élimination directe (tours + affiches). */
+  @Get('bracket')
+  getBracket(@Param('leagueId') leagueId: string) {
+    return this.bracketService.getBracket(leagueId);
+  }
+
+  /** Désigne manuellement le vainqueur d'une affiche nulle (tirs au but). */
+  @Post('bracket/nodes/:nodeId/winner')
+  @Roles('SUPER_ADMIN', 'ADMIN', 'OPERATEUR')
+  setBracketWinner(
+    @Param('leagueId') leagueId: string,
+    @Param('nodeId') nodeId: string,
+    @Body('team_id') teamId: string,
+  ) {
+    return this.bracketService.setWinnerManual(leagueId, nodeId, teamId);
   }
 }

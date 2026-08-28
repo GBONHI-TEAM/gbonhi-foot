@@ -474,6 +474,127 @@ export default function CalendriersPage() {
           )}
         </div>
       </div>
+
+      <BracketPanel leagueId={leagueId} />
     </>
   );
+}
+
+// ─── Tableau à élimination directe ──────────────────────────────────────────
+
+interface BracketTeamRef {
+  id: string;
+  name: string;
+  logo_url?: string | null;
+}
+interface BracketMatch {
+  id: string; // node id
+  slot: number;
+  match_id: string | null;
+  home: BracketTeamRef | null;
+  away: BracketTeamRef | null;
+  home_source: string | null;
+  away_source: string | null;
+  winner: BracketTeamRef | null;
+}
+interface BracketRound {
+  round_size: number;
+  round_name: string;
+  matches: BracketMatch[];
+}
+
+const ROUND_LABEL: Record<number, string> = {
+  2: 'Finale', 4: 'Demi-finales', 8: 'Quarts', 16: '8es de finale', 32: '16es', 64: '32es',
+};
+
+function BracketPanel({ leagueId }: { leagueId: string }) {
+  const [rounds, setRounds] = useState<BracketRound[]>([]);
+  const [busy, setBusy] = useState(false);
+
+  async function load() {
+    if (!leagueId) return;
+    try {
+      const data = await apiFetch<{ rounds: BracketRound[] }>(`/leagues/${leagueId}/calendar/bracket`);
+      setRounds(data?.rounds ?? []);
+    } catch {
+      setRounds([]);
+    }
+  }
+
+  useEffect(() => {
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [leagueId]);
+
+  async function setWinner(nodeId: string, teamId: string) {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await apiFetch(`/leagues/${leagueId}/calendar/bracket/nodes/${nodeId}/winner`, {
+        method: 'POST',
+        body: JSON.stringify({ team_id: teamId }),
+      });
+      await load();
+    } catch (e) {
+      alert('Action impossible. ' + (e instanceof Error ? e.message : ''));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (rounds.length === 0) return null;
+
+  const label = (rs: number) => ROUND_LABEL[rs] ?? `Tour de ${rs}`;
+  const teamCell = (t: BracketTeamRef | null, source: string | null, isWinner: boolean) => (
+    <div
+      className="flex items-center gap-2 px-2 py-1.5 rounded"
+      style={{ backgroundColor: isWinner ? '#DCFCE7' : 'transparent', fontWeight: isWinner ? 700 : 500 }}
+    >
+      <span className="text-sm text-gray-800 truncate">
+        {t ? t.name : <span className="text-gray-400 italic">{sourceLabel(source)}</span>}
+      </span>
+    </div>
+  );
+
+  return (
+    <div className="mt-6 bg-white rounded-2xl border border-gray-100 p-6">
+      <h2 className="font-bold text-gray-900 mb-4">Tableau du tournoi</h2>
+      <div className="flex gap-6 overflow-x-auto pb-2">
+        {rounds.map((r) => (
+          <div key={r.round_size} className="flex-shrink-0 w-64">
+            <div className="text-xs font-bold uppercase tracking-wide text-gray-500 mb-3">{label(r.round_size)}</div>
+            <div className="space-y-3">
+              {r.matches.map((m) => {
+                const needsWinner = !!m.match_id && !!m.home && !!m.away && !m.winner;
+                return (
+                  <div key={m.id} className="rounded-lg border border-gray-200 overflow-hidden">
+                    {teamCell(m.home, m.home_source, m.winner?.id === m.home?.id && !!m.winner)}
+                    <div className="h-px bg-gray-100" />
+                    {teamCell(m.away, m.away_source, m.winner?.id === m.away?.id && !!m.winner)}
+                    {needsWinner && (
+                      <div className="flex gap-1 p-1.5 bg-amber-50 border-t border-amber-100">
+                        <span className="text-[10px] text-amber-700 self-center mr-1">Égalité ? Vainqueur :</span>
+                        <button disabled={busy} onClick={() => setWinner(m.id, m.home!.id)}
+                          className="text-[11px] px-2 py-0.5 rounded bg-white border border-gray-200 hover:border-green-500">{m.home!.name}</button>
+                        <button disabled={busy} onClick={() => setWinner(m.id, m.away!.id)}
+                          className="text-[11px] px-2 py-0.5 rounded bg-white border border-gray-200 hover:border-green-500">{m.away!.name}</button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** "winner:8#0" / "seed:3" → libellé lisible pour un emplacement encore vide. */
+function sourceLabel(source: string | null): string {
+  if (!source) return 'À déterminer';
+  if (source.startsWith('seed:')) return `Tête de série ${source.slice(5)}`;
+  if (source.startsWith('winner:')) return 'Vainqueur qualifié';
+  return 'À déterminer';
 }

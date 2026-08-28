@@ -189,8 +189,37 @@ model Tournament {
   registration_payments LeagueRegistrationPayment[]
   player_participations LeaguePlayerRegistration[]
   matches               Match[]
+  bracket_nodes         BracketNode[]
 
   @@map("tournaments")
+}
+
+/**
+ * Squelette d'un tournoi à élimination directe. Un node = une affiche du
+ * tableau ; les équipes peuvent être inconnues (« vainqueur du match X »)
+ * tant que les tours précédents ne sont pas joués. Un vrai Match n'est créé
+ * que lorsque les deux équipes du node sont connues.
+ */
+model BracketNode {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tournament_id  String   @db.Uuid
+  round_name     String // "finale","demies","quarts","8es","16es","32es","petite_finale"
+  round_size     Int // nb d'équipes de ce tour (2 = finale, 4 = demies, …)
+  slot           Int // position 0-based dans le tour
+  home_team_id   String?  @db.Uuid
+  away_team_id   String?  @db.Uuid
+  home_source    String? // provenance avant qualif : "seed:1" | "winner:<nodeId>"
+  away_source    String?
+  winner_team_id String?  @db.Uuid
+  match_id       String?  @db.Uuid
+  next_node_id   String?  @db.Uuid
+  next_slot      Int? // 0 => alimente le slot domicile du node suivant, 1 => extérieur
+  created_at     DateTime @default(now()) @db.Timestamptz(6)
+
+  tournament Tournament @relation(fields: [tournament_id], references: [id], onDelete: Cascade)
+
+  @@unique([tournament_id, round_size, slot])
+  @@map("bracket_nodes")
 }
 
 model TournamentTeam {
