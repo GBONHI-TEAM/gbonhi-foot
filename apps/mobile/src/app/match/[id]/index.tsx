@@ -11,6 +11,8 @@ import {
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import { apiClient, matchShareLink } from '../../../lib/api';
 import { supabase } from '../../../lib/supabase';
+import { RemoteImage } from '../../../components/ui/remote-image';
+import { imageThumb } from '../../../lib/image';
 import { PatternedGreenHeader } from '../../../components/ui/patterned-green-header';
 import {
   type MatchDetail,
@@ -25,16 +27,20 @@ import {
   isUpcoming,
 } from '../../../types/match';
 
-/** Pastille couleur + initiales d'une équipe. */
-function TeamBadge({ name, color, size = 56 }: { name: string; color: string; size?: number }) {
+/** Pastille : logo de l'équipe si disponible, sinon couleur + initiales. */
+function TeamBadge({ name, color, size = 56, logo }: { name: string; color: string; size?: number; logo?: string | null }) {
   return (
     <View
-      className="items-center justify-center"
+      className="items-center justify-center overflow-hidden"
       style={{ width: size, height: size, borderRadius: size / 2, backgroundColor: color }}
     >
-      <Text className="text-white font-black" style={{ fontSize: size * 0.32 }}>
-        {teamInitials(name)}
-      </Text>
+      {logo ? (
+        <RemoteImage uri={imageThumb(logo, 160)} contentFit="cover" style={{ width: '100%', height: '100%' }} />
+      ) : (
+        <Text className="text-white font-black" style={{ fontSize: size * 0.32 }}>
+          {teamInitials(name)}
+        </Text>
+      )}
     </View>
   );
 }
@@ -301,7 +307,7 @@ export default function MatchDetailPage() {
         {/* Équipes + score */}
         <View className="flex-row items-center justify-between">
           <View className="flex-1 items-center">
-            <TeamBadge name={match.home_team.name} color={teamColor(match.home_team)} />
+            <TeamBadge name={match.home_team.name} color={teamColor(match.home_team)} logo={match.home_team.logo_url} />
             <Text className="text-white font-bold text-sm mt-2 text-center" numberOfLines={2}>
               {match.home_team.name}
             </Text>
@@ -323,7 +329,7 @@ export default function MatchDetailPage() {
           </View>
 
           <View className="flex-1 items-center">
-            <TeamBadge name={match.away_team.name} color={teamColor(match.away_team)} />
+            <TeamBadge name={match.away_team.name} color={teamColor(match.away_team)} logo={match.away_team.logo_url} />
             <Text className="text-white font-bold text-sm mt-2 text-center" numberOfLines={2}>
               {match.away_team.name}
             </Text>

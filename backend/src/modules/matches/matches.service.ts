@@ -114,6 +114,17 @@ export class MatchesService {
     return !!captain;
   }
 
+  /** L'utilisateur est-il LE capitaine de l'équipe (coach_id ou membre capitaine) ? (staff exclu) */
+  private async isTeamCaptain(teamId: string, user: UserPayload): Promise<boolean> {
+    const team = await this.prisma.team.findUnique({ where: { id: teamId }, select: { coach_id: true } });
+    if (team?.coach_id === user.id) return true;
+    const captain = await this.prisma.teamMember.findFirst({
+      where: { team_id: teamId, user_id: user.id, role: 'captain', status: 'active' },
+      select: { id: true },
+    });
+    return !!captain;
+  }
+
   /** Compositions des deux équipes d'un match (publiées, + brouillon du capitaine). */
   async getLineups(matchId: string, user: UserPayload) {
     const match = await this.prisma.match.findUnique({
@@ -130,7 +141,8 @@ export class MatchesService {
     const build = async (team: { id: string; name: string } | null) => {
       if (!team) return null;
       const row = match.lineups.find((l) => l.team_id === team.id) ?? null;
-      const editable = await this.canManageTeam(team.id, user);
+      // Seul LE capitaine de l'équipe peut publier/voir le brouillon (staff exclu).
+      const editable = await this.isTeamCaptain(team.id, user);
       const published = !!row?.published_at;
       // Visible : composition publiée, ou brouillon si l'utilisateur gère l'équipe.
       const lineup = row && (published || editable)
