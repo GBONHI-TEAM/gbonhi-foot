@@ -8,7 +8,7 @@ import {
   Animated,
   Share,
 } from 'react-native';
-import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
+import { useLocalSearchParams, useRouter, useFocusEffect, type Href } from 'expo-router';
 import { apiClient, matchShareLink } from '../../../lib/api';
 import { supabase } from '../../../lib/supabase';
 import { RemoteImage } from '../../../components/ui/remote-image';
@@ -46,7 +46,7 @@ function TeamBadge({ name, color, size = 56, logo }: { name: string; color: stri
   );
 }
 
-interface LineupPlayer { name: string; role: 'starter' | 'sub'; number: number | null; position: string | null; avatar_url?: string | null }
+interface LineupPlayer { name: string; role: 'starter' | 'sub'; number: number | null; position: string | null; avatar_url?: string | null; user_id?: string | null }
 
 /** Avatar rond d'un joueur de compo (photo ou initiales). */
 function PlayerAvatar({ name, avatar }: { name: string; avatar?: string | null }) {
@@ -64,11 +64,23 @@ interface LineupSide { team: { id: string; name: string }; editable: boolean; li
 interface LineupsResponse { kickoff: string; home: LineupSide | null; away: LineupSide | null }
 
 /** Carte de composition d'une équipe (formation + titulaires + remplaçants). */
-function LineupCard({ side, onEdit }: { side: LineupSide | null; onEdit: (teamId: string) => void }) {
+function LineupCard({ side, onEdit, onPlayerPress }: { side: LineupSide | null; onEdit: (teamId: string) => void; onPlayerPress: (userId: string) => void }) {
   if (!side) return null;
   const l = side.lineup;
   const starters = l?.players.filter((p) => p.role === 'starter') ?? [];
   const subs = l?.players.filter((p) => p.role === 'sub') ?? [];
+  const Row = ({ p, dim }: { p: LineupPlayer; dim?: boolean }) => (
+    <Pressable
+      onPress={() => p.user_id && onPlayerPress(p.user_id)}
+      disabled={!p.user_id}
+      className="flex-row items-center py-1 gap-2 active:opacity-70"
+    >
+      <Text className="text-white/40 text-xs" style={{ width: 20 }}>{p.number ?? '—'}</Text>
+      <PlayerAvatar name={p.name} avatar={p.avatar_url} />
+      <Text className={`${dim ? 'text-white/85' : 'text-white'} text-sm flex-1`}>{p.name}</Text>
+      {p.position ? <Text className="text-white/40 text-xs">{p.position}</Text> : null}
+    </Pressable>
+  );
   return (
     <View className="rounded-2xl p-4 mb-3" style={{ backgroundColor: 'rgba(255,255,255,0.05)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' }}>
       <View className="flex-row items-center justify-between mb-2">
@@ -85,23 +97,13 @@ function LineupCard({ side, onEdit }: { side: LineupSide | null; onEdit: (teamId
           ) : null}
           <Text className="text-white/50 text-xs font-bold uppercase mb-1.5">Titulaires</Text>
           {starters.length ? starters.map((p, i) => (
-            <View key={`s${i}`} className="flex-row items-center py-1 gap-2">
-              <Text className="text-white/40 text-xs" style={{ width: 20 }}>{p.number ?? '—'}</Text>
-              <PlayerAvatar name={p.name} avatar={p.avatar_url} />
-              <Text className="text-white text-sm flex-1">{p.name}</Text>
-              {p.position ? <Text className="text-white/40 text-xs">{p.position}</Text> : null}
-            </View>
+            <Row key={`s${i}`} p={p} />
           )) : <Text className="text-white/40 text-sm">—</Text>}
           {subs.length ? (
             <>
               <Text className="text-white/50 text-xs font-bold uppercase mb-1.5 mt-3">Remplaçants</Text>
               {subs.map((p, i) => (
-                <View key={`r${i}`} className="flex-row items-center py-1 gap-2">
-                  <Text className="text-white/40 text-xs" style={{ width: 20 }}>{p.number ?? '—'}</Text>
-                  <PlayerAvatar name={p.name} avatar={p.avatar_url} />
-                  <Text className="text-white/85 text-sm flex-1">{p.name}</Text>
-                  {p.position ? <Text className="text-white/40 text-xs">{p.position}</Text> : null}
-                </View>
+                <Row key={`r${i}`} p={p} dim />
               ))}
             </>
           ) : null}
@@ -428,8 +430,8 @@ export default function MatchDetailPage() {
 
         {/* Composition des équipes */}
         <Text className="text-white font-black text-lg mb-3 mt-8">Composition des équipes</Text>
-        <LineupCard side={lineups?.home ?? null} onEdit={(teamId) => router.push(`/match/${id}/lineup?team=${teamId}`)} />
-        <LineupCard side={lineups?.away ?? null} onEdit={(teamId) => router.push(`/match/${id}/lineup?team=${teamId}`)} />
+        <LineupCard side={lineups?.home ?? null} onEdit={(teamId) => router.push(`/match/${id}/lineup?team=${teamId}`)} onPlayerPress={(uid) => router.push(`/player/${uid}` as Href)} />
+        <LineupCard side={lineups?.away ?? null} onEdit={(teamId) => router.push(`/match/${id}/lineup?team=${teamId}`)} onPlayerPress={(uid) => router.push(`/player/${uid}` as Href)} />
       </ScrollView>
 
       {/* Bannière animée à chaque nouveau fait de jeu en direct */}

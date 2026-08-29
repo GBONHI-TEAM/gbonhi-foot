@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react';
 import { View, Text, Pressable, ScrollView, Image, ActivityIndicator, Share, Alert } from 'react-native';
-import { useRouter, useFocusEffect } from 'expo-router';
+import { useRouter, useFocusEffect, type Href } from 'expo-router';
 import { ScreenBackground } from '../../components/ui/screen-background';
 import { AppHeader } from '../../components/ui/app-header';
 import { copyToClipboard } from '../../lib/clipboard';
@@ -271,7 +271,12 @@ export default function MonEquipePage() {
         {/* Effectif */}
         <Text className="text-white font-bold text-sm mb-3">Effectif</Text>
         {members.map((m) => (
-          <View key={m.id} className="flex-row items-center gap-3 rounded-xl p-3 mb-2" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+          <Pressable
+            key={m.id}
+            onPress={() => m.user?.id && router.push(`/player/${m.user.id}` as Href)}
+            className="flex-row items-center gap-3 rounded-xl p-3 mb-2 active:opacity-80"
+            style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}
+          >
             <View className="w-10 h-10 rounded-full items-center justify-center overflow-hidden" style={{ backgroundColor: team.primary_color?.trim() || '#1E7A3A' }}>
               {m.user?.avatar_url ? (
                 <RemoteImage uri={imageThumb(m.user.avatar_url, 120)} contentFit="cover" style={{ width: '100%', height: '100%' }} />
@@ -297,7 +302,7 @@ export default function MonEquipePage() {
             <Text className="text-xs px-2.5 py-1 rounded-full" style={{ color: m.role === 'captain' ? '#FFB830' : 'rgba(255,255,255,0.6)', backgroundColor: m.role === 'captain' ? 'rgba(255,184,48,0.12)' : 'rgba(255,255,255,0.06)' }}>
               {roleLabel(m.role)}
             </Text>
-          </View>
+          </Pressable>
         ))}
       </ScrollView>
     </ScreenBackground>

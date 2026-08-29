@@ -83,6 +83,13 @@ export class UsersController {
     return this.usersService.getPlayerCard(id);
   }
 
+  /** Carte d'un joueur consultable in-app par tout utilisateur connecté
+   *  (coéquipier, adversaire…) — même contenu que la carte publique. */
+  @Get(':id/card')
+  card(@Param('id') id: string) {
+    return this.usersService.getPlayerCard(id);
+  }
+
   @Patch('me')
   @ApiOperation({ summary: 'Mettre à jour mon profil' })
   updateMe(@CurrentUser() user: UserPayload, @Body() dto: UpdateUserDto) {
