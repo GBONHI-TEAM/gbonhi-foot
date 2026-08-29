@@ -64,6 +64,18 @@ export class UsersController {
     return this.usersService.getSummary(user);
   }
 
+  /** Ma fiche joueur consolidée (identité + sportif + stats) pour l'app. */
+  @Get('me/player-card')
+  getMyPlayerCard(@CurrentUser() user: UserPayload) {
+    return this.usersService.getPlayerCard(user.id);
+  }
+
+  /** Active/désactive la visibilité publique de ma carte joueur. */
+  @Patch('me/player-visibility')
+  setPlayerVisibility(@CurrentUser() user: UserPayload, @Body('is_public') isPublic: boolean) {
+    return this.usersService.setPlayerVisibility(user.id, isPublic === true);
+  }
+
   /** Fiche joueur consolidée pour le BO : identité, profil sportif et statistiques. */
   @Get(':id/player-card')
   @Roles('SUPER_ADMIN', 'ADMIN', 'CONTROLEUR', 'SUPPORT', 'OPERATEUR')

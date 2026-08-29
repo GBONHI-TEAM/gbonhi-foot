@@ -59,6 +59,7 @@ import { AnalyticsModule } from './modules/analytics/analytics.module';
     AnalyticsModule,
   ],
   controllers: [AppController],
+  // (UsersModule est importé ci-dessus ; UsersService est injecté dans AppController)
   providers: [{ provide: APP_INTERCEPTOR, useClass: AuditLogInterceptor }],
 })
 export class AppModule {}

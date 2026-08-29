@@ -166,7 +166,7 @@ export class UsersService {
               include: { tournament: { select: { id: true, name: true, status: true } } },
             })
           : Promise.resolve([]),
-        this.prisma.matchEvent.count({ where: { player_id: user.id, type: 'BUT' } }),
+        this.prisma.matchEvent.count({ where: { player_id: user.id, type: { in: ['BUT', 'PENALTY'] } } }),
         this.prisma.matchEvent.count({ where: { player_id: user.id, type: 'PASSE' } }),
         teamIds.length
           ? this.prisma.match.count({
@@ -210,12 +210,21 @@ export class UsersService {
         position: true,
         city: true,
         bio: true,
+        player_public: true,
+        player_share_slug: true,
       },
     });
     if (!profile) throw new NotFoundException('Joueur introuvable');
 
+    // Club actuel (première équipe active) — affiché sur la carte.
+    const membership = await this.prisma.teamMember.findFirst({
+      where: { user_id: id, status: 'active' },
+      select: { team: { select: { id: true, name: true, logo_url: true, primary_color: true } } },
+      orderBy: { created_at: 'asc' },
+    });
+
     const [goals, assists, yellowCards, redCards, memberships] = await Promise.all([
-      this.prisma.matchEvent.count({ where: { player_id: id, type: 'BUT' } }),
+      this.prisma.matchEvent.count({ where: { player_id: id, type: { in: ['BUT', 'PENALTY'] } } }),
       this.prisma.matchEvent.count({ where: { player_id: id, type: 'PASSE' } }),
       this.prisma.matchEvent.count({ where: { player_id: id, type: 'CARTON_JAUNE' } }),
       this.prisma.matchEvent.count({ where: { player_id: id, type: 'CARTON_ROUGE' } }),
@@ -244,15 +253,62 @@ export class UsersService {
 
     return {
       ...profile,
+      current_team: membership?.team ?? null,
       player_profile: {
         birth_date: stringValue('birth_date'),
         height_cm: stringValue('height_cm'),
         weight_kg: stringValue('weight_kg'),
         preferred_foot: stringValue('preferred_foot'),
         secondary_position: stringValue('secondary_position'),
+        level: stringValue('level'),
       },
       statistics: { matches_played: matchesPlayed, goals, assists, yellow_cards: yellowCards, red_cards: redCards },
     };
+  }
+
+  /** Génère un slug unique pour la carte publique (base : username ou nom). */
+  private async generateUniqueSlug(base: string): Promise<string> {
+    const root = (base || 'joueur')
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')
+      .slice(0, 24) || 'joueur';
+    for (let i = 0; i < 12; i++) {
+      const suffix = Math.random().toString(36).slice(2, 6);
+      const slug = `${root}-${suffix}`;
+      const exists = await this.prisma.profile.findFirst({ where: { player_share_slug: slug }, select: { id: true } });
+      if (!exists) return slug;
+    }
+    return `joueur-${Date.now().toString(36)}`;
+  }
+
+  /** Active/désactive la visibilité publique de la fiche joueur et fournit le
+   *  lien de partage (généré à la première activation). */
+  async setPlayerVisibility(userId: string, isPublic: boolean) {
+    const profile = await this.prisma.profile.findUnique({
+      where: { id: userId },
+      select: { player_share_slug: true, username: true, full_name: true },
+    });
+    if (!profile) throw new NotFoundException('Profil introuvable');
+
+    let slug = profile.player_share_slug;
+    if (isPublic && !slug) {
+      slug = await this.generateUniqueSlug(profile.username || profile.full_name || 'joueur');
+    }
+    await this.prisma.profile.update({
+      where: { id: userId },
+      data: { player_public: isPublic, ...(slug ? { player_share_slug: slug } : {}) },
+    });
+    return { is_public: isPublic, slug, path: slug ? `/p/${slug}` : null };
+  }
+
+  /** Carte publique (lue via le slug de partage) — uniquement si publique. */
+  async getPublicPlayerCard(slug: string) {
+    const profile = await this.prisma.profile.findFirst({
+      where: { player_share_slug: slug, player_public: true },
+      select: { id: true },
+    });
+    if (!profile) throw new NotFoundException('Carte de joueur introuvable ou privée');
+    return this.getPlayerCard(profile.id);
   }
 
   async updateMe(user: UserPayload, dto: UpdateUserDto) {

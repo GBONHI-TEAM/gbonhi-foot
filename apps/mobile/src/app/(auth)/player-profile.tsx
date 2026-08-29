@@ -10,6 +10,8 @@ import {
   Platform,
   Alert,
   ActivityIndicator,
+  Switch,
+  Share,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { RemoteImage } from '../../components/ui/remote-image';
@@ -19,7 +21,7 @@ import { Button } from '../../components/ui/button';
 import { useAuthStore } from '../../store/auth.store';
 import { useUserModeStore } from '../../store/user-mode.store';
 import { supabase } from '../../lib/supabase';
-import { apiClient } from '../../lib/api';
+import { apiClient, PUBLIC_LINK_BASE } from '../../lib/api';
 
 // Décodage base64 → Uint8Array (upload fiable vers Supabase Storage en RN, sans dépendance).
 function base64ToBytes(base64: string): Uint8Array {
@@ -133,6 +135,64 @@ export default function PlayerProfileScreen() {
   const [niveau, setNiveau] = useState('');
   const [infos, setInfos] = useState('');
   const [loading, setLoading] = useState(false);
+
+  // Carte publique : stats calculées + visibilité + lien de partage.
+  const [stats, setStats] = useState<{ goals: number; assists: number; matches_played: number } | null>(null);
+  const [isPublic, setIsPublic] = useState(false);
+  const [shareSlug, setShareSlug] = useState<string | null>(null);
+  const [savingVisibility, setSavingVisibility] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const { data } = await apiClient.get<{
+          player_public?: boolean;
+          player_share_slug?: string | null;
+          statistics?: { goals: number; assists: number; matches_played: number };
+        }>('/api/v1/users/me/player-card');
+        if (data?.statistics) setStats(data.statistics);
+        setIsPublic(data?.player_public === true);
+        setShareSlug(data?.player_share_slug ?? null);
+      } catch {
+        /* la carte reste éditable même si les stats ne chargent pas */
+      }
+    })();
+  }, []);
+
+  async function togglePublic(next: boolean) {
+    if (savingVisibility) return;
+    setSavingVisibility(true);
+    setIsPublic(next); // optimiste
+    try {
+      const { data } = await apiClient.patch<{ is_public: boolean; slug: string | null }>(
+        '/api/v1/users/me/player-visibility',
+        { is_public: next },
+      );
+      setIsPublic(data.is_public);
+      if (data.slug) setShareSlug(data.slug);
+    } catch {
+      setIsPublic(!next); // rollback
+      Alert.alert('Action impossible', 'Réessaie dans un instant.');
+    } finally {
+      setSavingVisibility(false);
+    }
+  }
+
+  async function shareCard() {
+    if (!shareSlug) {
+      Alert.alert('Carte privée', 'Active « Carte publique » pour obtenir ton lien de partage.');
+      return;
+    }
+    const url = `${PUBLIC_LINK_BASE}/p/${shareSlug}`;
+    try {
+      await Share.share({
+        message: `Voici ma carte de joueur sur GBONHI FOOT : ${url}`,
+        url,
+      });
+    } catch {
+      /* partage annulé */
+    }
+  }
 
   // Pré-remplir la fiche depuis le compte connecté :
   //  - Prénom / Nom depuis full_name (saisi à l'inscription).
@@ -447,6 +507,50 @@ export default function PlayerProfileScreen() {
             numberOfLines={3}
             style={{ height: 80, textAlignVertical: 'top', paddingTop: 12 }}
           />
+        </View>
+
+        {/* Ma carte publique : stats calculées + visibilité + partage */}
+        <View className="mt-6 rounded-2xl p-4" style={{ backgroundColor: 'rgba(255,255,255,0.05)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' }}>
+          <Text className="text-white font-black text-base mb-3">Ma carte de joueur</Text>
+
+          <View className="flex-row gap-2 mb-4">
+            {[
+              { label: 'Buts', value: stats?.goals ?? 0 },
+              { label: 'Passes', value: stats?.assists ?? 0 },
+              { label: 'Matchs', value: stats?.matches_played ?? 0 },
+            ].map((s) => (
+              <View key={s.label} className="flex-1 items-center rounded-xl py-3" style={{ backgroundColor: 'rgba(0,0,0,0.25)' }}>
+                <Text className="font-black text-2xl" style={{ color: '#FFB830' }}>{s.value}</Text>
+                <Text className="text-xs" style={{ color: 'rgba(255,255,255,0.55)' }}>{s.label}</Text>
+              </View>
+            ))}
+          </View>
+
+          <View className="flex-row items-center justify-between py-2">
+            <View className="flex-1 pr-3">
+              <Text className="text-white font-semibold text-sm">Carte publique</Text>
+              <Text className="text-xs mt-0.5" style={{ color: 'rgba(255,255,255,0.5)' }}>
+                Rends ta carte visible via un lien à partager (capitaine, recruteur…).
+              </Text>
+            </View>
+            <Switch
+              value={isPublic}
+              onValueChange={togglePublic}
+              disabled={savingVisibility}
+              trackColor={{ false: 'rgba(255,255,255,0.2)', true: '#2E9E4F' }}
+              thumbColor="#FFFFFF"
+            />
+          </View>
+
+          <Pressable
+            onPress={shareCard}
+            disabled={!isPublic}
+            className="mt-3 h-12 rounded-xl items-center justify-center flex-row gap-2"
+            style={{ backgroundColor: isPublic ? '#1E7A3A' : 'rgba(255,255,255,0.08)' }}
+          >
+            <Text style={{ fontSize: 16 }}>🔗</Text>
+            <Text className="text-white font-bold">Partager ma carte</Text>
+          </Pressable>
         </View>
 
         <View className="mt-6">

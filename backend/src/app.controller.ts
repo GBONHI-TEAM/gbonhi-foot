@@ -2,12 +2,14 @@ import { Controller, Get, Header, Param, Query, Res } from '@nestjs/common';
 import { FastifyReply } from 'fastify';
 import { BRAND_LOGO_PNG_BASE64 } from './brand-logo';
 import { BRAND_MOTIF_PNG_BASE64 } from './brand-motif';
+import { UsersService } from './modules/users/users.service';
 
 /**
  * Routes racine (hors préfixe api/v1).
  */
 @Controller()
 export class AppController {
+  constructor(private readonly usersService: UsersService) {}
   /** Sonde hébergeur (Render envoie un HEAD / pour détecter le port). */
   @Get()
   root() {
@@ -67,8 +69,87 @@ export class AppController {
     );
   }
 
+  /** Carte joueur publique et partageable (lien HTTPS `/p/:slug`). */
+  @Get('p/:slug')
+  async playerCard(@Param('slug') rawSlug: string, @Res() reply: FastifyReply) {
+    const slug = (rawSlug ?? '').toLowerCase().replace(/[^a-z0-9-]/g, '').slice(0, 48);
+    try {
+      const card = await this.usersService.getPublicPlayerCard(slug);
+      return reply.type('text/html').send(this.playerCardPage(card));
+    } catch {
+      return reply
+        .code(404)
+        .type('text/html')
+        .send(
+          this.brandedPage({
+            title: 'Carte introuvable',
+            subtitle: 'Cette carte de joueur n’existe pas ou n’est pas publique.',
+            deepLink: 'gbonhi://home',
+          }),
+        );
+    }
+  }
+
+  /** Rendu HTML de la carte joueur (identité + sportif + statistiques). */
+  private playerCardPage(card: PlayerCard): string {
+    const name = escapeHtml(card.full_name ?? 'Joueur');
+    const pos = escapeHtml(card.position ?? card.player_profile?.secondary_position ?? '—');
+    const city = card.city ? escapeHtml(card.city) : '';
+    const club = card.current_team?.name ? escapeHtml(card.current_team.name) : null;
+    const pp: NonNullable<PlayerCard['player_profile']> = card.player_profile ?? {
+      birth_date: null, height_cm: null, weight_kg: null, preferred_foot: null, secondary_position: null, level: null,
+    };
+    const st = card.statistics ?? { matches_played: 0, goals: 0, assists: 0, yellow_cards: 0, red_cards: 0 };
+    const avatar = card.avatar_url ? escapeHtml(card.avatar_url) : '/brand/logo.png';
+
+    const attr = (label: string, value?: string | null) =>
+      value ? `<div class="attr"><span>${escapeHtml(label)}</span><b>${escapeHtml(String(value))}</b></div>` : '';
+    const foot = pp.preferred_foot === 'left' ? 'Gauche' : pp.preferred_foot === 'right' ? 'Droit' : pp.preferred_foot ?? null;
+
+    const extra = `
+      <div class="pcard">
+        <img class="pavatar" src="${avatar}" alt="${name}" />
+        <div class="pname">${name}</div>
+        <div class="pmeta">${[pos, club, city].filter(Boolean).join(' · ')}</div>
+        <div class="stats">
+          <div class="stat"><b>${st.goals}</b><span>Buts</span></div>
+          <div class="stat"><b>${st.assists}</b><span>Passes</span></div>
+          <div class="stat"><b>${st.matches_played}</b><span>Matchs</span></div>
+        </div>
+        <div class="attrs">
+          ${attr('Poste', card.position)}
+          ${attr('Poste secondaire', pp.secondary_position)}
+          ${attr('Pied fort', foot)}
+          ${attr('Niveau', pp.level)}
+          ${attr('Taille', pp.height_cm ? `${pp.height_cm} cm` : null)}
+          ${attr('Poids', pp.weight_kg ? `${pp.weight_kg} kg` : null)}
+        </div>
+      </div>`;
+
+    return this.brandedPage({
+      title: 'Carte de joueur',
+      subtitle: 'Découvre ce joueur sur GBONHI FOOT.',
+      deepLink: `gbonhi://player/${encodeURIComponent(card.id)}`,
+      extra,
+      extraCss: `
+        .pcard { width:100%; background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.12); border-radius:22px; padding:24px 20px; margin:8px 0 4px; }
+        .pavatar { width:96px; height:96px; border-radius:50%; object-fit:cover; border:3px solid var(--orange); background:#0F3D1E; }
+        .pname { font-size:22px; font-weight:800; margin-top:12px; }
+        .pmeta { color:rgba(255,255,255,.6); font-size:14px; margin-top:4px; }
+        .stats { display:flex; gap:10px; margin:18px 0 4px; }
+        .stat { flex:1; background:rgba(0,0,0,.25); border-radius:14px; padding:12px 6px; }
+        .stat b { display:block; font-size:24px; color:var(--gold); }
+        .stat span { font-size:12px; color:rgba(255,255,255,.55); }
+        .attrs { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:14px; text-align:left; }
+        .attr { background:rgba(0,0,0,.2); border-radius:12px; padding:10px 12px; }
+        .attr span { display:block; font-size:11px; color:rgba(255,255,255,.5); }
+        .attr b { font-size:15px; }
+      `,
+    });
+  }
+
   /** Page smart-link brandée + redirection store intelligente (iOS/Android). */
-  private brandedPage(opts: { title: string; subtitle: string; deepLink: string; extra?: string }): string {
+  private brandedPage(opts: { title: string; subtitle: string; deepLink: string; extra?: string; extraCss?: string }): string {
     const iosUrl = process.env.IOS_APP_STORE_URL?.trim() ?? '';
     const androidUrl = process.env.ANDROID_PLAY_STORE_URL?.trim() ?? '';
     const downloadUrl = process.env.MOBILE_APP_DOWNLOAD_URL?.trim() ?? '';
@@ -109,6 +190,7 @@ export class AppController {
   .btn.secondary { background:transparent; color:rgba(255,255,255,.85); border:1.5px solid rgba(255,255,255,.28); box-shadow:none; margin-top:14px; }
   .hint { margin-top:22px; font-size:13px; color:rgba(255,255,255,.45); }
   .foot { padding:22px; font-size:12px; color:rgba(255,255,255,.35); }
+  ${opts.extraCss ?? ''}
 </style>
 </head>
 <body>
@@ -153,6 +235,24 @@ export class AppController {
 </body>
 </html>`;
   }
+}
+
+interface PlayerCard {
+  id: string;
+  full_name: string | null;
+  avatar_url: string | null;
+  position: string | null;
+  city: string | null;
+  current_team: { id: string; name: string; logo_url: string | null; primary_color: string | null } | null;
+  player_profile: {
+    birth_date: string | null;
+    height_cm: string | null;
+    weight_kg: string | null;
+    preferred_foot: string | null;
+    secondary_position: string | null;
+    level: string | null;
+  } | null;
+  statistics: { matches_played: number; goals: number; assists: number; yellow_cards: number; red_cards: number } | null;
 }
 
 function escapeHtml(value: string): string {

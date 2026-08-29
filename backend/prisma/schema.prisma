@@ -18,6 +18,8 @@ model Profile {
   city       String?
   bio        String?
   fcm_token  String?
+  player_public     Boolean @default(false)
+  player_share_slug String? @unique
   created_at DateTime @default(now()) @db.Timestamptz(6)
   updated_at DateTime @default(now()) @db.Timestamptz(6)
 
