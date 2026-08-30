@@ -185,7 +185,7 @@ export default function MatchScreen() {
   useEffect(() => {
     if (!selectedLeagueId) return;
     const channel = supabase
-      .channel(`matchtab-${selectedLeagueId}`)
+      .channel(`matchtab-${selectedLeagueId}-${Math.random().toString(36).slice(2)}`)
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'matches', filter: `tournament_id=eq.${selectedLeagueId}` },

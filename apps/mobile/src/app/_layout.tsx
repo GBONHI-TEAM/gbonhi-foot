@@ -14,6 +14,7 @@ import { registerForPushNotifications } from '../lib/push';
 import { handleOAuthDeepLink } from '../lib/auth-google';
 import { routeFromGbonhiLink } from '../lib/deep-link';
 import { KeyboardDoneBar } from '../components/ui/keyboard-done-bar';
+import { AppErrorBoundary } from '../components/ui/error-boundary';
 import {
   getPendingDeepRoute,
   setPendingDeepRoute as persistDeepRoute,
@@ -208,7 +209,9 @@ export default function RootLayout() {
       <SafeAreaProvider>
         <QueryClientProvider client={queryClient}>
           <AuthGate />
-          <Stack screenOptions={{ headerShown: false }} />
+          <AppErrorBoundary>
+            <Stack screenOptions={{ headerShown: false }} />
+          </AppErrorBoundary>
           {/* Barre « Terminé » globale au-dessus du clavier (iOS) */}
           <KeyboardDoneBar />
         </QueryClientProvider>

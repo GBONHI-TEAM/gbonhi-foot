@@ -250,7 +250,7 @@ export default function MatchDetailPage() {
   useEffect(() => {
     if (!id) return;
     const channel = supabase
-      .channel(`match-${id}`)
+      .channel(`match-${id}-${Math.random().toString(36).slice(2)}`)
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'matches', filter: `id=eq.${id}` },

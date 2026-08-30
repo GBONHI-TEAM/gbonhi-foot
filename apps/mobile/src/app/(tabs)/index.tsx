@@ -497,15 +497,18 @@ export default function HomeScreen() {
   // Temps réel : au coup d'envoi / fin d'un match, l'accueil se met à jour
   // automatiquement (Matchs du jour, EN DIRECT) sans rechargement manuel.
   useEffect(() => {
+    // Nom de canal UNIQUE par montage : évite tout conflit Supabase realtime
+    // lorsque l'accueil est remonté (ex. après « changer de mode »), un ancien
+    // canal au même nom pouvant ne pas être encore détruit.
     const channel = supabase
-      .channel('home-matches')
+      .channel(`home-matches-${Math.random().toString(36).slice(2)}`)
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'matches' },
         () => { void load(true); },
       )
       .subscribe();
-    return () => { supabase.removeChannel(channel); };
+    return () => { void supabase.removeChannel(channel); };
   }, [load]);
 
   return (
