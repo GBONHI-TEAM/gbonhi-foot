@@ -1,5 +1,5 @@
 import '../../global.css';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Stack, useRouter, useSegments, useRootNavigationState, type Href } from 'expo-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -37,6 +37,10 @@ function AuthGate() {
   const router = useRouter();
   const [pendingDeepRoute, setPendingDeepRoute] = useState<string | null>(null);
   const [pendingOtp, setPendingOtp] = useState<PendingOtp | null>(null);
+  // Dernier utilisateur connu : sert à distinguer une VRAIE nouvelle connexion
+  // d'une simple ré-émission de `SIGNED_IN` (refresh de token, retour au premier
+  // plan…) qui ne doit PAS réinitialiser le mode ni éjecter vers la sélection.
+  const prevUserId = useRef<string | null | undefined>(undefined);
   // Clé présente uniquement quand le navigateur racine est monté.
   const navState = useRootNavigationState();
 
@@ -63,6 +67,7 @@ function AuthGate() {
     supabase.auth.getSession()
       .then(({ data }) => {
         if (!mounted) return;
+        prevUserId.current = data.session?.user?.id ?? null;
         setApiAuthSession(data.session);
         setSession(data.session);
         if (data.session) registerForPushNotifications();
@@ -79,13 +84,17 @@ function AuthGate() {
       });
 
     const { data: listener } = supabase.auth.onAuthStateChange((event, newSession) => {
+      const newUid = newSession?.user?.id ?? null;
       setApiAuthSession(newSession);
       setSession(newSession);
-      // Après une connexion RÉELLE (pas un simple relancement d'app), on repasse
-      // par la Sélection de mode → on efface le mode persistant.
-      if (event === 'SIGNED_IN') {
+      // `SIGNED_IN` est ré-émis par Supabase au refresh de token et au retour au
+      // premier plan, pas seulement à la connexion. On ne réinitialise le mode
+      // (→ écran Sélection de mode) que lors d'un CHANGEMENT réel d'utilisateur,
+      // sinon l'utilisateur est éjecté de l'accueil en pleine navigation.
+      if (event === 'SIGNED_IN' && prevUserId.current !== undefined && prevUserId.current !== newUid) {
         useUserModeStore.getState().clearMode();
       }
+      prevUserId.current = newUid;
       // Enregistrer le token push dès qu'une session est active (best-effort).
       if (newSession) registerForPushNotifications();
     });
