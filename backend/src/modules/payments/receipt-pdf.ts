@@ -31,7 +31,7 @@ interface PartnerRevenueStatementPdfInput {
   lines: Array<{ date: string; terrain: string; amount: string }>;
 }
 
-const LOGO = { data: Buffer.from(RECEIPT_LOGO_JPEG_BASE64, 'base64'), width: 150, height: 150 };
+const LOGO = { data: Buffer.from(RECEIPT_LOGO_JPEG_BASE64, 'base64'), width: 320, height: 320 };
 const HEADER_MOTIF = { data: Buffer.from(RECEIPT_HEADER_MOTIF_JPEG_BASE64, 'base64'), width: 1190, height: 194 };
 // Bandeau vert de l'en-tête (haut de page A4) : y 745, hauteur 97, largeur 595.
 const HEADER_BAND = 'q 595 0 0 97 0 745 cm /Im1 Do Q';
