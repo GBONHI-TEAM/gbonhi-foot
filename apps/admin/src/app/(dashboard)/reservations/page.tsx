@@ -33,11 +33,12 @@ function statusMeta(s: string | null) {
   return STATUS_META[(s ?? '').toUpperCase()] ?? { label: s ?? '—', bg: '#F3F4F6', color: '#6B7280' };
 }
 
+// NB : les statuts sont stockés en minuscules en base (confirmed/pending/cancelled/completed).
 const STATUS_FILTERS = [
   { label: 'Toutes', value: '' },
-  { label: 'Confirmées', value: 'CONFIRMED' },
-  { label: 'En attente', value: 'PENDING' },
-  { label: 'Annulées', value: 'CANCELLED' },
+  { label: 'Confirmées', value: 'confirmed' },
+  { label: 'En attente', value: 'pending' },
+  { label: 'Annulées', value: 'cancelled' },
 ];
 
 function fmtFcfa(v: number | null) {

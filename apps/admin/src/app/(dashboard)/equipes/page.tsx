@@ -27,6 +27,7 @@ interface Team {
   league: string;
   status: TeamStatus;
   color: string;
+  logo: string | null;
   members: TeamPlayer[];
 }
 
@@ -35,6 +36,7 @@ interface ApiTeam {
   name: string;
   status: string;
   primary_color?: string | null;
+  logo_url?: string | null;
   city?: string | null;
   invitation_code?: string | null;
   _count?: { members: number };
@@ -69,8 +71,26 @@ function mapTeam(t: ApiTeam): Team {
     league: t.home_terrain?.name ?? '—',
     status: (t.status ?? '').toLowerCase() === 'suspended' ? 'SUSPENDU' : 'ACTIF',
     color: t.primary_color?.trim() ? t.primary_color : '#1E7A3A',
+    logo: t.logo_url?.trim() ? t.logo_url : null,
     members: [],
   };
+}
+
+/** Pastille d'équipe : logo si présent, sinon abréviation sur fond couleur. */
+function TeamBadge({ team, size, rounded = 'rounded-xl' }: { team: Team; size: number; rounded?: string }) {
+  return (
+    <div
+      className={`${rounded} flex items-center justify-center font-black text-white flex-shrink-0 overflow-hidden`}
+      style={{ width: size, height: size, backgroundColor: team.color, fontSize: size * 0.32 }}
+    >
+      {team.logo ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={team.logo} alt={team.name} className="w-full h-full object-cover" />
+      ) : (
+        team.abbr
+      )}
+    </div>
+  );
 }
 
 const TAB_FILTERS = ['Toutes', 'En ligue', 'Sans ligue', 'Suspendues'];
@@ -82,10 +102,11 @@ const MENU_ACTIONS: { label: string; tab: string; color: string }[] = [
   { label: 'Voir le calendrier', tab: 'Calendrier', color: '#111827' },
 ];
 
+interface ApiTeamRefFull { id: string; name: string; logo_url?: string | null; primary_color?: string | null }
 interface ApiMatchFull {
   id: string;
-  home_team: { id: string; name: string } | null;
-  away_team: { id: string; name: string } | null;
+  home_team: ApiTeamRefFull | null;
+  away_team: ApiTeamRefFull | null;
   home_score: number;
   away_score: number;
   status: string;
@@ -97,11 +118,30 @@ interface DrawerMatch {
   id: string;
   date: string;
   opponent: string;
+  oppLogo: string | null;
+  oppColor: string;
   home: boolean;
   status: string;
   teamScore: number;
   oppScore: number;
   venue?: string | null;
+}
+
+/** Petite pastille adversaire (logo ou initiales). */
+function OppBadge({ name, logo, color, size = 24 }: { name: string; logo: string | null; color: string; size?: number }) {
+  return (
+    <span
+      className="rounded-full flex items-center justify-center text-white font-black flex-shrink-0 overflow-hidden"
+      style={{ width: size, height: size, backgroundColor: color, fontSize: size * 0.4 }}
+    >
+      {logo ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={logo} alt={name} className="w-full h-full object-cover" />
+      ) : (
+        name.slice(0, 2).toUpperCase()
+      )}
+    </span>
+  );
 }
 
 const FINISHED = ['TERMINÉ', 'VALIDÉ'];
@@ -173,6 +213,8 @@ function TeamDrawer({
               id: m.id,
               date: m.scheduled_at,
               opponent: opp?.name ?? '—',
+              oppLogo: opp?.logo_url?.trim() ? opp.logo_url : null,
+              oppColor: opp?.primary_color?.trim() ? opp.primary_color : '#6B7280',
               home,
               status: m.status,
               teamScore: home ? m.home_score : m.away_score,
@@ -210,9 +252,7 @@ function TeamDrawer({
   return (
     <div className="fixed inset-y-0 right-0 w-96 bg-white shadow-2xl z-40 flex flex-col overflow-hidden">
       <div className="flex items-center gap-3 px-5 py-4" style={{ backgroundColor: '#1E7A3A' }}>
-        <div className="w-12 h-12 rounded-xl flex items-center justify-center font-black text-white text-sm flex-shrink-0" style={{ backgroundColor: team.color }}>
-          {team.abbr}
-        </div>
+        <TeamBadge team={team} size={48} />
         <div className="flex-1 min-w-0">
           <p className="font-black text-white text-base truncate">{team.name}</p>
           <p className="text-white/70 text-xs truncate">Capitaine · {team.captain}</p>
@@ -286,6 +326,7 @@ function TeamDrawer({
                   return (
                     <li key={m.id} className="flex items-center gap-3 rounded-lg border border-gray-100 px-3 py-2.5">
                       <span className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-black text-white flex-shrink-0" style={{ backgroundColor: color }}>{letter}</span>
+                      <OppBadge name={m.opponent} logo={m.oppLogo} color={m.oppColor} />
                       <div className="min-w-0 flex-1">
                         <p className="text-sm font-medium text-gray-900 truncate">{m.home ? 'vs' : '@'} {m.opponent}</p>
                         <p className="text-xs text-gray-400">{fmtDate(m.date)}</p>
@@ -313,6 +354,7 @@ function TeamDrawer({
                       <span className="text-sm font-black text-gray-900">{new Date(m.date).getDate()}</span>
                       <span className="text-[10px] text-gray-400 uppercase">{new Date(m.date).toLocaleDateString('fr-FR', { month: 'short' })}</span>
                     </div>
+                    <OppBadge name={m.opponent} logo={m.oppLogo} color={m.oppColor} />
                     <div className="min-w-0 flex-1">
                       <p className="text-sm font-medium text-gray-900 truncate">{m.home ? 'vs' : '@'} {m.opponent}</p>
                       <p className="text-xs text-gray-400">{fmtTime(m.date)}{m.venue ? ` · ${m.venue}` : ''} · {m.home ? 'Domicile' : 'Extérieur'}</p>
@@ -462,9 +504,7 @@ export default function EquipesPage() {
               <tr key={team.id} className="hover:bg-gray-50 transition">
                 <td className="px-5 py-4">
                   <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-xl flex items-center justify-center text-white text-[11px] font-black flex-shrink-0" style={{ backgroundColor: team.color }}>
-                      {team.abbr}
-                    </div>
+                    <TeamBadge team={team} size={36} />
                     <div className="min-w-0">
                       <span className="font-semibold text-gray-900 block">{team.name}</span>
                       <span className="text-xs text-gray-400">{team.city}</span>
