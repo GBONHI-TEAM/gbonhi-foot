@@ -22,9 +22,9 @@ export class AnalyticsController {
 
   @Get('user-journeys')
   @Roles('SUPER_ADMIN', 'ADMIN')
-  userJourneys(@Query('limit') limit?: string) {
+  userJourneys(@Query('limit') limit?: string, @Query('from') from?: string, @Query('to') to?: string) {
     const parsed = Number.parseInt(limit ?? '100', 10);
-    return this.analytics.journeyOverview(Number.isFinite(parsed) ? parsed : 100);
+    return this.analytics.journeyOverview(Number.isFinite(parsed) ? parsed : 100, from, to);
   }
 
   @Get('operations-overview')

@@ -14,8 +14,18 @@ export class AnalyticsService {
     });
   }
 
-  async journeyOverview(limit = 100) {
+  async journeyOverview(limit = 100, from?: string, to?: string) {
+    // Fenêtre de période optionnelle : scope les sessions (événements) et le
+    // funnel (comptes créés) pour que les filtres KPI Jour/Semaine/Mois/Période
+    // agissent réellement sur les chiffres.
+    const start = from ? new Date(`${from}T00:00:00.000Z`) : null;
+    const end = to ? new Date(`${to}T23:59:59.999Z`) : null;
+    const dateFilter = start || end
+      ? { ...(start ? { gte: start } : {}), ...(end ? { lte: end } : {}) }
+      : undefined;
+
     const users = await this.prisma.profile.findMany({
+      where: dateFilter ? { created_at: dateFilter } : undefined,
       select: {
         id: true, full_name: true, username: true, role: true, position: true, created_at: true,
         team_members: { where: { status: 'active' }, select: { id: true } },
@@ -26,7 +36,11 @@ export class AnalyticsService {
       orderBy: { created_at: 'desc' },
       take: Math.min(Math.max(limit, 1), 250),
     });
-    const eventCounts = await this.prisma.userActivityEvent.groupBy({ by: ['type', 'mode'], _count: { _all: true } });
+    const eventCounts = await this.prisma.userActivityEvent.groupBy({
+      by: ['type', 'mode'],
+      _count: { _all: true },
+      ...(dateFilter ? { where: { occurred_at: dateFilter } } : {}),
+    });
     const count = (type: string, mode?: string) => eventCounts.filter((event) => event.type === type && (!mode || event.mode === mode)).reduce((sum, event) => sum + event._count._all, 0);
 
     const journeys = users.map((user) => ({
