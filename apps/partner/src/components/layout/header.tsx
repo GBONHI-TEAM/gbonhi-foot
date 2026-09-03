@@ -1,9 +1,10 @@
 'use client';
-import { Bell, MapPin, ChevronDown } from 'lucide-react';
+import { MapPin, ChevronDown } from 'lucide-react';
 import { useCurrentUser } from '../../lib/use-user';
 import { displayName, initials } from '../../lib/domain';
 import { GlobalPeriodFilter } from '../ui/global-period-filter';
 import { useTerrain } from '../../lib/terrain-context';
+import { NotificationsBell } from './notifications-bell';
 
 /** Sélecteur du terrain courant : visible seulement si le proprio a 2+ terrains. */
 function TerrainSwitcher() {
@@ -57,10 +58,7 @@ export function Header({ title, subtitle }: HeaderProps) {
         <div className="flex items-center gap-4">
           <TerrainSwitcher />
           <GlobalPeriodFilter />
-          <button className="relative p-1.5 text-gray-400 hover:text-gray-700 transition-colors">
-            <Bell size={18} />
-            <span className="absolute top-1 right-1.5 w-1.5 h-1.5 rounded-full" style={{ backgroundColor: '#F7921E' }} />
-          </button>
+          <NotificationsBell />
           <div
             className="w-8 h-8 rounded-full flex items-center justify-center text-[11px] font-bold text-white"
             style={{ backgroundColor: '#1A3D2B' }}

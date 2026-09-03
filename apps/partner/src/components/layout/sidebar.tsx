@@ -11,6 +11,7 @@ import {
   Wallet,
   LifeBuoy,
   Users,
+  Bell,
   LogOut,
 } from 'lucide-react';
 import { createSupabaseBrowserClient } from '../../lib/supabase/client';
@@ -27,6 +28,7 @@ const NAV_ITEMS = [
   { label: 'Mon terrain', icon: MapPin, href: '/mon-terrain' },
   { label: 'Créneaux', icon: CalendarDays, href: '/creneaux' },
   { label: 'Réservations', icon: ClipboardList, href: '/reservations' },
+  { label: 'Notifications', icon: Bell, href: '/notifications' },
   { label: 'Live', icon: Radio, href: '/live', live: true },
   { label: 'Avis', icon: Star, href: '/avis' },
   { label: 'Revenus', icon: Wallet, href: '/revenus', ownerOnly: true },

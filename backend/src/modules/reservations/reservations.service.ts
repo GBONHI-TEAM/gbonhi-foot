@@ -330,6 +330,21 @@ export class ReservationsService {
     } catch {
       // Une réservation ne dépend jamais de la disponibilité du KPI.
     }
+    // Notifie le propriétaire du terrain (espace notifications partenaire).
+    try {
+      if (terrain.partner_id) {
+        const slot = `${dto.start_hour}h - ${dto.end_hour}h`;
+        const day = reservationDate.toLocaleDateString('fr-FR');
+        await this.notifications.notify(terrain.partner_id, {
+          type: 'reservation_received',
+          title: 'Nouvelle réservation',
+          body: `${terrain.name} — ${day} · ${slot} — ${total.toLocaleString('fr-FR')} FCFA`,
+          data: { reservation_id: reservation.id, terrain_id: terrain.id },
+        });
+      }
+    } catch {
+      // Notification best-effort : n'affecte jamais la réservation.
+    }
     return reservation;
   }
 
