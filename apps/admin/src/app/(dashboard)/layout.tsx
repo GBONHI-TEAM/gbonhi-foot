@@ -3,6 +3,7 @@ import { createSupabaseServerClient } from '../../lib/supabase/server';
 import { Sidebar } from '../../components/layout/sidebar';
 import { isAdminRole, normalizeAdminRole, type AdminRole } from '../../lib/admin-access';
 import { PeriodRefreshBoundary } from '../../components/layout/period-refresh-boundary';
+import { ReservationAlerts } from '../../components/alerts/reservation-alerts';
 
 /** Bandeau décoratif or/orange en dents de scie — motifs ivoiriens officiels GBONHI FOOT. */
 function GoldSawtooth() {
@@ -51,6 +52,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
       <div className="ml-60" style={{ paddingTop: '72px' }}>
         <main className="p-8"><PeriodRefreshBoundary>{children}</PeriodRefreshBoundary></main>
       </div>
+      <ReservationAlerts />
     </div>
   );
 }
