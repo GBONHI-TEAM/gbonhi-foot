@@ -87,6 +87,22 @@ export class PaymentsService {
       return createdPayment;
     });
 
+    // Suivi « État de paiement » : met à jour l'intent créé à la réservation
+    // (validé pour espèces, en attente sinon) ; le crée s'il n'existe pas.
+    try {
+      const updated = await this.prisma.paymentIntent.updateMany({
+        where: { reference: reservation.id },
+        data: { status: isCash ? 'validated' : 'pending', payment_method: method, amount: reservation.total_price, updated_at: new Date() },
+      });
+      if (updated.count === 0) {
+        await this.prisma.paymentIntent.create({
+          data: { user_id: user.id, mode: 'reservation', amount: reservation.total_price, payment_method: method, reference: reservation.id, status: isCash ? 'validated' : 'pending' },
+        });
+      }
+    } catch {
+      // Traçage best-effort.
+    }
+
     return {
       reservation_id: reservation.id,
       payment_id: payment.id,
@@ -243,6 +259,23 @@ export class PaymentsService {
         body: `${result.teamName} est inscrite à ${result.leagueName}.`,
         data: { league_id: leagueId, team_id: result.teamId },
       });
+
+      // Traçage « État de paiement » (mode ligue).
+      try {
+        await this.prisma.paymentIntent.create({
+          data: {
+            user_id: user.id,
+            mode: 'leagues',
+            amount: result.payment.amount,
+            payment_method: method,
+            context: `${result.leagueName} — ${result.teamName}`,
+            reference: result.registration.id,
+            status: isCash ? 'validated' : 'pending',
+          },
+        });
+      } catch {
+        // Traçage best-effort.
+      }
 
       return {
         registration_id: result.registration.id,

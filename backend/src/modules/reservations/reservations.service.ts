@@ -345,6 +345,22 @@ export class ReservationsService {
     } catch {
       // Notification best-effort : n'affecte jamais la réservation.
     }
+    // Traçage « État de paiement » (admin) : intent créé côté serveur, sans
+    // dépendre du build mobile. Mis à jour au paiement (validé / en attente).
+    try {
+      await this.prisma.paymentIntent.create({
+        data: {
+          user_id: user.id,
+          mode: 'reservation',
+          amount: total,
+          context: terrain.name,
+          reference: reservation.id,
+          status: 'opened',
+        },
+      });
+    } catch {
+      // Traçage best-effort.
+    }
     return reservation;
   }
 

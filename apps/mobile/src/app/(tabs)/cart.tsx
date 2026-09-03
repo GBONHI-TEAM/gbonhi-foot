@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Image, Pressable, RefreshControl, ScrollView, Text, View, type ImageSourcePropType } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { AppHeader } from '../../components/ui/app-header';
@@ -52,9 +52,6 @@ export default function ReservationCartScreen() {
   const [now, setNow] = useState(Date.now());
   const [methods, setMethods] = useState<{ code: string; label: string }[]>([]);
   const [selectedMethod, setSelectedMethod] = useState('cash');
-  // Suivi « État de paiement » : trace l'arrivée sur l'écran de paiement.
-  const intentIdRef = useRef<string | null>(null);
-  const intentOpenedRef = useRef(false);
 
   const loadCart = useCallback(async () => {
     try {
@@ -95,16 +92,6 @@ export default function ReservationCartScreen() {
     return () => clearInterval(timer);
   }, [pendingReservations.length]);
 
-  // Trace l'ouverture de l'écran de paiement (une fois, dès qu'il y a un panier).
-  useEffect(() => {
-    if (intentOpenedRef.current || pendingReservations.length === 0) return;
-    intentOpenedRef.current = true;
-    const amount = pendingReservations.reduce((sum, r) => sum + (r.total_price ?? 0), 0);
-    apiClient
-      .post<{ id: string }>('/api/v1/payments/intents', { mode: 'reservation', amount, payment_method: selectedMethod })
-      .then(({ data }) => { intentIdRef.current = data?.id ?? null; })
-      .catch(() => { /* traçage best-effort */ });
-  }, [pendingReservations, selectedMethod]);
 
   const isExpired = useCallback(
     (r: PendingReservationCart) => new Date(r.created_at).getTime() + HOLD_DURATION_MS <= now,
@@ -169,15 +156,6 @@ export default function ReservationCartScreen() {
         { payment_method: selectedMethod },
       );
       removePendingReservation(reservation.id);
-      // Maj du suivi de paiement : validé (espèces = confirmé) ou en attente.
-      if (intentIdRef.current) {
-        apiClient.patch(`/api/v1/payments/intents/${intentIdRef.current}`, {
-          status: data.cash ? 'validated' : 'pending',
-          payment_method: data.payment_method,
-          amount: reservation.total_price,
-          reference: data.reservation_id,
-        }).catch(() => { /* best-effort */ });
-      }
       router.replace({
         pathname: '/terrain/[id]/confirmation',
         params: {
