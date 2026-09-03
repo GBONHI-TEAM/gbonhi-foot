@@ -352,4 +352,48 @@ export class PaymentsService {
     const hour = Math.floor(value);
     return `${String(hour).padStart(2, '0')}:${String(Math.round((value - hour) * 60)).padStart(2, '0')}`;
   }
+
+  // ─── Suivi des tentatives de paiement (« État de paiement » admin) ──────────
+
+  /** Créé quand l'utilisateur ouvre l'écran de paiement (statut 'opened'). */
+  openIntent(user: UserPayload, dto: { mode?: string; amount?: number; payment_method?: string; context?: string }) {
+    return this.prisma.paymentIntent.create({
+      data: {
+        user_id: user.id,
+        mode: dto.mode === 'leagues' ? 'leagues' : 'reservation',
+        amount: dto.amount ?? null,
+        payment_method: dto.payment_method ?? null,
+        context: dto.context ?? null,
+        status: 'opened',
+      },
+    });
+  }
+
+  /** Met à jour le suivi au fil des actions (méthode choisie, statut…). */
+  async updateIntent(id: string, user: UserPayload, dto: { status?: string; amount?: number; payment_method?: string; reference?: string; context?: string }) {
+    const intent = await this.prisma.paymentIntent.findFirst({ where: { id, user_id: user.id }, select: { id: true } });
+    if (!intent) throw new NotFoundException('Suivi de paiement introuvable');
+    const status = dto.status && ['opened', 'pending', 'validated', 'cancelled'].includes(dto.status) ? dto.status : undefined;
+    return this.prisma.paymentIntent.update({
+      where: { id },
+      data: {
+        ...(status ? { status } : {}),
+        ...(dto.amount != null ? { amount: dto.amount } : {}),
+        ...(dto.payment_method ? { payment_method: dto.payment_method } : {}),
+        ...(dto.reference ? { reference: dto.reference } : {}),
+        ...(dto.context ? { context: dto.context } : {}),
+        updated_at: new Date(),
+      },
+    });
+  }
+
+  /** Liste admin des suivis de paiement (nom, mode, montant, statut, méthode). */
+  listIntents(query: { status?: string }) {
+    return this.prisma.paymentIntent.findMany({
+      where: { ...(query.status ? { status: query.status } : {}) },
+      include: { user: { select: { id: true, full_name: true, username: true, avatar_url: true } } },
+      orderBy: { updated_at: 'desc' },
+      take: 300,
+    });
+  }
 }

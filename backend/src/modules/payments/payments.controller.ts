@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Header, Param, Patch, Post, StreamableFile, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Header, Param, Patch, Post, Query, StreamableFile, UseGuards } from '@nestjs/common';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { SupabaseAuthGuard } from '../auth/supabase-auth.guard';
 import { RolesGuard } from '../../common/access/roles.guard';
@@ -17,6 +17,26 @@ export class PaymentsController {
   @Post('reservations/checkout')
   checkoutReservation(@Body() dto: CreateReservationCheckoutDto, @CurrentUser() user: UserPayload) {
     return this.payments.checkoutReservation(dto, user);
+  }
+
+  // ── Suivi des tentatives de paiement (État de paiement admin) ──
+  @UseGuards(SupabaseAuthGuard)
+  @Post('intents')
+  openIntent(@Body() dto: { mode?: string; amount?: number; payment_method?: string; context?: string }, @CurrentUser() user: UserPayload) {
+    return this.payments.openIntent(user, dto);
+  }
+
+  @UseGuards(SupabaseAuthGuard)
+  @Patch('intents/:id')
+  updateIntent(@Param('id') id: string, @Body() dto: { status?: string; amount?: number; payment_method?: string; reference?: string; context?: string }, @CurrentUser() user: UserPayload) {
+    return this.payments.updateIntent(id, user, dto);
+  }
+
+  @UseGuards(SupabaseAuthGuard, RolesGuard)
+  @Roles('SUPER_ADMIN', 'ADMIN', 'SUPPORT')
+  @Get('intents')
+  listIntents(@Query('status') status?: string) {
+    return this.payments.listIntents({ status });
   }
 
   @UseGuards(SupabaseAuthGuard)

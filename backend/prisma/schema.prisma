@@ -43,8 +43,32 @@ model Profile {
   partner_memberships          PartnerAccess[]             @relation("PartnerMemberRelation")
   partner_accesses             PartnerAccess[]             @relation("PartnerOwnerRelation")
   activity_events              UserActivityEvent[]         @relation("ActivityEventUserRelation")
+  payment_intents              PaymentIntent[]
 
   @@map("profiles")
+}
+
+/**
+ * Traçage des tentatives de paiement : créé dès que l'utilisateur ouvre l'écran
+ * de paiement dans l'app (statut 'opened'), puis mis à jour au fil des actions
+ * ('pending' → en attente de validation, 'validated', 'cancelled'). Sert au
+ * suivi admin « État de paiement » pour investiguer les soucis de moyens de paiement.
+ */
+model PaymentIntent {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id        String   @db.Uuid
+  mode           String   @default("reservation") // 'reservation' | 'leagues'
+  context        String? // ex : nom du terrain / de la ligue
+  amount         Int?
+  payment_method String?
+  status         String   @default("opened") // opened | pending | validated | cancelled
+  reference      String? // id réservation / paiement lié
+  created_at     DateTime @default(now()) @db.Timestamptz(6)
+  updated_at     DateTime @default(now()) @db.Timestamptz(6)
+
+  user Profile @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@map("payment_intents")
 }
 
 model AuditLog {

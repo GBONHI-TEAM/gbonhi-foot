@@ -22,6 +22,7 @@ import {
   KeyRound,
   Building2,
   CreditCard,
+  Receipt,
   type LucideIcon,
 } from 'lucide-react';
 import { type AdminRole } from '../../lib/admin-access';
@@ -47,6 +48,7 @@ const NAV_ITEMS: NavItem[] = [
   { label: 'Terrains', icon: MapPin, href: '/terrains', roles: ['SUPER_ADMIN', 'ADMIN', 'OPERATEUR'] },
   { label: 'Réservations', icon: CalendarCheck, href: '/reservations', roles: ['SUPER_ADMIN', 'ADMIN', 'OPERATEUR'] },
   { label: 'Paiements', icon: CreditCard, href: '/paiements', roles: ['SUPER_ADMIN', 'ADMIN'] },
+  { label: 'État de paiement', icon: Receipt, href: '/etat-paiement', roles: ['SUPER_ADMIN', 'ADMIN', 'SUPPORT'] },
   { label: 'Avis', icon: Star, href: '/avis', roles: ['SUPER_ADMIN', 'ADMIN', 'SUPPORT'] },
   { label: 'Support', icon: LifeBuoy, href: '/support', roles: ['SUPER_ADMIN', 'ADMIN', 'SUPPORT'] },
   { label: 'Notifications', icon: Bell, href: '/notifications', roles: ['SUPER_ADMIN', 'ADMIN', 'SUPPORT'] },

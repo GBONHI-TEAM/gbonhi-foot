@@ -18,9 +18,17 @@ interface ReservationRow {
 
 interface AlertItem {
   id: string;
-  amount: number | null;
-  date: string | null;
-  slot: string;
+  title: string;
+  subtitle: string;
+  href: string;
+  kind: 'reservation' | 'payment';
+}
+
+interface IntentRow {
+  id: string;
+  amount?: number | null;
+  status?: string | null;
+  mode?: string | null;
 }
 
 const SOUND_KEY = 'gbonhi_admin_sound_on';
@@ -108,17 +116,40 @@ export function ReservationAlerts() {
 
   const supabase = useMemo(() => createSupabaseBrowserClient(), []);
   useEffect(() => {
-    const channel = supabase
-      .channel(`admin-resv-alerts-${Math.random().toString(36).slice(2)}`)
+    const suffix = Math.random().toString(36).slice(2);
+    const push = (item: AlertItem) => setAlerts((prev) => [item, ...prev.filter((a) => a.id !== item.id)].slice(0, 25));
+
+    const reservations = supabase
+      .channel(`admin-resv-alerts-${suffix}`)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'reservations' }, (payload) => {
         const row = payload.new as ReservationRow;
-        setAlerts((prev) => [
-          { id: row.id, amount: row.total_price ?? null, date: row.reservation_date ?? null, slot: `${fmtHour(row.start_hour)}${row.end_hour != null ? ` – ${fmtHour(row.end_hour)}` : ''}` },
-          ...prev,
-        ].slice(0, 20));
+        push({
+          id: `r-${row.id}`,
+          kind: 'reservation',
+          href: '/reservations',
+          title: row.total_price != null ? `Réservation — ${row.total_price.toLocaleString('fr-FR')} FCFA` : 'Nouvelle réservation',
+          subtitle: [fmtDate(row.reservation_date ?? null), `${fmtHour(row.start_hour)}${row.end_hour != null ? ` – ${fmtHour(row.end_hour)}` : ''}`].filter(Boolean).join(' · '),
+        });
       })
       .subscribe();
-    return () => { void supabase.removeChannel(channel); };
+
+    // Actions importantes : paiement en attente de validation (intervention admin).
+    const payments = supabase
+      .channel(`admin-pay-alerts-${suffix}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'payment_intents' }, (payload) => {
+        const row = payload.new as IntentRow;
+        if (!row || row.status !== 'pending') return;
+        push({
+          id: `p-${row.id}`,
+          kind: 'payment',
+          href: '/etat-paiement',
+          title: 'Paiement en attente de validation',
+          subtitle: [row.amount != null ? `${row.amount.toLocaleString('fr-FR')} FCFA` : '', row.mode === 'leagues' ? 'Ligue' : 'Réservation'].filter(Boolean).join(' · '),
+        });
+      })
+      .subscribe();
+
+    return () => { void supabase.removeChannel(reservations); void supabase.removeChannel(payments); };
   }, [supabase]);
 
   const dismiss = (id: string) => setAlerts((prev) => prev.filter((a) => a.id !== id));
@@ -138,17 +169,18 @@ export function ReservationAlerts() {
       {alerts.length > 0 && (
         <div className="w-80 overflow-hidden rounded-2xl border border-red-200 bg-white shadow-2xl">
           <div className="flex items-center justify-between bg-red-600 px-4 py-2.5 text-white">
-            <span className="flex items-center gap-2 text-sm font-black"><BellRing size={16} className="animate-pulse" /> Nouvelle(s) réservation(s)</span>
+            <span className="flex items-center gap-2 text-sm font-black"><BellRing size={16} className="animate-pulse" /> Alertes ({alerts.length})</span>
             <button onClick={dismissAll} className="text-white/80 hover:text-white text-xs font-bold">Tout acquitter</button>
           </div>
           <ul className="max-h-72 divide-y divide-gray-100 overflow-y-auto">
             {alerts.map((a) => (
               <li key={a.id} className="flex items-center gap-3 px-4 py-3">
+                <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: a.kind === 'payment' ? '#B45309' : '#DC2626' }} />
                 <div className="min-w-0 flex-1">
-                  <p className="text-sm font-bold text-gray-900">{a.amount != null ? `${a.amount.toLocaleString('fr-FR')} FCFA` : 'Réservation'}</p>
-                  <p className="text-xs text-gray-500">{[fmtDate(a.date), a.slot].filter(Boolean).join(' · ')}</p>
+                  <p className="text-sm font-bold text-gray-900">{a.title}</p>
+                  <p className="text-xs text-gray-500">{a.subtitle}</p>
                 </div>
-                <button onClick={() => { router.push('/reservations'); dismiss(a.id); }} className="rounded-md border border-gray-200 px-2 py-1 text-xs font-semibold text-gray-600 hover:border-[#1E7A3A]">Voir</button>
+                <button onClick={() => { router.push(a.href); dismiss(a.id); }} className="rounded-md border border-gray-200 px-2 py-1 text-xs font-semibold text-gray-600 hover:border-[#1E7A3A]">Voir</button>
                 <button onClick={() => dismiss(a.id)} className="text-gray-400 hover:text-gray-600" aria-label="Acquitter"><X size={16} /></button>
               </li>
             ))}
