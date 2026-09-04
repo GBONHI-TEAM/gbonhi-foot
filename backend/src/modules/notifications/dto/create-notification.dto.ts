@@ -1,7 +1,7 @@
-import { IsString, IsOptional, IsUUID, IsBoolean } from 'class-validator';
+import { IsString, IsOptional, IsUUID, IsBoolean, IsIn } from 'class-validator';
 
 export class CreateNotificationDto {
-  /** Destinataire. Si absent, diffusion à tous les utilisateurs. */
+  /** Destinataire. Si absent, diffusion selon `target`. */
   @IsOptional()
   @IsUUID()
   user_id?: string;
@@ -19,4 +19,9 @@ export class CreateNotificationDto {
   @IsOptional()
   @IsBoolean()
   broadcast?: boolean;
+
+  /** Segment ciblé pour une diffusion : tous, joueurs (leagues) ou réservation. */
+  @IsOptional()
+  @IsIn(['all', 'leagues', 'reservation'])
+  target?: 'all' | 'leagues' | 'reservation';
 }

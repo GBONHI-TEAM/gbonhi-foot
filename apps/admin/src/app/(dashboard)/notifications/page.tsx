@@ -36,10 +36,12 @@ export default function NotificationsPage() {
     if (!title.trim() || !body.trim()) { setFeedback('Saisissez un titre et un message avant l’envoi.'); return; }
     setSending(true); setFeedback(null);
     try {
-      // L'API actuelle sait diffuser globalement. Les cibles de mode préparent
-      // l'interface sans prétendre cibler des utilisateurs tant que l'API dédiée n'est pas livrée.
-      await apiFetch('/notifications', { method: 'POST', body: JSON.stringify({ title: title.trim(), body: body.trim(), broadcast: true }) });
-      setTitle(''); setBody(''); setFeedback('Notification envoyée aux utilisateurs concernés.'); await load();
+      // Ciblage réel par segment : all / leagues (joueurs) / reservation.
+      const apiTarget = target === 'league' ? 'leagues' : target;
+      const res = await apiFetch<{ count: number }>('/notifications', { method: 'POST', body: JSON.stringify({ title: title.trim(), body: body.trim(), broadcast: apiTarget === 'all', target: apiTarget }) });
+      setTitle(''); setBody('');
+      setFeedback(`Notification envoyée à ${res?.count ?? 0} utilisateur(s) (${targetLabels[target]}).`);
+      await load();
     } catch { setFeedback('L’envoi n’a pas abouti. Vérifie la connexion puis réessaie.'); }
     finally { setSending(false); }
   }
@@ -63,7 +65,13 @@ export default function NotificationsPage() {
           <div className="mt-3 flex flex-wrap gap-2">
             {(Object.keys(targetLabels) as Target[]).map((value) => <button key={value} onClick={() => setTarget(value)} className="h-10 rounded-lg border px-4 text-sm font-semibold" style={{ borderColor: target === value ? '#1E7A3A' : '#E5E7EB', color: target === value ? '#1E7A3A' : '#6B7280', backgroundColor: target === value ? '#F0FDF4' : 'white' }}>{targetLabels[value]}</button>)}
           </div>
-          {target !== 'all' && <p className="mt-3 text-xs text-amber-700">La diffusion est actuellement globale ; le ciblage par mode sera activé avec l’API de segmentation.</p>}
+          <p className="mt-3 text-xs text-gray-500">
+            {target === 'all'
+              ? 'Diffusion à tous les utilisateurs.'
+              : target === 'league'
+              ? 'Ciblage : joueurs engagés (membres d’une équipe active ou inscrits à une ligue).'
+              : 'Ciblage : utilisateurs ayant déjà réservé un terrain.'}
+          </p>
         </div>
         {feedback && <p className="rounded-lg border px-4 py-3 text-sm" style={{ backgroundColor: feedback.startsWith('Notification') ? '#F0FDF4' : '#FEF2F2', borderColor: feedback.startsWith('Notification') ? '#BBF7D0' : '#FECACA', color: feedback.startsWith('Notification') ? '#166534' : '#B91C1C' }}>{feedback}</p>}
         <div className="flex gap-3"><button onClick={() => { setTitle(''); setBody(''); setFeedback(null); }} className="h-12 flex-1 rounded-lg border border-gray-200 text-sm font-semibold text-gray-600">Annuler</button><button onClick={() => void send()} disabled={sending} className="flex h-12 flex-[2] items-center justify-center gap-2 rounded-lg bg-[#F7921E] text-sm font-bold text-white disabled:opacity-60"><Send size={17} />{sending ? 'Envoi…' : 'Envoyer la notification'}</button></div>

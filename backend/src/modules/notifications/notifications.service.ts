@@ -158,16 +158,41 @@ export class NotificationsService {
     const type = dto.type ?? 'info';
 
     if (dto.broadcast || !dto.user_id) {
-      const profiles = await this.prisma.profile.findMany({ select: { id: true } });
-      if (profiles.length === 0) return { count: 0 };
-      await this.notify(
-        profiles.map((p) => p.id),
-        { type, title: dto.title, body: dto.body },
-      );
-      return { count: profiles.length };
+      const ids = await this.resolveAudience(dto.target ?? 'all');
+      if (ids.length === 0) return { count: 0 };
+      await this.notify(ids, { type, title: dto.title, body: dto.body });
+      return { count: ids.length };
     }
 
     await this.notify(dto.user_id, { type, title: dto.title, body: dto.body });
     return { count: 1 };
+  }
+
+  /**
+   * Résout la liste des destinataires d'une diffusion selon le segment :
+   *  - all         : tous les profils
+   *  - leagues     : joueurs engagés (membres d'équipe actifs ∪ participations ligue)
+   *  - reservation : utilisateurs ayant déjà réservé un terrain
+   */
+  private async resolveAudience(target: 'all' | 'leagues' | 'reservation'): Promise<string[]> {
+    if (target === 'all') {
+      const profiles = await this.prisma.profile.findMany({ select: { id: true } });
+      return profiles.map((p) => p.id);
+    }
+
+    if (target === 'leagues') {
+      const [members, participations] = await Promise.all([
+        this.prisma.teamMember.findMany({ where: { status: 'active' }, select: { user_id: true } }),
+        this.prisma.leaguePlayerRegistration.findMany({ select: { user_id: true } }),
+      ]);
+      return [...new Set([...members.map((m) => m.user_id), ...participations.map((p) => p.user_id)])];
+    }
+
+    // reservation
+    const reservations = await this.prisma.reservation.findMany({
+      distinct: ['user_id'],
+      select: { user_id: true },
+    });
+    return [...new Set(reservations.map((r) => r.user_id))];
   }
 }
