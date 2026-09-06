@@ -360,6 +360,7 @@ export class PaymentsService {
       orange: 'Orange Money',
       mtn: 'MTN MoMo',
       moov: 'Moov Money',
+      card: 'Carte bancaire',
       simulation: 'Paiement simulé',
     };
     const key = (code ?? '').toLowerCase();

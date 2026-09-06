@@ -223,7 +223,7 @@ export default function MonEquipePage() {
             <Pressable onPress={copyCode} onLongPress={copyCode} className="items-center mb-3">
               <Text className="font-black text-2xl tracking-[0.15em]" style={{ color: '#F7921E' }}>{team.invitation_code}</Text>
               <Text className="text-xs mt-1.5" style={{ color: copiedCode ? '#4ADE80' : 'rgba(255,255,255,0.5)' }}>
-                {copiedCode ? '✓ Code copié !' : 'Maintiens le code pour le copier'}
+                {copiedCode ? '✓ Code copié !' : '👆 Touche le code pour le copier'}
               </Text>
             </Pressable>
             <Pressable onPress={() => shareInvite('link')} className="w-full h-11 rounded-xl items-center justify-center flex-row gap-1.5" style={{ backgroundColor: 'rgba(30,122,58,0.3)', borderWidth: 1, borderColor: 'rgba(30,122,58,0.55)' }}>

@@ -14,6 +14,7 @@ export const METHOD_META: Record<string, { logo?: ImageSourcePropType; fit?: 'co
   orange: { logo: require('../../assets/images/pay-orange.webp') },
   mtn: { logo: require('../../assets/images/pay-mtn.png') },
   moov: { logo: require('../../assets/images/pay-moov.png'), fit: 'contain' },
+  card: { emoji: '💳' },
 };
 
 const WEEKDAYS = ['dimanche', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi'];

@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
-import { View, Text, Pressable, ScrollView, ActivityIndicator, Alert, ImageBackground, Image, type ImageSourcePropType } from 'react-native';
+import { View, Text, Pressable, ScrollView, ActivityIndicator, Alert, ImageBackground, Image } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { ScreenBackground } from '../../../components/ui/screen-background';
 import { apiClient } from '../../../lib/api';
 import { AppHeader } from '../../../components/ui/app-header';
 import { RemoteImage } from '../../../components/ui/remote-image';
 import { imageThumb } from '../../../lib/image';
+import { METHOD_META } from '../../../lib/cart-format';
 
 interface League {
   id: string;
@@ -17,14 +18,6 @@ interface League {
 }
 interface MyTeam { id: string; name: string; primary_color?: string | null; logo_url?: string | null }
 
-// Habillage des moyens de paiement (identique au panier réservation).
-const METHOD_META: Record<string, { logo?: ImageSourcePropType; fit?: 'cover' | 'contain'; emoji?: string; subtitle: string }> = {
-  cash: { emoji: '💵', subtitle: 'À régler sur place' },
-  wave: { logo: require('../../../../assets/images/pay-wave.png'), subtitle: 'Paiement mobile instantané' },
-  orange: { logo: require('../../../../assets/images/pay-orange.webp'), subtitle: 'Orange Money' },
-  mtn: { logo: require('../../../../assets/images/pay-mtn.png'), subtitle: 'MTN MoMo' },
-  moov: { logo: require('../../../../assets/images/pay-moov.png'), fit: 'contain', subtitle: 'Moov Money' },
-};
 interface Registration {
   team: MyTeam;
   league_payment?: { id: string; amount: number; status: string; transaction_id: string } | null;
@@ -226,7 +219,7 @@ export default function InscriptionLeaguePage() {
             <Text className="text-white font-bold text-base mb-2">Moyen de paiement</Text>
             {methods.map((m) => {
               const active = selectedMethod === m.code;
-              const meta = METHOD_META[m.code] ?? { subtitle: 'Mobile Money' };
+              const meta = METHOD_META[m.code] ?? {};
               return (
                 <Pressable
                   key={m.code}
@@ -243,7 +236,7 @@ export default function InscriptionLeaguePage() {
                   </View>
                   <View className="flex-1">
                     <Text className="text-white font-bold text-base">{m.label}</Text>
-                    <Text className="text-white/50 text-xs mt-0.5">{meta.subtitle}</Text>
+                    {meta.subtitle ? <Text className="text-white/50 text-xs mt-0.5">{meta.subtitle}</Text> : null}
                   </View>
                   <View style={{ width: 22, height: 22, borderRadius: 11, borderWidth: 2, borderColor: active ? '#F7921E' : 'rgba(255,255,255,0.35)', alignItems: 'center', justifyContent: 'center' }}>
                     {active ? <View style={{ width: 11, height: 11, borderRadius: 6, backgroundColor: '#F7921E' }} /> : null}

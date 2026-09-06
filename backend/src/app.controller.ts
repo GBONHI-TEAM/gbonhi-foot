@@ -45,6 +45,7 @@ export class AppController {
       subtitle: "On t'a invité à rejoindre une équipe sur GBONHI FOOT.",
       deepLink,
       extra: `<div class="code">${code || '—'}</div>
+      ${code ? `<button class="btn secondary" style="margin-top:0" onclick="(function(b){var t='${code}';function ok(){b.textContent='Code copié \\u2713';setTimeout(function(){b.textContent='Copier le code';},1800);}if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(t).then(ok).catch(ok);}else{ok();}})(this)">Copier le code</button>` : ''}
       <p class="hint">Si rien ne se passe, ouvre l'app, va dans « Rejoindre une équipe » et saisis ce code.</p>`,
     });
     reply.type('text/html').send(html);
