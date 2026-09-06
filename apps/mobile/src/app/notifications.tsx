@@ -34,10 +34,13 @@ const FILTERS = ['Tout', 'Matchs', 'Réservations', 'Communauté'] as const;
 type Filter = (typeof FILTERS)[number];
 
 function inFilter(type: string, f: Filter): boolean {
+  // Insensible à la casse : les types coexistent en minuscules (reservation_received)
+  // et en majuscules (RESERVATION_REMINDER).
+  const t = (type ?? '').toLowerCase();
   if (f === 'Tout') return true;
-  if (f === 'Matchs') return type.startsWith('match_');
-  if (f === 'Réservations') return type.startsWith('reservation');
-  if (f === 'Communauté') return type.startsWith('community_');
+  if (f === 'Matchs') return t.startsWith('match_');
+  if (f === 'Réservations') return t.startsWith('reservation');
+  if (f === 'Communauté') return t.startsWith('community_');
   return true;
 }
 
