@@ -199,7 +199,10 @@ export class ReservationsService {
 
   /** Panier : toutes les réservations en attente de l'utilisateur (multi). */
   async findCartMine(user: UserPayload) {
-    await this.releaseExpiredPendingReservations(user.id);
+    // Le panier est l'écran où l'expiration du délai de 15 min doit se refléter
+    // immédiatement : on force le nettoyage (bypass du throttle 1×/min) pour
+    // qu'une actualisation manuelle libère aussitôt les créneaux expirés.
+    await this.releaseExpiredPendingReservations(user.id, true);
     return this.prisma.reservation.findMany({
       where: { user_id: user.id, status: 'pending' },
       include: {
