@@ -260,6 +260,7 @@ interface MyReservation {
   start_hour: number;
   end_hour: number;
   status?: string | null;
+  created_at?: string | null;
   terrain?: { name?: string | null; surface?: string | null } | null;
 }
 interface FeedPost { id: string; content: string; created_at: string; author: { full_name: string | null } }
@@ -280,6 +281,22 @@ function resStatusMeta(s?: string | null) {
   if (/CONFIRM|VALID/.test(u)) return { label: 'Confirmé', color: '#2E9E4F' };
   if (/CANCEL|ANNUL|REFUS/.test(u)) return { label: 'Annulé', color: '#DC2626' };
   return { label: 'En attente', color: '#F7921E' };
+}
+
+// Créneau lisible : gère les demi-heures (10.5 → « 10h30 »).
+function hh(h: number) {
+  const hour = Math.floor(h);
+  const minutes = Math.round((h - hour) * 60);
+  return `${String(hour).padStart(2, '0')}h${String(minutes).padStart(2, '0')}`;
+}
+
+// Délai de maintien d'un panier avant expiration (aligné backend : 15 min).
+const CART_HOLD_MS = 15 * 60 * 1000;
+// Une réservation « en attente » n'est plus valide passé le délai de validation.
+function isPendingExpired(r: { status?: string | null; created_at?: string | null }) {
+  if ((r.status ?? '').toLowerCase() !== 'pending') return false;
+  if (!r.created_at) return false;
+  return new Date(r.created_at).getTime() + CART_HOLD_MS <= Date.now();
 }
 
 function HomeReservation() {
@@ -325,6 +342,9 @@ function HomeReservation() {
 
   const upcoming = reservations.filter((r) => {
     if ((r.status ?? '').toLowerCase() === 'cancelled') return false;
+    // Un panier « en attente » expire au bout de 15 min : il ne doit plus
+    // apparaître dans « À venir » une fois le délai de validation dépassé.
+    if (isPendingExpired(r)) return false;
     const d = new Date(r.reservation_date);
     return !Number.isNaN(d.getTime()) && d.getTime() >= Date.now() - 12 * 3600e3;
   });
@@ -417,19 +437,21 @@ function HomeReservation() {
               const d = new Date(r.reservation_date);
               const meta = resStatusMeta(r.status);
               return (
-                <Card key={r.id}>
-                  <View className="flex-row items-center gap-3">
-                    <View className="w-14 h-14 rounded-xl items-center justify-center" style={{ backgroundColor: '#F7921E' }}>
-                      <Text className="text-white text-lg font-black">{d.getDate()}</Text>
-                      <Text className="text-white text-[10px] font-bold">{MONTHS_FR[d.getMonth()]}</Text>
+                <Pressable key={r.id} onPress={() => router.push(`/reservation/${r.id}`)} className="active:opacity-90">
+                  <Card>
+                    <View className="flex-row items-center gap-3">
+                      <View className="w-14 h-14 rounded-xl items-center justify-center" style={{ backgroundColor: '#F7921E' }}>
+                        <Text className="text-white text-lg font-black">{d.getDate()}</Text>
+                        <Text className="text-white text-[10px] font-bold">{MONTHS_FR[d.getMonth()]}</Text>
+                      </View>
+                      <View className="flex-1">
+                        <Text className="text-white text-base font-bold" numberOfLines={1}>{r.terrain?.name ?? 'Terrain'}</Text>
+                        <Text className="text-white/50 text-sm mt-0.5">{hh(r.start_hour)} – {hh(r.end_hour)}{r.terrain?.surface ? ` · ${SURFACE_FR[r.terrain.surface] ?? r.terrain.surface}` : ''}</Text>
+                      </View>
+                      <Text style={{ color: meta.color }} className="text-sm font-bold">{meta.label}</Text>
                     </View>
-                    <View className="flex-1">
-                      <Text className="text-white text-base font-bold" numberOfLines={1}>{r.terrain?.name ?? 'Terrain'}</Text>
-                      <Text className="text-white/50 text-sm mt-0.5">{r.start_hour}h00 – {r.end_hour}h00{r.terrain?.surface ? ` · ${SURFACE_FR[r.terrain.surface] ?? r.terrain.surface}` : ''}</Text>
-                    </View>
-                    <Text style={{ color: meta.color }} className="text-sm font-bold">{meta.label}</Text>
-                  </View>
-                </Card>
+                  </Card>
+                </Pressable>
               );
             })}
           </View>

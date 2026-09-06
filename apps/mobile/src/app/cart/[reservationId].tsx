@@ -5,7 +5,7 @@ import { AppHeader } from '../../components/ui/app-header';
 import { ScreenBackground } from '../../components/ui/screen-background';
 import { apiClient } from '../../lib/api';
 import { formatFcfa } from '../../types/terrain';
-import { useReservationCartStore } from '../../store/reservation-cart.store';
+import { PendingReservationCart, useReservationCartStore } from '../../store/reservation-cart.store';
 import { METHOD_META, formatDate, time, timeRemaining, isReservationExpired } from '../../lib/cart-format';
 
 export default function CartPaymentScreen() {
@@ -14,10 +14,49 @@ export default function CartPaymentScreen() {
   const pendingReservations = useReservationCartStore((state) => state.pendingReservations);
   const removePendingReservation = useReservationCartStore((state) => state.removePendingReservation);
 
-  const reservation = useMemo(
+  const fromStore = useMemo(
     () => pendingReservations.find((r) => r.id === reservationId) ?? null,
     [pendingReservations, reservationId],
   );
+  // Repli API : l'écran peut être ouvert hors panier (depuis le profil ou
+  // l'accueil, via /reservation → « Valider »). Le store est alors vide, on
+  // recharge la réservation en attente directement depuis le backend.
+  const [fetched, setFetched] = useState<PendingReservationCart | null>(null);
+  const [fetchDone, setFetchDone] = useState(false);
+  useEffect(() => {
+    if (fromStore) return;
+    let mounted = true;
+    (async () => {
+      try {
+        const { data } = await apiClient.get<{
+          id: string; terrain_id?: string; reservation_date: string; start_hour: number; end_hour: number;
+          duration_hours: number; total_price: number; created_at: string; status: string;
+          terrain?: { id: string; name: string; city?: string | null; address?: string | null; photos?: string[] | null } | null;
+        }>(`/api/v1/reservations/mine/${reservationId}`);
+        if (!mounted) return;
+        if (data.status === 'pending') {
+          setFetched({
+            id: data.id,
+            terrain_id: data.terrain_id ?? data.terrain?.id ?? '',
+            reservation_date: data.reservation_date,
+            start_hour: data.start_hour,
+            end_hour: data.end_hour,
+            duration_hours: data.duration_hours,
+            total_price: data.total_price,
+            created_at: data.created_at,
+            terrain: data.terrain ?? null,
+          });
+        }
+      } catch {
+        /* introuvable → géré par la redirection ci-dessous */
+      } finally {
+        if (mounted) setFetchDone(true);
+      }
+    })();
+    return () => { mounted = false; };
+  }, [fromStore, reservationId]);
+
+  const reservation = fromStore ?? fetched;
 
   const [methods, setMethods] = useState<{ code: string; label: string }[]>([]);
   const [selectedMethod, setSelectedMethod] = useState('cash');
@@ -53,10 +92,12 @@ export default function CartPaymentScreen() {
     else router.replace('/(tabs)/cart');
   }, [router]);
 
-  // Réservation absente du panier (expirée / retirée) → retour au panier.
+  // Réservation absente (expirée / retirée / introuvable) → retour au panier.
+  // On attend la fin du repli API avant de rediriger pour ne pas sortir de
+  // l'écran pendant le chargement.
   useEffect(() => {
-    if (!reservation) goBackToCart();
-  }, [reservation, goBackToCart]);
+    if (!reservation && (fromStore !== null || fetchDone)) goBackToCart();
+  }, [reservation, fromStore, fetchDone, goBackToCart]);
 
   async function removeAndLeave(afterRemove?: () => void) {
     if (!reservation || busy) return;

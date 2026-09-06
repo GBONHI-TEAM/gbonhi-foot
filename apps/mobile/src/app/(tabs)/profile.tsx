@@ -23,6 +23,7 @@ interface Reservation {
   start_hour: number;
   end_hour: number;
   status: string;
+  created_at?: string | null;
   cancel_reason?: string | null;
   terrain: { id: string; name: string; city: string; surface: string } | null;
 }
@@ -48,6 +49,13 @@ function hh(h: number) {
   const hour = Math.floor(h);
   const minutes = Math.round((h - hour) * 60);
   return `${String(hour).padStart(2, '0')}h${String(minutes).padStart(2, '0')}`;
+}
+// Un panier « en attente » expire au bout de 15 min (aligné backend).
+const CART_HOLD_MS = 15 * 60 * 1000;
+function isPendingExpired(r: { status?: string | null; created_at?: string | null }) {
+  if ((r.status ?? '').toLowerCase() !== 'pending') return false;
+  if (!r.created_at) return false;
+  return new Date(r.created_at).getTime() + CART_HOLD_MS <= Date.now();
 }
 
 const LEAGUE_TABS = ['Activité', 'Équipes', 'Historique'] as const;
@@ -116,8 +124,12 @@ export default function ProfileScreen() {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   }, []);
-  // À venir : réservations non annulées dont la date n'est pas passée.
-  const upcoming = reservations.filter((r) => r.reservation_date >= todayYmd && r.status !== 'cancelled');
+  // À venir : réservations non annulées dont la date n'est pas passée. Une résa
+  // « en attente » n'est valide que pendant le délai de 15 min du panier : passé
+  // ce délai (non payée), elle n'apparaît plus dans « À venir ».
+  const upcoming = reservations.filter(
+    (r) => r.reservation_date >= todayYmd && r.status !== 'cancelled' && !isPendingExpired(r),
+  );
   // Passées : uniquement celles VALIDÉES (confirmées) dont la date est déjà passée.
   const past = reservations.filter((r) => r.status === 'confirmed' && r.reservation_date < todayYmd);
   // Annulées : vraies annulations (clic « Annuler » / annulation partenaire), pas les expirations de panier.
