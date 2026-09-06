@@ -243,6 +243,10 @@ function ReservationBody({
   onOpenReservation: (id: string) => void;
 }) {
   const list = tab === 'À venir' ? upcoming : tab === 'Passées' ? past : tab === 'Annulées' ? cancelled : [];
+  // Compteur = réservations réellement affichées dans les onglets (à venir + passées
+  // + annulées réelles). Exclut les expirations de panier et les pending obsolètes,
+  // déjà écartées de upcoming/past/cancelled par ProfileScreen.
+  const reservationsCount = new Set([...upcoming, ...past, ...cancelled].map((r) => r.id)).size;
 
   return (
     <ScrollView
@@ -257,7 +261,7 @@ function ReservationBody({
           className="flex-1 rounded-2xl items-center py-5"
           style={{ backgroundColor: 'rgba(255,255,255,0.05)', borderWidth: 1, borderColor: tab !== 'Favoris' ? '#F7921E' : 'rgba(255,255,255,0.08)' }}
         >
-          <Text className="font-black text-2xl" style={{ color: '#F7921E' }}>{reservations.length}</Text>
+          <Text className="font-black text-2xl" style={{ color: '#F7921E' }}>{reservationsCount}</Text>
           <Text className="text-white/55 text-xs mt-1">Réservations</Text>
         </Pressable>
         <Pressable
