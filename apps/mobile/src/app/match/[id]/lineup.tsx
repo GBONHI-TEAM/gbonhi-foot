@@ -1,10 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable, ScrollView, Text, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { apiClient } from '../../../lib/api';
 import { AppHeader } from '../../../components/ui/app-header';
 import { ScreenBackground } from '../../../components/ui/screen-background';
-import { KB_DONE_ID } from '../../../components/ui/keyboard-done-bar';
+import {
+  OUTFIELD_TOTAL, SQUAD_TOTAL, POS_ORDER, POS_LABEL, type PosBucket,
+  positionBucket, formationString, parseFormation,
+} from '../../../lib/lineup';
 
 interface SquadMember {
   team_id: string;
@@ -23,7 +26,6 @@ interface LineupsResponse {
 }
 
 type Role = 'none' | 'starter' | 'sub';
-const FORMATIONS = ['4-3-3', '4-4-2', '4-2-3-1', '3-5-2', '3-4-3', '5-3-2', '4-1-2-1-2'];
 
 export default function LineupPublishScreen() {
   const { id, team } = useLocalSearchParams<{ id: string; team: string }>();
@@ -32,8 +34,12 @@ export default function LineupPublishScreen() {
   const [data, setData] = useState<MatchSquads | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [formation, setFormation] = useState('4-3-3');
+  // Formation foot à 7 : gardien fixe (1) + compteurs de champ (total = 6).
+  const [def, setDef] = useState(2);
+  const [mid, setMid] = useState(3);
+  const [att, setAtt] = useState(1);
   const [roles, setRoles] = useState<Record<string, Role>>({});
+  const [positions, setPositions] = useState<Record<string, PosBucket>>({});
 
   const load = useCallback(async () => {
     if (!id || !team) return;
@@ -43,13 +49,21 @@ export default function LineupPublishScreen() {
         apiClient.get<LineupsResponse>(`/api/v1/matches/${id}/lineups`),
       ]);
       setData(match);
-      // Préremplissage depuis la composition existante.
       const side = lineups.home?.team.id === team ? lineups.home : lineups.away?.team.id === team ? lineups.away : null;
       if (side?.lineup) {
-        if (side.lineup.formation) setFormation(side.lineup.formation);
-        const map: Record<string, Role> = {};
-        for (const p of side.lineup.players) if (p.user_id) map[p.user_id] = p.role;
-        setRoles(map);
+        if (side.lineup.formation) {
+          const f = parseFormation(side.lineup.formation);
+          setDef(f.def); setMid(f.mid); setAtt(f.att);
+        }
+        const rMap: Record<string, Role> = {};
+        const pMap: Record<string, PosBucket> = {};
+        for (const p of side.lineup.players) {
+          if (!p.user_id) continue;
+          rMap[p.user_id] = p.role;
+          pMap[p.user_id] = positionBucket(p.position);
+        }
+        setRoles(rMap);
+        setPositions(pMap);
       }
     } catch {
       Alert.alert('Erreur', 'Impossible de charger l’effectif.');
@@ -68,6 +82,13 @@ export default function LineupPublishScreen() {
   const teamName = data ? (team === data.home_team.id ? data.home_team.name : data.away_team.name) : '';
   const starters = members.filter((m) => m.user && roles[m.user.id] === 'starter').length;
   const subs = members.filter((m) => m.user && roles[m.user.id] === 'sub').length;
+  const outfield = def + mid + att;
+
+  // Poste retenu pour un joueur (choix explicite, sinon poste de sa fiche).
+  const posOf = useCallback(
+    (m: SquadMember): PosBucket => positions[m.user!.id] ?? positionBucket(m.user!.position),
+    [positions],
+  );
 
   function cycle(userId: string) {
     setRoles((prev) => {
@@ -77,24 +98,56 @@ export default function LineupPublishScreen() {
     });
   }
 
+  function setPos(userId: string, bucket: PosBucket) {
+    setPositions((prev) => ({ ...prev, [userId]: bucket }));
+  }
+
+  // Ajuste un compteur de champ en gardant le total ≤ 6.
+  function bump(which: 'def' | 'mid' | 'att', delta: number) {
+    const setter = which === 'def' ? setDef : which === 'mid' ? setMid : setAtt;
+    const value = which === 'def' ? def : which === 'mid' ? mid : att;
+    const next = value + delta;
+    if (next < 0) return;
+    if (delta > 0 && outfield >= OUTFIELD_TOTAL) return; // total déjà à 6
+    setter(next);
+  }
+
   async function submit(publish: boolean) {
     if (saving) return;
+    if (outfield !== OUTFIELD_TOTAL) {
+      Alert.alert('Formation incomplète', `La formation doit compter ${OUTFIELD_TOTAL} joueurs de champ (plus le gardien). Actuellement : ${outfield}.`);
+      return;
+    }
     const players: LineupPlayer[] = members
       .filter((m) => m.user && (roles[m.user.id] ?? 'none') !== 'none')
       .map((m) => ({
         name: m.user!.full_name ?? 'Joueur',
         role: (roles[m.user!.id] as 'starter' | 'sub'),
         number: m.jersey_num,
-        position: m.user!.position,
+        position: POS_LABEL[posOf(m)],
         user_id: m.user!.id,
       }));
     if (publish && players.filter((p) => p.role === 'starter').length === 0) {
       Alert.alert('Composition incomplète', 'Sélectionne au moins les titulaires avant de publier.');
       return;
     }
+    const starterCount = players.filter((p) => p.role === 'starter').length;
+    if (publish && starterCount !== SQUAD_TOTAL) {
+      const go = await new Promise<boolean>((resolve) => {
+        Alert.alert(
+          'Titulaires',
+          `Le football à 7 se joue à ${SQUAD_TOTAL} titulaires (1 gardien + ${OUTFIELD_TOTAL}). Tu en as ${starterCount}. Publier quand même ?`,
+          [
+            { text: 'Corriger', style: 'cancel', onPress: () => resolve(false) },
+            { text: 'Publier', onPress: () => resolve(true) },
+          ],
+        );
+      });
+      if (!go) return;
+    }
     setSaving(true);
     try {
-      await apiClient.post(`/api/v1/matches/${id}/lineup`, { team_id: team, formation, players, publish });
+      await apiClient.post(`/api/v1/matches/${id}/lineup`, { team_id: team, formation: formationString(def, mid, att), players, publish });
       Alert.alert(publish ? 'Composition publiée' : 'Brouillon enregistré', publish ? 'Ta composition est visible par tous.' : 'Tu pourras la publier plus tard.', [
         { text: 'OK', onPress: () => router.back() },
       ]);
@@ -118,31 +171,35 @@ export default function LineupPublishScreen() {
   return (
     <ScreenBackground>
       <AppHeader title="Ma composition" centered showLogo={false} onBack={() => router.back()} />
-      <ScrollView contentContainerStyle={{ padding: 20, paddingBottom: 140 }} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
+      <ScrollView contentContainerStyle={{ padding: 20, paddingBottom: 140 }} keyboardShouldPersistTaps="handled">
         <Text className="text-white font-black text-lg">{teamName}</Text>
-        <Text className="text-white/55 text-sm mt-1 mb-4">Touche un joueur pour l’ajouter : Titulaire → Remplaçant → retiré.</Text>
+        <Text className="text-white/55 text-sm mt-1 mb-4">Football à 7 : 1 gardien + {OUTFIELD_TOTAL} joueurs de champ. Touche un joueur pour l’ajouter (Titulaire → Remplaçant → retiré) et choisis son poste.</Text>
 
-        {/* Formation */}
-        <Text className="text-white font-bold text-sm mb-2">Formation</Text>
-        <View className="flex-row flex-wrap gap-2 mb-3">
-          {FORMATIONS.map((f) => {
-            const active = formation === f;
-            return (
-              <Pressable key={f} onPress={() => setFormation(f)} className="px-3.5 py-2 rounded-full" style={{ backgroundColor: active ? 'rgba(247,146,30,0.15)' : 'rgba(255,255,255,0.05)', borderWidth: 1, borderColor: active ? '#F7921E' : 'rgba(255,255,255,0.15)' }}>
-                <Text className="text-sm font-semibold" style={{ color: active ? '#F7921E' : 'rgba(255,255,255,0.7)' }}>{f}</Text>
-              </Pressable>
-            );
-          })}
+        {/* Formation foot à 7 */}
+        <View className="flex-row items-center justify-between mb-2">
+          <Text className="text-white font-bold text-sm">Formation</Text>
+          <Text className="text-xs font-bold" style={{ color: outfield === OUTFIELD_TOTAL ? '#4ADE80' : '#F87171' }}>
+            {outfield}/{OUTFIELD_TOTAL} joueurs de champ
+          </Text>
         </View>
-        <TextInput
-          value={formation}
-          onChangeText={setFormation}
-          placeholder="Autre (ex. 4-3-3)"
-          placeholderTextColor="rgba(255,255,255,0.4)"
-          inputAccessoryViewID={KB_DONE_ID}
-          className="h-12 rounded-input px-4 text-white text-base mb-5"
-          style={{ backgroundColor: 'rgba(255,255,255,0.08)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)' }}
-        />
+
+        {/* Gardien verrouillé */}
+        <View className="flex-row items-center justify-between rounded-xl p-3 mb-2" style={{ backgroundColor: 'rgba(255,255,255,0.05)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' }}>
+          <Text className="text-white font-semibold text-sm">🧤 Gardien</Text>
+          <Text className="text-white/60 text-sm font-bold">1 (obligatoire)</Text>
+        </View>
+
+        {([['def', 'Défenseurs', def], ['mid', 'Milieux', mid], ['att', 'Attaquants', att]] as const).map(([key, label, value]) => (
+          <View key={key} className="flex-row items-center justify-between rounded-xl p-3 mb-2" style={{ backgroundColor: 'rgba(255,255,255,0.05)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' }}>
+            <Text className="text-white font-semibold text-sm">{label}</Text>
+            <View className="flex-row items-center gap-4">
+              <Stepper onPress={() => bump(key, -1)} disabled={value <= 0} label="−" />
+              <Text className="text-white font-black text-base" style={{ width: 20, textAlign: 'center' }}>{value}</Text>
+              <Stepper onPress={() => bump(key, +1)} disabled={outfield >= OUTFIELD_TOTAL} label="+" />
+            </View>
+          </View>
+        ))}
+        <Text className="text-white/40 text-xs mt-1 mb-5">Schéma : {formationString(def, mid, att)} (gardien inclus).</Text>
 
         {/* Effectif */}
         <View className="flex-row items-center justify-between mb-2">
@@ -154,16 +211,33 @@ export default function LineupPublishScreen() {
         ) : members.map((m) => {
           if (!m.user) return null;
           const role = roles[m.user.id] ?? 'none';
-          const badge = role === 'starter' ? { t: 'Titulaire', c: '#4ADE80', bg: 'rgba(46,158,79,0.15)' } : role === 'sub' ? { t: 'Remplaçant', c: '#FFB830', bg: 'rgba(255,184,48,0.12)' } : { t: 'Ajouter', c: 'rgba(255,255,255,0.5)', bg: 'rgba(255,255,255,0.05)' };
+          const badge = role === 'starter' ? { t: 'Titulaire', c: '#4ADE80' } : role === 'sub' ? { t: 'Remplaçant', c: '#FFB830' } : { t: 'Ajouter', c: 'rgba(255,255,255,0.5)' };
+          const bucket = posOf(m);
           return (
-            <Pressable key={m.user.id} onPress={() => cycle(m.user!.id)} className="flex-row items-center gap-3 rounded-xl p-3 mb-2" style={{ backgroundColor: 'rgba(255,255,255,0.05)', borderWidth: 1, borderColor: role === 'none' ? 'rgba(255,255,255,0.08)' : badge.c }}>
-              <Text className="text-white/40 text-xs" style={{ width: 24 }}>{m.jersey_num ?? '—'}</Text>
-              <View className="flex-1">
-                <Text className="text-white font-semibold text-sm">{m.user.full_name ?? 'Joueur'}</Text>
-                {m.user.position ? <Text className="text-white/40 text-xs">{m.user.position}</Text> : null}
-              </View>
-              <Text className="text-xs font-bold px-2.5 py-1 rounded-full" style={{ color: badge.c, backgroundColor: badge.bg }}>{badge.t}</Text>
-            </Pressable>
+            <View key={m.user.id} className="rounded-xl p-3 mb-2" style={{ backgroundColor: 'rgba(255,255,255,0.05)', borderWidth: 1, borderColor: role === 'none' ? 'rgba(255,255,255,0.08)' : badge.c }}>
+              <Pressable onPress={() => cycle(m.user!.id)} className="flex-row items-center gap-3">
+                <Text className="text-white/40 text-xs" style={{ width: 24 }}>{m.jersey_num ?? '—'}</Text>
+                <View className="flex-1">
+                  <Text className="text-white font-semibold text-sm">{m.user.full_name ?? 'Joueur'}</Text>
+                  {m.user.position ? <Text className="text-white/40 text-xs">Fiche : {m.user.position}</Text> : null}
+                </View>
+                <Text className="text-xs font-bold px-2.5 py-1 rounded-full" style={{ color: badge.c, backgroundColor: `${badge.c}22` }}>{badge.t}</Text>
+              </Pressable>
+
+              {/* Choix du poste (indépendant de la fiche) — visible dès que le joueur est retenu */}
+              {role !== 'none' ? (
+                <View className="flex-row gap-2 mt-3">
+                  {POS_ORDER.map((b) => {
+                    const active = bucket === b;
+                    return (
+                      <Pressable key={b} onPress={() => setPos(m.user!.id, b)} className="flex-1 h-9 rounded-lg items-center justify-center" style={{ backgroundColor: active ? 'rgba(247,146,30,0.16)' : 'rgba(255,255,255,0.04)', borderWidth: 1, borderColor: active ? '#F7921E' : 'rgba(255,255,255,0.12)' }}>
+                        <Text className="text-xs font-bold" style={{ color: active ? '#F7921E' : 'rgba(255,255,255,0.6)' }}>{POS_LABEL[b]}</Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              ) : null}
+            </View>
           );
         })}
       </ScrollView>
@@ -178,5 +252,13 @@ export default function LineupPublishScreen() {
         </Pressable>
       </View>
     </ScreenBackground>
+  );
+}
+
+function Stepper({ onPress, disabled, label }: { onPress: () => void; disabled: boolean; label: string }) {
+  return (
+    <Pressable onPress={onPress} disabled={disabled} className="w-9 h-9 rounded-full items-center justify-center" style={{ backgroundColor: disabled ? 'rgba(255,255,255,0.04)' : 'rgba(247,146,30,0.16)', borderWidth: 1, borderColor: disabled ? 'rgba(255,255,255,0.1)' : '#F7921E', opacity: disabled ? 0.5 : 1 }}>
+      <Text className="text-lg font-black" style={{ color: disabled ? 'rgba(255,255,255,0.3)' : '#F7921E' }}>{label}</Text>
+    </Pressable>
   );
 }

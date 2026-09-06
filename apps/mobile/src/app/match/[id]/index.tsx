@@ -14,6 +14,7 @@ import { supabase } from '../../../lib/supabase';
 import { RemoteImage } from '../../../components/ui/remote-image';
 import { imageThumb } from '../../../lib/image';
 import { PatternedGreenHeader } from '../../../components/ui/patterned-green-header';
+import { positionBucket, type PosBucket } from '../../../lib/lineup';
 import {
   type MatchDetail,
   type MatchEvent,
@@ -63,24 +64,74 @@ function PlayerAvatar({ name, avatar }: { name: string; avatar?: string | null }
 interface LineupSide { team: { id: string; name: string }; editable: boolean; lineup: { formation: string | null; players: LineupPlayer[]; published: boolean } | null }
 interface LineupsResponse { kickoff: string; home: LineupSide | null; away: LineupSide | null }
 
-/** Carte de composition d'une équipe (formation + titulaires + remplaçants). */
+/** Jeton d'un joueur sur le terrain : maillot rond + numéro + nom. */
+function PlayerToken({ p, onPress }: { p: LineupPlayer; onPress: (userId: string) => void }) {
+  return (
+    <Pressable
+      onPress={() => p.user_id && onPress(p.user_id)}
+      disabled={!p.user_id}
+      className="items-center active:opacity-70"
+      style={{ width: 68 }}
+    >
+      <View>
+        <PlayerAvatar name={p.name} avatar={p.avatar_url} />
+        {p.number != null ? (
+          <View className="absolute items-center justify-center rounded-full" style={{ right: -4, bottom: -3, minWidth: 16, height: 16, paddingHorizontal: 3, backgroundColor: '#0D1F0D', borderWidth: 1, borderColor: '#F7921E' }}>
+            <Text style={{ color: '#F7921E', fontSize: 9, fontWeight: '800' }}>{p.number}</Text>
+          </View>
+        ) : null}
+      </View>
+      <Text numberOfLines={1} className="text-white text-[11px] font-semibold mt-1.5" style={{ maxWidth: 68, textAlign: 'center' }}>{p.name.split(' ').slice(-1)[0]}</Text>
+    </Pressable>
+  );
+}
+
+/** Terrain façon FotMob : titulaires placés par ligne (ATT en haut → GK en bas). */
+function LineupPitch({ starters, subs, onPlayerPress }: { starters: LineupPlayer[]; subs: LineupPlayer[]; onPlayerPress: (userId: string) => void }) {
+  // Regroupe les titulaires par poste ; ordre d'affichage haut→bas : ATT, MID, DEF, GK.
+  const byBucket: Record<PosBucket, LineupPlayer[]> = { GK: [], DEF: [], MID: [], ATT: [] };
+  for (const p of starters) byBucket[positionBucket(p.position)].push(p);
+  const lines = (['ATT', 'MID', 'DEF', 'GK'] as PosBucket[]).map((b) => byBucket[b]).filter((arr) => arr.length > 0);
+
+  return (
+    <View>
+      {/* Terrain */}
+      <View className="rounded-2xl overflow-hidden" style={{ backgroundColor: '#137A38', borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)', paddingVertical: 18, paddingHorizontal: 8, gap: 6 }}>
+        {/* Marquages simples */}
+        <View pointerEvents="none" style={{ position: 'absolute', left: 12, right: 12, top: 10, bottom: 10, borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.18)', borderRadius: 8 }} />
+        <View pointerEvents="none" style={{ position: 'absolute', left: 12, right: 12, top: '50%', height: 1.5, backgroundColor: 'rgba(255,255,255,0.18)' }} />
+        <View pointerEvents="none" style={{ position: 'absolute', alignSelf: 'center', top: '50%', width: 58, height: 58, borderRadius: 29, borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.18)', transform: [{ translateY: -29 }] }} />
+        {lines.map((line, i) => (
+          <View key={i} className="flex-row items-start justify-evenly" style={{ minHeight: 58 }}>
+            {line.map((p, j) => <PlayerToken key={`${i}-${j}`} p={p} onPress={onPlayerPress} />)}
+          </View>
+        ))}
+      </View>
+
+      {/* Remplaçants */}
+      {subs.length ? (
+        <View className="mt-3">
+          <Text className="text-white/50 text-xs font-bold uppercase mb-2">Remplaçants</Text>
+          <View className="flex-row flex-wrap" style={{ gap: 8 }}>
+            {subs.map((p, i) => (
+              <Pressable key={i} onPress={() => p.user_id && onPlayerPress(p.user_id)} disabled={!p.user_id} className="flex-row items-center gap-2 rounded-full px-2.5 py-1.5 active:opacity-70" style={{ backgroundColor: 'rgba(255,255,255,0.06)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' }}>
+                <Text className="text-white/40 text-[11px]">{p.number ?? '—'}</Text>
+                <Text className="text-white/85 text-xs">{p.name}</Text>
+              </Pressable>
+            ))}
+          </View>
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
+/** Carte de composition d'une équipe (terrain + remplaçants). */
 function LineupCard({ side, onEdit, onPlayerPress }: { side: LineupSide | null; onEdit: (teamId: string) => void; onPlayerPress: (userId: string) => void }) {
   if (!side) return null;
   const l = side.lineup;
   const starters = l?.players.filter((p) => p.role === 'starter') ?? [];
   const subs = l?.players.filter((p) => p.role === 'sub') ?? [];
-  const Row = ({ p, dim }: { p: LineupPlayer; dim?: boolean }) => (
-    <Pressable
-      onPress={() => p.user_id && onPlayerPress(p.user_id)}
-      disabled={!p.user_id}
-      className="flex-row items-center py-1 gap-2 active:opacity-70"
-    >
-      <Text className="text-white/40 text-xs" style={{ width: 20 }}>{p.number ?? '—'}</Text>
-      <PlayerAvatar name={p.name} avatar={p.avatar_url} />
-      <Text className={`${dim ? 'text-white/85' : 'text-white'} text-sm flex-1`}>{p.name}</Text>
-      {p.position ? <Text className="text-white/40 text-xs">{p.position}</Text> : null}
-    </Pressable>
-  );
   return (
     <View className="rounded-2xl p-4 mb-3" style={{ backgroundColor: 'rgba(255,255,255,0.05)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' }}>
       <View className="flex-row items-center justify-between mb-2">
@@ -95,21 +146,14 @@ function LineupCard({ side, onEdit, onPlayerPress }: { side: LineupSide | null; 
           {!l.published ? (
             <Text className="text-xs mb-2" style={{ color: '#FFB830' }}>Brouillon — non publié</Text>
           ) : null}
-          <Text className="text-white/50 text-xs font-bold uppercase mb-1.5">Titulaires</Text>
-          {starters.length ? starters.map((p, i) => (
-            <Row key={`s${i}`} p={p} />
-          )) : <Text className="text-white/40 text-sm">—</Text>}
-          {subs.length ? (
-            <>
-              <Text className="text-white/50 text-xs font-bold uppercase mb-1.5 mt-3">Remplaçants</Text>
-              {subs.map((p, i) => (
-                <Row key={`r${i}`} p={p} dim />
-              ))}
-            </>
-          ) : null}
+          {starters.length ? (
+            <LineupPitch starters={starters} subs={subs} onPlayerPress={onPlayerPress} />
+          ) : (
+            <Text className="text-white/40 text-sm">Aucun titulaire sélectionné.</Text>
+          )}
         </>
       ) : (
-        <Text className="text-white/50 text-sm">Composition pas encore disponible. Les équipes peuvent la publier jusqu’à ~2 h avant le coup d’envoi.</Text>
+        <Text className="text-white/50 text-sm">Composition pas encore disponible. Les équipes peuvent la publier jusqu’à 2 h avant le coup d’envoi.</Text>
       )}
 
       {side.editable ? (
