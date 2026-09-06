@@ -207,13 +207,14 @@ export class CommunityService {
     const post = await this.prisma.communityPost.findUnique({ where: { id }, select: { id: true, author_id: true } });
     if (!post) throw new NotFoundException('Publication introuvable');
 
-    const [comment] = await this.prisma.$transaction([
-      this.prisma.postComment.create({
-        data: { post_id: id, author_id: user.id, content },
-        include: { author: { select: AUTHOR_SELECT } },
-      }),
-      this.prisma.communityPost.update({ where: { id }, data: { comments_count: { increment: 1 } } }),
-    ]);
+    // NB : le compteur `comments_count` est maintenu par un trigger Postgres
+    // (`on_comment_change` → update_post_comments_count, recalcul COUNT(*) sur
+    // INSERT/DELETE). On NE l'incrémente donc PAS ici, sinon double comptage
+    // (+2 par commentaire au lieu de +1).
+    const comment = await this.prisma.postComment.create({
+      data: { post_id: id, author_id: user.id, content },
+      include: { author: { select: AUTHOR_SELECT } },
+    });
 
     // Notifier l'auteur du post (sauf s'il commente lui-même).
     if (post.author_id && post.author_id !== user.id) {

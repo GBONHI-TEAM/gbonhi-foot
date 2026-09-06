@@ -456,7 +456,7 @@ function HomeReservation() {
             })}
           </View>
         ) : (
-          <EmptyState text="Tu n'as pas encore de réservation." cta="Réserver un terrain →" onPress={() => router.push('/terrain')} />
+          <EmptyState text="Tu n'as pas encore de réservation." cta="🔍  Rechercher un terrain" onPress={() => router.push('/terrain')} />
         )}
       </View>
 
