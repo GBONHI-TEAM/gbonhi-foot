@@ -37,7 +37,7 @@ function buildDays(): Date[] {
 }
 
 const WEEKDAYS = ['Dim', 'Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam'];
-const MONTHS = ['jan', 'fév', 'mar', 'avr', 'mai', 'juin', 'juil', 'aoû', 'sep', 'oct', 'nov', 'déc'];
+const MONTHS = ['janv', 'févr', 'mars', 'avri', 'mai', 'juin', 'juil', 'août', 'sept', 'octo', 'nove', 'déce'];
 
 function formatLongDate(d: Date): string {
   return `${WEEKDAYS[d.getDay()]} ${d.getDate()} ${MONTHS[d.getMonth()]}`;

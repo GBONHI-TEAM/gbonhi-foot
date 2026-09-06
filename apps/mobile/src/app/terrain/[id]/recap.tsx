@@ -13,7 +13,7 @@ import {
 } from '../../../types/terrain';
 
 const WEEKDAYS = ['Dim', 'Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam'];
-const MONTHS = ['jan', 'fév', 'mar', 'avr', 'mai', 'juin', 'juil', 'aoû', 'sep', 'oct', 'nov', 'déc'];
+const MONTHS = ['janv', 'févr', 'mars', 'avri', 'mai', 'juin', 'juil', 'août', 'sept', 'octo', 'nove', 'déce'];
 
 function formatFullDate(ymd: string): string {
   const [y, m, d] = ymd.split('-').map(Number);

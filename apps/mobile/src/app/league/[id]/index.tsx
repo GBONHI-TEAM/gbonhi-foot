@@ -30,7 +30,7 @@ const ALL_TABS = ['Infos', 'Règlement', 'Équipes', 'Matchs', 'Tableau', 'Class
 type Tab = (typeof ALL_TABS)[number];
 
 const MONTHS_FULL = [
-  'jan', 'fév', 'mar', 'avr', 'mai', 'juin', 'juil', 'aoû', 'sep', 'oct', 'nov', 'déc',
+  'janv', 'févr', 'mars', 'avri', 'mai', 'juin', 'juil', 'août', 'sept', 'octo', 'nove', 'déce',
 ];
 function shortDate(iso: string): string {
   const d = new Date(iso);

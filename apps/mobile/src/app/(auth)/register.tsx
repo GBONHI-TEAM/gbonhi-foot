@@ -16,6 +16,7 @@ import { supabase } from '../../lib/supabase';
 import { apiClient } from '../../lib/api';
 import { KB_DONE_ID } from '../../components/ui/keyboard-done-bar';
 import { setPendingOtp } from '../../lib/pending-flow';
+import { frenchAuthError } from '../../lib/auth-errors';
 import { signInWithGoogle } from '../../lib/auth-google';
 import { signInWithApple, isAppleCancel } from '../../lib/auth-apple';
 
@@ -72,16 +73,6 @@ const FIELD = {
 };
 const PH_COLOR = '#8E948C';
 
-function readableOtpError(message: string): string {
-  if (/rate limit/i.test(message)) {
-    return 'Trop de demandes de code ont été effectuées. Attends quelques minutes avant de réessayer.';
-  }
-  if (/invalid.*email|email.*invalid/i.test(message)) {
-    return 'Cette adresse e-mail n’est pas valide.';
-  }
-  return 'Le code n’a pas pu être envoyé. Vérifie ta connexion puis réessaie.';
-}
-
 export default function RegisterScreen() {
   const router = useRouter();
   const [prenom, setPrenom] = useState('');
@@ -135,7 +126,7 @@ export default function RegisterScreen() {
     });
     setLoading(false);
     if (error) {
-      Alert.alert('Envoi du code impossible', readableOtpError(error.message));
+      Alert.alert('Envoi du code impossible', frenchAuthError(error.message));
       return;
     }
     Alert.alert(

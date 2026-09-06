@@ -274,7 +274,7 @@ const RES_FILTERS: { key: string; label: string; kind: 'all' | 'surface' | 'form
   { key: '5vs5', label: '5vs5', kind: 'format' },
   { key: '7vs7', label: '7v7', kind: 'format' },
 ];
-const MONTHS_FR = ['JANV', 'FÉVR', 'MARS', 'AVR', 'MAI', 'JUIN', 'JUIL', 'AOÛT', 'SEPT', 'OCT', 'NOV', 'DÉC'];
+const MONTHS_FR = ['JANV', 'FÉVR', 'MARS', 'AVRI', 'MAI', 'JUIN', 'JUIL', 'AOÛT', 'SEPT', 'OCTO', 'NOVE', 'DÉCE'];
 
 function resStatusMeta(s?: string | null) {
   const u = (s ?? '').toUpperCase();

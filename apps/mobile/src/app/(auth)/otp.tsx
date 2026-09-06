@@ -15,6 +15,7 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { useAuthStore } from '../../store/auth.store';
 import { clearPendingOtp } from '../../lib/pending-flow';
+import { frenchAuthError } from '../../lib/auth-errors';
 
 /**
  * Écran 4 — Vérification OTP. Fond = maquette `s04_otp.png` retravaillée
@@ -104,7 +105,7 @@ export default function OtpScreen() {
         : await supabase.auth.verifyOtp({ email: email ?? '', token: code, type: 'email' });
     if (error) {
       setLoading(false);
-      Alert.alert('Code invalide', error.message);
+      Alert.alert('Code invalide', frenchAuthError(error.message));
       return;
     }
     // Vérification d'un numéro (compte OAuth) : on enregistre le numéro validé
@@ -133,7 +134,7 @@ export default function OtpScreen() {
           : await supabase.auth.signInWithOtp({ email: email as string, options: { shouldCreateUser: true } });
 
       if (error) {
-        Alert.alert('Renvoi impossible', error.message);
+        Alert.alert('Renvoi impossible', frenchAuthError(error.message));
         return;
       }
       setDigits(Array(length).fill(''));

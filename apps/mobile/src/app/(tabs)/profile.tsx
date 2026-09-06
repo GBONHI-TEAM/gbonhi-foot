@@ -38,7 +38,7 @@ function initials(name?: string | null) {
   return (name ?? '?').trim().split(/\s+/).map((w) => w[0]).slice(0, 2).join('').toUpperCase() || '?';
 }
 const SURFACE_SHORT: Record<string, string> = { grass: 'Gazon', artificial: 'Synthé', futsal: 'Futsal' };
-const MONTHS = ['JANV', 'FÉVR', 'MARS', 'AVR', 'MAI', 'JUIN', 'JUIL', 'AOÛT', 'SEPT', 'OCT', 'NOV', 'DÉC'];
+const MONTHS = ['JANV', 'FÉVR', 'MARS', 'AVRI', 'MAI', 'JUIN', 'JUIL', 'AOÛT', 'SEPT', 'OCTO', 'NOVE', 'DÉCE'];
 const RES_STATUS: Record<string, { label: string; color: string; bg: string }> = {
   pending: { label: 'En attente', color: '#F7921E', bg: 'rgba(247,146,30,0.15)' },
   confirmed: { label: 'Confirmée', color: '#4ADE80', bg: 'rgba(74,222,128,0.15)' },

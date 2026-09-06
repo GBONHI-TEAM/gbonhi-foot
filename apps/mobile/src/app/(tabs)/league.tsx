@@ -27,7 +27,7 @@ const FILTER_TABS: { label: string; cat: Cat | 'all' }[] = [
   { label: 'À venir', cat: 'a_venir' },
   { label: 'Terminées', cat: 'terminee' },
 ];
-const MONTH_SHORT = ['jan', 'fév', 'mar', 'avr', 'mai', 'juin', 'juil', 'août', 'sep', 'oct', 'nov', 'déc'];
+const MONTH_SHORT = ['janv', 'févr', 'mars', 'avri', 'mai', 'juin', 'juil', 'août', 'sept', 'octo', 'nove', 'déce'];
 
 function categoryOf(status: string): Cat {
   const u = (status ?? '').toUpperCase();

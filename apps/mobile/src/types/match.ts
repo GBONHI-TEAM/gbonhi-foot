@@ -192,7 +192,7 @@ export interface PoolBlock {
 // ─── Helpers d'affichage ────────────────────────────────────────────────────
 
 const WEEKDAYS = ['Dim', 'Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam'];
-const MONTHS = ['jan', 'fév', 'mar', 'avr', 'mai', 'juin', 'juil', 'aoû', 'sep', 'oct', 'nov', 'déc'];
+const MONTHS = ['janv', 'févr', 'mars', 'avri', 'mai', 'juin', 'juil', 'août', 'sept', 'octo', 'nove', 'déce'];
 
 /** "Sam 15 fév" */
 export function formatMatchDate(iso: string): string {

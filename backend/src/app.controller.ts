@@ -202,7 +202,7 @@ export class AppController {
     <div class="spacer"></div>
     <button class="btn" onclick="openApp()">Ouvrir dans l'application</button>
     <button class="btn secondary" onclick="downloadApp()">Télécharger l'application</button>
-    <p class="hint">Le football amateur, en 2 clics.</p>
+    <p class="hint">Le football amateur commence ici !</p>
   </main>
   <div class="foot">GBONHI FOOT — Côte d'Ivoire 🇨🇮</div>
   <script>
