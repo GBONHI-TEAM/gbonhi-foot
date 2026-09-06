@@ -95,8 +95,11 @@ function isSameDay(iso: string, ref: Date) {
 
 function HomeLeagues({ summary, matches, loading }: { summary: Summary | null; matches: Match[]; loading: boolean }) {
   const router = useRouter();
-  const today = matches.filter((m) => isSameDay(m.scheduled_at, new Date()));
   const live = matches.filter((m) => m.status === 'EN_COURS');
+  // Matchs du jour non encore commencés (les live sont affichés séparément, en tête).
+  const todayUpcoming = matches
+    .filter((m) => m.status !== 'EN_COURS' && isSameDay(m.scheduled_at, new Date()))
+    .sort((a, b) => new Date(a.scheduled_at).getTime() - new Date(b.scheduled_at).getTime());
   const nextMatch = summary?.upcomingMatches?.[0] ?? null;
   const hasTeam = (summary?.stats.teamsCount ?? 0) > 0;
 
@@ -106,12 +109,37 @@ function HomeLeagues({ summary, matches, loading }: { summary: Summary | null; m
 
   return (
     <>
-      {/* Matches du jour (activité réelle des ligues) */}
+      {/* Matchs du jour : les matchs EN DIRECT d'abord, puis ceux à venir */}
       <View className="mt-5 px-4">
         <SectionHeader title="Matchs du jour" action="Voir tout →" onAction={() => router.push('/match')} />
-        {today.length > 0 ? (
+
+        {/* 1) EN DIRECT en tête */}
+        {live.map((m) => (
+          <Pressable key={m.id} onPress={() => router.push(`/match/${m.id}`)} className="rounded-card p-4 mb-3 active:opacity-90"
+            style={{ backgroundColor: 'rgba(211,47,47,0.08)', borderWidth: 1, borderColor: 'rgba(211,47,47,0.5)' }}>
+            <View className="flex-row items-center gap-2 mb-2">
+              <View className="w-2 h-2 rounded-full" style={{ backgroundColor: '#E53935' }} />
+              <Text style={{ color: '#E53935' }} className="text-xs font-black tracking-widest">EN DIRECT</Text>
+            </View>
+            <View className="flex-row items-center justify-between">
+              <View className="flex-row items-center gap-2 flex-1">
+                <Avatar initials={teamInitials(m.home_team.name)} color={teamColor(m.home_team)} logo={m.home_team.logo_url} />
+                <Text className="text-white text-base font-bold flex-1" numberOfLines={1}>{m.home_team.name}</Text>
+              </View>
+              <Text className="text-white text-3xl font-black mx-2">{m.home_score} : {m.away_score}</Text>
+              <View className="flex-row items-center gap-2 flex-1 justify-end">
+                <Text className="text-white text-base font-bold flex-1 text-right" numberOfLines={1}>{m.away_team.name}</Text>
+                <Avatar initials={teamInitials(m.away_team.name)} color={teamColor(m.away_team)} logo={m.away_team.logo_url} />
+              </View>
+            </View>
+            <Text className="text-accent text-sm font-bold text-center mt-3">Voir le match →</Text>
+          </Pressable>
+        ))}
+
+        {/* 2) À venir aujourd'hui (cartes compactes horizontales) */}
+        {todayUpcoming.length > 0 ? (
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 12 }}>
-            {today.map((m) => (
+            {todayUpcoming.map((m) => (
               <Pressable key={m.id} onPress={() => router.push(`/match/${m.id}`)} className="active:opacity-90">
                 <Card style={{ width: 250 }}>
                   <View className="flex-row items-center gap-3">
@@ -128,37 +156,10 @@ function HomeLeagues({ summary, matches, loading }: { summary: Summary | null; m
               </Pressable>
             ))}
           </ScrollView>
-        ) : (
+        ) : live.length === 0 ? (
           <EmptyState text="Aucun match programmé aujourd'hui." />
-        )}
+        ) : null}
       </View>
-
-      {/* EN DIRECT */}
-      {live.length > 0 ? (
-        <View className="mt-6 px-4">
-          {live.map((m) => (
-            <Pressable key={m.id} onPress={() => router.push(`/match/${m.id}`)} className="rounded-card p-4 mb-3 active:opacity-90"
-              style={{ backgroundColor: 'rgba(211,47,47,0.08)', borderWidth: 1, borderColor: 'rgba(211,47,47,0.5)' }}>
-              <View className="flex-row items-center gap-2 mb-2">
-                <View className="w-2 h-2 rounded-full" style={{ backgroundColor: '#E53935' }} />
-                <Text style={{ color: '#E53935' }} className="text-xs font-black tracking-widest">EN DIRECT</Text>
-              </View>
-              <View className="flex-row items-center justify-between">
-                <View className="flex-row items-center gap-2 flex-1">
-                  <Avatar initials={teamInitials(m.home_team.name)} color={teamColor(m.home_team)} logo={m.home_team.logo_url} />
-                  <Text className="text-white text-base font-bold flex-1" numberOfLines={1}>{m.home_team.name}</Text>
-                </View>
-                <Text className="text-white text-3xl font-black mx-2">{m.home_score} : {m.away_score}</Text>
-                <View className="flex-row items-center gap-2 flex-1 justify-end">
-                  <Text className="text-white text-base font-bold flex-1 text-right" numberOfLines={1}>{m.away_team.name}</Text>
-                  <Avatar initials={teamInitials(m.away_team.name)} color={teamColor(m.away_team)} logo={m.away_team.logo_url} />
-                </View>
-              </View>
-              <Text className="text-accent text-sm font-bold text-center mt-3">Voir le match →</Text>
-            </Pressable>
-          ))}
-        </View>
-      ) : null}
 
       {/* Mon prochain match (du joueur connecté) */}
       <View className="mt-6 px-4">

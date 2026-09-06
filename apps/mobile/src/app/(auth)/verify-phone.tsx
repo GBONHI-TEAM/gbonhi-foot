@@ -5,7 +5,8 @@ import { supabase } from '../../lib/supabase';
 import { apiClient } from '../../lib/api';
 import { useAuthStore } from '../../store/auth.store';
 import { KB_DONE_ID } from '../../components/ui/keyboard-done-bar';
-import { setPendingOtp } from '../../lib/pending-flow';
+import { setPendingOtp, clearPendingOtp } from '../../lib/pending-flow';
+import { frenchAuthError } from '../../lib/auth-errors';
 
 const CIV_PHONE = /^\d{8,10}$/;
 
@@ -20,6 +21,29 @@ export default function VerifyPhoneScreen() {
   const email = user?.email ?? '';
   const [phone, setPhone] = useState('');
   const [loading, setLoading] = useState(false);
+
+  // Sortie de secours : cet écran est imposé aux comptes Apple/Google sans
+  // numéro. Sans échappatoire, un utilisateur qui ne reçoit pas le code (ex.
+  // adresse « Hide My Email » qui ne délivre pas) reste bloqué même après
+  // réinstallation (la session persiste). On lui permet de se déconnecter.
+  function changeAccount() {
+    Alert.alert(
+      'Changer de compte ?',
+      'Tu seras déconnecté et pourras te reconnecter avec un autre compte ou une adresse e-mail qui reçoit bien les e-mails.',
+      [
+        { text: 'Rester', style: 'cancel' },
+        {
+          text: 'Se déconnecter',
+          style: 'destructive',
+          onPress: async () => {
+            await clearPendingOtp();
+            await supabase.auth.signOut();
+            router.replace('/(auth)/sign-in');
+          },
+        },
+      ],
+    );
+  }
 
   async function sendCode() {
     const raw = phone.replace(/\s/g, '');
@@ -50,7 +74,7 @@ export default function VerifyPhoneScreen() {
     const { error } = await supabase.auth.signInWithOtp({ email, options: { shouldCreateUser: false } });
     setLoading(false);
     if (error) {
-      Alert.alert('Envoi du code impossible', error.message);
+      Alert.alert('Envoi du code impossible', frenchAuthError(error.message));
       return;
     }
     Alert.alert(
@@ -66,6 +90,10 @@ export default function VerifyPhoneScreen() {
   return (
     <KeyboardAvoidingView className="flex-1 bg-primary-deep" behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ImageBackground source={require('../../../assets/images/kente-tile.png')} resizeMode="repeat" style={{ flex: 1 }} imageStyle={{ opacity: 0.6 }}>
+        {/* Retour / changer de compte (évite de rester bloqué sur cet écran) */}
+        <Pressable onPress={changeAccount} hitSlop={12} style={{ position: 'absolute', top: 56, left: 20, zIndex: 10, width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.12)' }}>
+          <Text style={{ color: '#FFFFFF', fontSize: 20, fontWeight: '800' }}>‹</Text>
+        </Pressable>
         <ScrollView contentContainerStyle={{ flexGrow: 1, justifyContent: 'center', paddingHorizontal: 28, paddingVertical: 48 }} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
           <View className="items-center mb-4">
             <View style={{ shadowColor: '#FFB830', shadowOpacity: 0.7, shadowRadius: 22 }}>
@@ -89,6 +117,7 @@ export default function VerifyPhoneScreen() {
               inputAccessoryViewID={KB_DONE_ID}
               selectionColor="#F7921E"
               className="flex-1 text-white text-base"
+              style={{ paddingVertical: 0, textAlignVertical: 'center', height: '100%' }}
             />
           </View>
 
