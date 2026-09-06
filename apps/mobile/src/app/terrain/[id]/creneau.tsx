@@ -148,18 +148,25 @@ export default function CreneauPage() {
   const now = new Date();
   const nowHour = now.getHours() + now.getMinutes() / 60;
 
-  function slotAvailable(h: number): boolean {
-    if (!openingHours.has(h)) return false;
-    if (isToday && h <= nowHour) return false;
+  // États d'un créneau de départ :
+  //  - 'occupied' : la demi-heure est réellement prise (réservée / en attente / bloquée) ou passée.
+  //  - 'tooShort' : la demi-heure est LIBRE, mais démarrer la durée choisie ici
+  //    chevaucherait une résa suivante ou dépasserait les horaires d'ouverture.
+  //  - 'available' : sélectionnable.
+  type SlotState = 'available' | 'occupied' | 'tooShort';
+  function slotState(h: number): SlotState {
+    if (!openingHours.has(h)) return 'occupied';
+    if (isToday && h <= nowHour) return 'occupied';
+    if (unavailable.has(h)) return 'occupied';
     for (let cursor = h; cursor < h + duration; cursor += 0.5) {
       const normalized = Number(cursor.toFixed(1));
-      if (!openingHours.has(normalized) || unavailable.has(normalized)) return false;
+      if (!openingHours.has(normalized) || unavailable.has(normalized)) return 'tooShort';
     }
-    return true;
+    return 'available';
   }
 
   function onSelectHour(h: number) {
-    if (!slotAvailable(h)) return;
+    if (slotState(h) !== 'available') return;
     setStartHour(h === startHour ? null : h);
   }
 
@@ -252,7 +259,9 @@ export default function CreneauPage() {
         ) : (
           <View className="flex-row flex-wrap" style={{ marginHorizontal: -6 }}>
             {hours.map((h) => {
-              const available = slotAvailable(h);
+              const state = slotState(h);
+              const available = state === 'available';
+              const occupied = state === 'occupied';
               const selected = startHour === h;
               return (
                 <View key={h} style={{ width: '33.333%', padding: 6 }}>
@@ -261,20 +270,42 @@ export default function CreneauPage() {
                     disabled={!available}
                     className="h-14 rounded-btn items-center justify-center"
                     style={{
-                      backgroundColor: selected ? '#F7921E' : available ? 'rgba(30,122,58,0.18)' : 'rgba(255,255,255,0.04)',
+                      backgroundColor: selected
+                        ? '#F7921E'
+                        : available
+                          ? 'rgba(30,122,58,0.18)'
+                          : occupied
+                            ? 'rgba(255,255,255,0.04)'
+                            : 'rgba(247,146,30,0.06)',
                       borderWidth: 1,
-                      borderColor: selected ? '#F7921E' : available ? 'rgba(46,158,79,0.5)' : 'rgba(255,255,255,0.08)',
+                      borderStyle: state === 'tooShort' ? 'dashed' : 'solid',
+                      borderColor: selected
+                        ? '#F7921E'
+                        : available
+                          ? 'rgba(46,158,79,0.5)'
+                          : occupied
+                            ? 'rgba(255,255,255,0.08)'
+                            : 'rgba(247,146,30,0.35)',
                     }}
                   >
                     <Text
                       className="text-base font-bold"
                       style={{
-                        color: selected ? '#fff' : available ? '#4ADE80' : 'rgba(255,255,255,0.3)',
-                        textDecorationLine: available ? 'none' : 'line-through',
+                        color: selected
+                          ? '#fff'
+                          : available
+                            ? '#4ADE80'
+                            : occupied
+                              ? 'rgba(255,255,255,0.3)'
+                              : 'rgba(247,146,30,0.7)',
+                        textDecorationLine: occupied ? 'line-through' : 'none',
                       }}
                     >
                       {hh(h)}
                     </Text>
+                    {state === 'tooShort' ? (
+                      <Text style={{ color: 'rgba(247,146,30,0.7)', fontSize: 9, marginTop: 1 }}>trop court</Text>
+                    ) : null}
                   </Pressable>
                 </View>
               );
@@ -283,10 +314,11 @@ export default function CreneauPage() {
         )}
 
         {/* Légende */}
-        <View className="flex-row items-center gap-5 mt-5">
+        <View className="flex-row flex-wrap items-center gap-x-5 gap-y-2 mt-5">
           {[
             { c: '#2E9E4F', l: 'Disponible' },
             { c: '#F7921E', l: 'Sélectionné' },
+            { c: 'rgba(247,146,30,0.6)', l: 'Trop court' },
             { c: 'rgba(255,255,255,0.25)', l: 'Occupé' },
           ].map((leg) => (
             <View key={leg.l} className="flex-row items-center gap-2">
