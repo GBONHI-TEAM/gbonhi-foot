@@ -214,23 +214,20 @@ export class AppController {
       return CFG.download || '';
     }
     function openApp() {
-      var started = Date.now();
-      var url = storeUrl();
+      // On tente uniquement d'ouvrir l'app (schéma profond). PAS de redirection
+      // automatique vers le store : la pop-up iOS « Ouvrir dans Gbonhi Foot ? »
+      // garde la page visible, et un repli minuté enverrait à tort vers
+      // TestFlight/App Store avant même que l'utilisateur ait confirmé.
       window.location.href = CFG.deep;
-      // Si l'app n'est pas installée, on reste sur la page → redirection store.
-      if (url) {
-        setTimeout(function () {
-          if (!document.hidden && Date.now() - started < 2500) window.location.href = url;
-        }, 1400);
-      }
     }
     function downloadApp() {
       var url = storeUrl();
       if (url) { window.location.href = url; }
       else { alert('GBONHI FOOT arrive très bientôt sur l\\'App Store et Google Play !'); }
     }
-    // Tentative d'ouverture automatique à l'arrivée.
-    window.addEventListener('load', function () { setTimeout(openApp, 500); });
+    // Tentative d'ouverture automatique à l'arrivée (l'app installée s'ouvre ;
+    // sinon l'utilisateur utilise le bouton « Télécharger l'application »).
+    window.addEventListener('load', function () { setTimeout(openApp, 400); });
   </script>
 </body>
 </html>`;
