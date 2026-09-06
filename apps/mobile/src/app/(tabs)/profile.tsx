@@ -40,8 +40,9 @@ const SURFACE_SHORT: Record<string, string> = { grass: 'Gazon', artificial: 'Syn
 const MONTHS = ['JANV', 'FÉVR', 'MARS', 'AVR', 'MAI', 'JUIN', 'JUIL', 'AOÛT', 'SEPT', 'OCT', 'NOV', 'DÉC'];
 const RES_STATUS: Record<string, { label: string; color: string; bg: string }> = {
   pending: { label: 'En attente', color: '#F7921E', bg: 'rgba(247,146,30,0.15)' },
-  confirmed: { label: 'Confirmé', color: '#4ADE80', bg: 'rgba(74,222,128,0.15)' },
-  cancelled: { label: 'Annulé', color: '#F87171', bg: 'rgba(248,113,113,0.15)' },
+  confirmed: { label: 'Confirmée', color: '#4ADE80', bg: 'rgba(74,222,128,0.15)' },
+  cancelled: { label: 'Annulée', color: '#F87171', bg: 'rgba(248,113,113,0.15)' },
+  completed: { label: 'Terminée', color: 'rgba(255,255,255,0.7)', bg: 'rgba(255,255,255,0.08)' },
 };
 function hh(h: number) {
   const hour = Math.floor(h);
@@ -305,7 +306,8 @@ function ReservationBody({
         </View>
       ) : (
         list.map((r, i) => {
-          const st = RES_STATUS[r.status] ?? RES_STATUS.pending;
+          // Une réservation passée (onglet « Passées ») est terminée, plus « Confirmée ».
+          const st = tab === 'Passées' ? RES_STATUS.completed : (RES_STATUS[r.status] ?? RES_STATUS.pending);
           return (
             <Pressable key={r.id} onPress={() => onOpenReservation(r.id)} className="flex-row items-center gap-3 rounded-2xl p-3.5 mb-2.5" style={{ backgroundColor: 'rgba(255,255,255,0.05)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' }}>
               <ResDateBadge ymd={r.reservation_date} index={i} />
