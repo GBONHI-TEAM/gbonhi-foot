@@ -278,8 +278,8 @@ const MONTHS_FR = ['JANV', 'FÉVR', 'MARS', 'AVR', 'MAI', 'JUIN', 'JUIL', 'AOÛT
 
 function resStatusMeta(s?: string | null) {
   const u = (s ?? '').toUpperCase();
-  if (/CONFIRM|VALID/.test(u)) return { label: 'Confirmé', color: '#2E9E4F' };
-  if (/CANCEL|ANNUL|REFUS/.test(u)) return { label: 'Annulé', color: '#DC2626' };
+  if (/CONFIRM|VALID/.test(u)) return { label: 'Confirmée', color: '#2E9E4F' };
+  if (/CANCEL|ANNUL|REFUS/.test(u)) return { label: 'Annulée', color: '#DC2626' };
   return { label: 'En attente', color: '#F7921E' };
 }
 

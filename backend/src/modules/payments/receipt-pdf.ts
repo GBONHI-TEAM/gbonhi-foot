@@ -36,6 +36,17 @@ const HEADER_MOTIF = { data: Buffer.from(RECEIPT_HEADER_MOTIF_JPEG_BASE64, 'base
 // Bandeau vert de l'en-tête (haut de page A4) : y 745, hauteur 97, largeur 595.
 const HEADER_BAND = 'q 595 0 0 97 0 745 cm /Im1 Do Q';
 
+// Filigrane : le motif ivoirien GBONHI FOOT tuilé en fond de page, très
+// atténué (ExtGState /GS1), pour habiller tout le fond vert sous le contenu.
+// Le motif fait 595×97 par bande ; on empile de y=0 jusque sous l'en-tête.
+function backgroundMotif(topY = 745): string {
+  const bands: string[] = [];
+  for (let y = 0; y < topY; y += 97) {
+    bands.push(`q /GS1 gs 595 0 0 97 0 ${y} cm /Im1 Do Q`);
+  }
+  return bands.join('\n');
+}
+
 // Quelques caractères WinAnsi hors Latin-1 direct (apostrophes typographiques, œ…).
 const WINANSI_SPECIAL: Record<string, number> = {
   '’': 0x92, '‘': 0x91, '“': 0x93, '”': 0x94,
@@ -110,7 +121,7 @@ function receiptObjects(content: string): PdfObject[] {
   return [
     '<< /Type /Catalog /Pages 2 0 R >>',
     '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
-    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 4 0 R /F2 5 0 R >> /XObject << /Im0 7 0 R /Im1 8 0 R >> >> /Contents 6 0 R >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 4 0 R /F2 5 0 R >> /XObject << /Im0 7 0 R /Im1 8 0 R >> /ExtGState << /GS1 9 0 R >> >> /Contents 6 0 R >>',
     '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>',
     '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>',
     { head: `<< /Length ${contentBuf.length} >>`, stream: contentBuf },
@@ -122,6 +133,8 @@ function receiptObjects(content: string): PdfObject[] {
       head: `<< /Type /XObject /Subtype /Image /Width ${HEADER_MOTIF.width} /Height ${HEADER_MOTIF.height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${HEADER_MOTIF.data.length} >>`,
       stream: HEADER_MOTIF.data,
     },
+    // Transparence pour le filigrane du fond (objet 9, référencé /GS1).
+    '<< /Type /ExtGState /ca 0.06 /CA 0.06 >>',
   ];
 }
 
@@ -129,6 +142,8 @@ function receiptObjects(content: string): PdfObject[] {
 export function createReservationReceiptPdf(input: ReceiptPdfInput): Buffer {
   const content = [
     '0.051 0.122 0.051 rg 0 0 595 842 re f',
+    // Filigrane du motif GBONHI FOOT sur tout le fond vert
+    backgroundMotif(),
     '0.118 0.478 0.227 rg 0 745 595 97 re f',
     // Motif ivoirien couvrant tout le bandeau vert
     HEADER_BAND,
@@ -162,7 +177,7 @@ export function createReservationReceiptPdf(input: ReceiptPdfInput): Buffer {
     '0.65 0.65 0.65 rg',
     text(42, 312, 10, 'Ce reçu atteste de la confirmation de votre réservation.'),
     text(42, 294, 10, 'Conservez-le et présentez votre référence au terrain.'),
-    text(42, 74, 9, 'GBONHI FOOT — Plateforme du football amateur en Côte d’Ivoire'),
+    text(42, 74, 9, 'GBONHI FOOT — La plateforme du football amateur'),
     text(42, 56, 9, 'Le football amateur commence ici !'),
   ].join('\n');
   return buildPdf(receiptObjects(content));
@@ -172,6 +187,7 @@ export function createReservationReceiptPdf(input: ReceiptPdfInput): Buffer {
 export function createLeagueRegistrationReceiptPdf(input: LeagueReceiptPdfInput): Buffer {
   const content = [
     '0.051 0.122 0.051 rg 0 0 595 842 re f',
+    backgroundMotif(),
     '0.118 0.478 0.227 rg 0 745 595 97 re f',
     HEADER_BAND,
     drawLogo(474, 758, 64),
@@ -200,7 +216,7 @@ export function createLeagueRegistrationReceiptPdf(input: LeagueReceiptPdfInput)
     '0.65 0.65 0.65 rg',
     text(42, 312, 10, 'Ce reçu atteste de la confirmation de votre inscription en ligue.'),
     text(42, 294, 10, 'Conservez-le comme preuve de paiement.'),
-    text(42, 74, 9, 'GBONHI FOOT — Plateforme du football amateur en Côte d’Ivoire'),
+    text(42, 74, 9, 'GBONHI FOOT — La plateforme du football amateur'),
     text(42, 56, 9, 'Le football amateur commence ici !'),
   ].join('\n');
   return buildPdf(receiptObjects(content));
@@ -249,7 +265,7 @@ export function createPartnerRevenueStatementPdf(input: PartnerRevenueStatementP
     '0.40 0.40 0.40 rg',
     text(42, 142, 9, 'Le montant indiqué est net de la commission GBONHI FOOT.'),
     text(42, 124, 9, lines.length < input.reservationCount ? 'Le détail présente les 10 dernières réservations de la période.' : 'Détail des réservations de la période.'),
-    text(42, 74, 9, 'GBONHI FOOT — Plateforme du football amateur en Côte d’Ivoire'),
+    text(42, 74, 9, 'GBONHI FOOT — La plateforme du football amateur'),
     text(42, 56, 9, 'Document généré automatiquement depuis le portail partenaire.'),
   ].join('\n');
   return buildPdf(receiptObjects(content));
