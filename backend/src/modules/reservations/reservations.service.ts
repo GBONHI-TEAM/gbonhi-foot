@@ -291,43 +291,37 @@ export class ReservationsService {
     const total = Math.round(unit * duration);
     const fee = Math.round(total * PLATFORM_FEE_RATE);
 
-    // La contrainte @@unique([terrain_id, reservation_date, start_hour]) couvre
-    // TOUTES les lignes, y compris les annulées/expirées. Une ancienne ligne
-    // annulée au créneau EXACT bloquerait donc une nouvelle réservation (erreur
-    // P2002 « existe déjà »). On la réutilise au lieu d'en insérer une nouvelle.
-    const reservationData = {
-      user_id: user.id,
-      end_hour: dto.end_hour,
-      unit_price: unit,
-      total_price: total,
-      platform_fee: fee,
-      partner_amount: total - fee,
-      status: 'pending',
-      cancel_reason: null,
-      notes: dto.notes,
-    };
-
-    // UPSERT atomique sur la clé unique (terrain, date, heure). Si une ligne
-    // existe déjà à ce créneau — forcément annulée/expirée à ce stade grâce aux
-    // gardes ci-dessus —, on la RÉACTIVE ; sinon on en crée une. Cela élimine
-    // définitivement le faux conflit « Cette information existe déjà » (P2002)
-    // quand on rechoisit un créneau qu'on vient d'annuler.
-    const reservation = await this.prisma.reservation.upsert({
-      where: {
-        terrain_id_reservation_date_start_hour: {
+    // Chaque mise au panier crée une réservation NEUVE (nouveau created_at →
+    // délai de 15 min qui repart à zéro). Les anciennes lignes annulées du même
+    // créneau restent en base comme historique : l'anti-double-booking est
+    // garanti par l'index unique PARTIEL `no_double_booking` (statuts actifs
+    // uniquement), et non plus par une contrainte couvrant toutes les lignes.
+    // On rechoisit donc librement un créneau qu'on vient d'annuler.
+    let reservation: Awaited<ReturnType<typeof this.prisma.reservation.create>>;
+    try {
+      reservation = await this.prisma.reservation.create({
+        data: {
           terrain_id: dto.terrain_id,
           reservation_date: reservationDate,
           start_hour: dto.start_hour,
+          user_id: user.id,
+          end_hour: dto.end_hour,
+          unit_price: unit,
+          total_price: total,
+          platform_fee: fee,
+          partner_amount: total - fee,
+          status: 'pending',
+          notes: dto.notes,
         },
-      },
-      create: {
-        terrain_id: dto.terrain_id,
-        reservation_date: reservationDate,
-        start_hour: dto.start_hour,
-        ...reservationData,
-      },
-      update: { ...reservationData, updated_at: new Date() },
-    });
+      });
+    } catch (error: unknown) {
+      // Collision sur l'index partiel : une réservation ACTIVE existe déjà à ce
+      // créneau exact (course entre deux joueurs) → même message que l'overlap.
+      if ((error as { code?: string }).code === 'P2002') {
+        throw new ConflictException('Ce créneau vient d’être réservé. Choisis un autre horaire.');
+      }
+      throw error;
+    }
     try {
       await this.analytics.track(user, { type: 'RESERVATION_CREATED', mode: 'reservation' });
     } catch {

@@ -494,7 +494,11 @@ model Reservation {
   user    Profile  @relation(fields: [user_id], references: [id])
   payment Payment?
 
-  @@unique([terrain_id, reservation_date, start_hour])
+  // Anti-double-booking : index UNIQUE PARTIEL en base (non exprimable par
+  // Prisma) — `no_double_booking` ON (terrain_id, reservation_date, start_hour)
+  // WHERE status IN ('pending','confirmed'). Il autorise plusieurs lignes
+  // ANNULÉES sur un même créneau (historique) tout en interdisant deux
+  // réservations ACTIVES. Voir migration partial_unique_active_reservations.
   @@map("reservations")
 }
 
