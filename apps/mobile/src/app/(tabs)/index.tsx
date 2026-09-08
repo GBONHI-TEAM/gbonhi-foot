@@ -370,7 +370,7 @@ function HomeReservation() {
               className="h-11 rounded-btn items-center justify-center mt-4 active:opacity-90"
               style={{ backgroundColor: '#F7921E', alignSelf: 'flex-start', paddingHorizontal: 22 }}
             >
-              <Text className="text-white font-bold text-base">Réserver maintenant</Text>
+              <Text className="text-white font-bold text-base">Trouver un terrain</Text>
             </Pressable>
           </View>
         </View>
@@ -457,7 +457,7 @@ function HomeReservation() {
             })}
           </View>
         ) : (
-          <EmptyState text="Tu n'as pas encore de réservation." cta="🔍  Rechercher un terrain" onPress={() => router.push('/terrain')} />
+          <EmptyState text="Tu n'as pas encore de réservation." cta="🔍  Trouver un terrain" onPress={() => router.push('/terrain')} />
         )}
       </View>
 
