@@ -64,48 +64,67 @@ function PlayerAvatar({ name, avatar }: { name: string; avatar?: string | null }
 interface LineupSide { team: { id: string; name: string }; editable: boolean; lineup: { formation: string | null; players: LineupPlayer[]; published: boolean } | null }
 interface LineupsResponse { kickoff: string; home: LineupSide | null; away: LineupSide | null }
 
-/** Jeton d'un joueur sur le terrain : maillot rond + numéro + nom. */
+// Nom court affiché sous le maillot (dernier mot du nom).
+function shortName(name: string): string {
+  const parts = name.trim().split(/\s+/);
+  return parts.length > 1 ? parts[parts.length - 1] : name;
+}
+
+/** Jeton joueur : maillot à numéro (style diffusion TV) + nom. */
 function PlayerToken({ p, onPress }: { p: LineupPlayer; onPress: (userId: string) => void }) {
   return (
     <Pressable
       onPress={() => p.user_id && onPress(p.user_id)}
       disabled={!p.user_id}
-      className="items-center active:opacity-70"
-      style={{ width: 68 }}
+      className="items-center active:opacity-80"
+      style={{ width: 76 }}
     >
-      <View>
-        <PlayerAvatar name={p.name} avatar={p.avatar_url} />
-        {p.number != null ? (
-          <View className="absolute items-center justify-center rounded-full" style={{ right: -4, bottom: -3, minWidth: 16, height: 16, paddingHorizontal: 3, backgroundColor: '#0D1F0D', borderWidth: 1, borderColor: '#F7921E' }}>
-            <Text style={{ color: '#F7921E', fontSize: 9, fontWeight: '800' }}>{p.number}</Text>
-          </View>
-        ) : null}
+      {/* Maillot */}
+      <View style={{ width: 46, height: 46, borderRadius: 13, backgroundColor: '#15151A', borderWidth: 1, borderColor: 'rgba(255,255,255,0.28)', alignItems: 'center', justifyContent: 'center', shadowColor: '#000', shadowOpacity: 0.35, shadowRadius: 4, shadowOffset: { width: 0, height: 2 }, elevation: 3 }}>
+        {/* Épaules du maillot */}
+        <View style={{ position: 'absolute', top: 6, left: -4, width: 12, height: 12, borderRadius: 3, backgroundColor: '#15151A', borderWidth: 1, borderColor: 'rgba(255,255,255,0.28)', transform: [{ rotate: '45deg' }] }} />
+        <View style={{ position: 'absolute', top: 6, right: -4, width: 12, height: 12, borderRadius: 3, backgroundColor: '#15151A', borderWidth: 1, borderColor: 'rgba(255,255,255,0.28)', transform: [{ rotate: '45deg' }] }} />
+        <Text style={{ color: '#FFFFFF', fontWeight: '800', fontSize: 17 }}>{p.number ?? ''}</Text>
       </View>
-      <Text numberOfLines={1} className="text-white text-[11px] font-semibold mt-1.5" style={{ maxWidth: 68, textAlign: 'center' }}>{p.name.split(' ').slice(-1)[0]}</Text>
+      {/* Nom */}
+      <View style={{ marginTop: 6, backgroundColor: 'rgba(0,0,0,0.4)', borderRadius: 6, paddingHorizontal: 6, paddingVertical: 1, maxWidth: 76 }}>
+        <Text numberOfLines={1} style={{ color: '#FFFFFF', fontSize: 11, fontWeight: '700', textAlign: 'center' }}>{shortName(p.name)}</Text>
+      </View>
     </Pressable>
   );
 }
 
-/** Terrain façon FotMob : titulaires placés par ligne (ATT en haut → GK en bas). */
+/** Terrain façon diffusion TV : titulaires placés par ligne (ATT en haut → GK en bas). */
 function LineupPitch({ starters, subs, onPlayerPress }: { starters: LineupPlayer[]; subs: LineupPlayer[]; onPlayerPress: (userId: string) => void }) {
-  // Regroupe les titulaires par poste ; ordre d'affichage haut→bas : ATT, MID, DEF, GK.
   const byBucket: Record<PosBucket, LineupPlayer[]> = { GK: [], DEF: [], MID: [], ATT: [] };
   for (const p of starters) byBucket[positionBucket(p.position)].push(p);
   const lines = (['ATT', 'MID', 'DEF', 'GK'] as PosBucket[]).map((b) => byBucket[b]).filter((arr) => arr.length > 0);
+  const H = Math.max(320, lines.length * 96);
+  const line = 'rgba(255,255,255,0.22)';
 
   return (
     <View>
-      {/* Terrain */}
-      <View className="rounded-2xl overflow-hidden" style={{ backgroundColor: '#137A38', borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)', paddingVertical: 18, paddingHorizontal: 8, gap: 6 }}>
-        {/* Marquages simples */}
-        <View pointerEvents="none" style={{ position: 'absolute', left: 12, right: 12, top: 10, bottom: 10, borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.18)', borderRadius: 8 }} />
-        <View pointerEvents="none" style={{ position: 'absolute', left: 12, right: 12, top: '50%', height: 1.5, backgroundColor: 'rgba(255,255,255,0.18)' }} />
-        <View pointerEvents="none" style={{ position: 'absolute', alignSelf: 'center', top: '50%', width: 58, height: 58, borderRadius: 29, borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.18)', transform: [{ translateY: -29 }] }} />
-        {lines.map((line, i) => (
-          <View key={i} className="flex-row items-start justify-evenly" style={{ minHeight: 58 }}>
-            {line.map((p, j) => <PlayerToken key={`${i}-${j}`} p={p} onPress={onPlayerPress} />)}
-          </View>
+      <View style={{ height: H, borderRadius: 16, overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)', backgroundColor: '#0E7A34' }}>
+        {/* Rayures de pelouse */}
+        {Array.from({ length: 6 }).map((_, i) => (
+          <View key={`b${i}`} pointerEvents="none" style={{ position: 'absolute', left: 0, right: 0, top: `${(i * 100) / 6}%`, height: `${100 / 6}%`, backgroundColor: i % 2 === 0 ? 'rgba(255,255,255,0.04)' : 'transparent' }} />
         ))}
+        {/* Marquages */}
+        <View pointerEvents="none" style={{ position: 'absolute', left: 10, right: 10, top: 10, bottom: 10, borderWidth: 1.5, borderColor: line, borderRadius: 6 }} />
+        <View pointerEvents="none" style={{ position: 'absolute', left: 10, right: 10, top: '50%', height: 1.5, backgroundColor: line }} />
+        <View pointerEvents="none" style={{ position: 'absolute', alignSelf: 'center', top: '50%', width: 64, height: 64, borderRadius: 32, borderWidth: 1.5, borderColor: line, transform: [{ translateY: -32 }] }} />
+        {/* Surfaces de réparation (haut / bas) */}
+        <View pointerEvents="none" style={{ position: 'absolute', alignSelf: 'center', top: 10, width: '46%', height: 40, borderWidth: 1.5, borderTopWidth: 0, borderColor: line, borderBottomLeftRadius: 4, borderBottomRightRadius: 4 }} />
+        <View pointerEvents="none" style={{ position: 'absolute', alignSelf: 'center', bottom: 10, width: '46%', height: 40, borderWidth: 1.5, borderBottomWidth: 0, borderColor: line, borderTopLeftRadius: 4, borderTopRightRadius: 4 }} />
+
+        {/* Lignes de joueurs réparties verticalement */}
+        <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, paddingVertical: 22, justifyContent: 'space-between' }}>
+          {lines.map((l, i) => (
+            <View key={i} className="flex-row items-center justify-evenly">
+              {l.map((p, j) => <PlayerToken key={`${i}-${j}`} p={p} onPress={onPlayerPress} />)}
+            </View>
+          ))}
+        </View>
       </View>
 
       {/* Remplaçants */}

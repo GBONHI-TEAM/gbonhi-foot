@@ -74,9 +74,13 @@ export default function MonEquipePage() {
     setTimeout(() => setCopiedCode(false), 1600);
   }
 
-  async function shareInvite(_kind: 'code' | 'link') {
+  async function shareInvite(kind: 'code' | 'link') {
     if (!team?.invitation_code) return;
-    await Share.share({ message: buildTeamInviteMessage(team.name, team.invitation_code, joinLink) });
+    // 'code' → partage le code SEUL (copiable sans le reste) ; 'link' → message complet.
+    const message = kind === 'code'
+      ? team.invitation_code
+      : buildTeamInviteMessage(team.name, team.invitation_code, joinLink);
+    await Share.share({ message });
   }
 
   function promoteCaptain(m: Member) {
@@ -226,9 +230,14 @@ export default function MonEquipePage() {
                 {copiedCode ? '✓ Code copié !' : '👆 Touche le code pour le copier'}
               </Text>
             </Pressable>
-            <Pressable onPress={() => shareInvite('link')} className="w-full h-11 rounded-xl items-center justify-center flex-row gap-1.5" style={{ backgroundColor: 'rgba(30,122,58,0.3)', borderWidth: 1, borderColor: 'rgba(30,122,58,0.55)' }}>
-              <Text style={{ color: '#4ADE80' }}>🔗</Text><Text className="text-sm font-bold" style={{ color: '#4ADE80' }}>Partager le lien</Text>
-            </Pressable>
+            <View className="w-full flex-row gap-2.5">
+              <Pressable onPress={() => shareInvite('link')} className="flex-1 h-11 rounded-xl items-center justify-center flex-row gap-1.5" style={{ backgroundColor: 'rgba(30,122,58,0.3)', borderWidth: 1, borderColor: 'rgba(30,122,58,0.55)' }}>
+                <Text style={{ color: '#4ADE80' }}>🔗</Text><Text className="text-sm font-bold" style={{ color: '#4ADE80' }}>Partager le lien</Text>
+              </Pressable>
+              <Pressable onPress={() => shareInvite('code')} className="flex-1 h-11 rounded-xl items-center justify-center flex-row gap-1.5" style={{ backgroundColor: 'rgba(247,146,30,0.16)', borderWidth: 1, borderColor: 'rgba(247,146,30,0.55)' }}>
+                <Text style={{ color: '#F7921E' }}>🔑</Text><Text className="text-sm font-bold" style={{ color: '#F7921E' }}>Partager le code</Text>
+              </Pressable>
+            </View>
           </View>
         ) : null}
 
