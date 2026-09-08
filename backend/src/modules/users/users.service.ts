@@ -193,6 +193,46 @@ export class UsersService {
     };
   }
 
+  /** Flux d'activité perso : buts, passes et cartons du joueur, plus récents d'abord. */
+  async getMyActivity(user: UserPayload) {
+    const events = await this.prisma.matchEvent.findMany({
+      where: { player_id: user.id },
+      orderBy: [{ created_at: 'desc' }],
+      take: 40,
+      select: {
+        id: true,
+        type: true,
+        minute: true,
+        note: true,
+        created_at: true,
+        team_id: true,
+        match: {
+          select: {
+            id: true,
+            scheduled_at: true,
+            home_team: { select: { id: true, name: true } },
+            away_team: { select: { id: true, name: true } },
+          },
+        },
+      },
+    });
+    return events.map((e) => {
+      const opponent = e.match
+        ? (e.team_id === e.match.home_team.id ? e.match.away_team.name : e.match.home_team.name)
+        : null;
+      return {
+        id: e.id,
+        type: e.type,
+        minute: e.minute,
+        note: e.note,
+        created_at: e.created_at,
+        match_id: e.match?.id ?? null,
+        scheduled_at: e.match?.scheduled_at ?? null,
+        opponent,
+      };
+    });
+  }
+
   /**
    * Source unique de la fiche joueur dans le back-office.
    * Les données sportives détaillées sont conservées dans les métadonnées

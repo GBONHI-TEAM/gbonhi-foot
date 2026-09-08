@@ -64,6 +64,12 @@ export class UsersController {
     return this.usersService.getSummary(user);
   }
 
+  /** Mon activité récente : buts, passes, cartons (flux profil mode Leagues). */
+  @Get('me/activity')
+  getMyActivity(@CurrentUser() user: UserPayload) {
+    return this.usersService.getMyActivity(user);
+  }
+
   /** Ma fiche joueur consolidée (identité + sportif + stats) pour l'app. */
   @Get('me/player-card')
   getMyPlayerCard(@CurrentUser() user: UserPayload) {

@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from 'react';
 import { View, Text, Pressable, ScrollView, Image, Alert, Modal, TextInput, RefreshControl } from 'react-native';
-import { useRouter, useFocusEffect } from 'expo-router';
+import { useRouter, useFocusEffect, type Href } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { useUserModeStore } from '../../store/user-mode.store';
 import { useAuthStore } from '../../store/auth.store';
@@ -16,6 +16,16 @@ interface Summary {
   teams: SummaryTeam[];
   leagues: { id: string; name: string; status: string }[];
   stats: { goals: number; assists: number; teamsCount: number; matchesPlayed: number; tournamentsCount: number };
+}
+interface ActivityEvent {
+  id: string;
+  type: string;
+  minute: number;
+  note?: string | null;
+  created_at: string;
+  match_id?: string | null;
+  scheduled_at?: string | null;
+  opponent?: string | null;
 }
 interface Reservation {
   id: string;
@@ -59,6 +69,15 @@ function isPendingExpired(r: { status?: string | null; created_at?: string | nul
 }
 
 const LEAGUE_TABS = ['Activité', 'Équipes', 'Historique'] as const;
+// Icône + libellé d'un fait de jeu dans le flux d'activité.
+function ACTIVITY_META(type: string): { emoji: string; label: string; bg: string } {
+  const t = (type ?? '').toUpperCase();
+  if (t === 'BUT' || t === 'PENALTY') return { emoji: '⚽', label: t === 'PENALTY' ? 'But (penalty)' : 'But', bg: 'rgba(247,146,30,0.15)' };
+  if (t === 'PASSE') return { emoji: '👟', label: 'Passe décisive', bg: 'rgba(46,158,79,0.18)' };
+  if (t === 'CARTON_JAUNE') return { emoji: '🟨', label: 'Carton jaune', bg: 'rgba(255,184,48,0.15)' };
+  if (t === 'CARTON_ROUGE') return { emoji: '🟥', label: 'Carton rouge', bg: 'rgba(248,113,113,0.15)' };
+  return { emoji: '📌', label: 'Fait de jeu', bg: 'rgba(255,255,255,0.08)' };
+}
 const RES_TABS = ['À venir', 'Passées', 'Annulées', 'Favoris'] as const;
 // Réservations expirées faute de validation dans le délai du panier : ce sont
 // des « non-actions », on ne les affiche ni dans Passées ni dans Annulées.
@@ -77,6 +96,7 @@ export default function ProfileScreen() {
   const [reviewRating, setReviewRating] = useState(0);
   const [reviewComment, setReviewComment] = useState('');
   const [savingReview, setSavingReview] = useState(false);
+  const [activity, setActivity] = useState<ActivityEvent[]>([]);
   const [leagueTab, setLeagueTab] = useState<(typeof LEAGUE_TABS)[number]>('Activité');
   const [resTab, setResTab] = useState<(typeof RES_TABS)[number]>('À venir');
 
@@ -104,8 +124,12 @@ export default function ProfileScreen() {
       setFavorites(Array.isArray(fav) ? fav : []);
       setPendingReview(pending);
     } else {
-      const sum = await getCached<Summary>('/api/v1/users/me/summary', 20_000, force).catch(() => null);
+      const [sum, act] = await Promise.all([
+        getCached<Summary>('/api/v1/users/me/summary', 20_000, force).catch(() => null),
+        getCached<ActivityEvent[]>('/api/v1/users/me/activity', 20_000, force).catch(() => []),
+      ]);
       setSummary(sum);
+      setActivity(Array.isArray(act) ? act : []);
     }
   }, [isReservation]);
   useFocusEffect(useCallback(() => { load(); }, [load]));
@@ -211,7 +235,7 @@ export default function ProfileScreen() {
           onOpenReservation={(id) => router.push(`/reservation/${id}`)}
         />
       ) : (
-        <LeaguesBody summary={summary} tab={leagueTab} setTab={setLeagueTab} router={router} refreshing={refreshing} onRefresh={onRefresh} />
+        <LeaguesBody summary={summary} activity={activity} tab={leagueTab} setTab={setLeagueTab} router={router} refreshing={refreshing} onRefresh={onRefresh} />
       )}
       <ReviewModal
         pending={pendingReview}
@@ -394,8 +418,9 @@ function ReviewModal({
 }
 
 // ─────────────────────────── Mode Leagues (s30) ───────────────────────────
-function LeaguesBody({ summary, tab, setTab, router, refreshing, onRefresh }: {
+function LeaguesBody({ summary, activity, tab, setTab, router, refreshing, onRefresh }: {
   summary: Summary | null;
+  activity: ActivityEvent[];
   tab: (typeof LEAGUE_TABS)[number];
   setTab: (t: (typeof LEAGUE_TABS)[number]) => void;
   router: ReturnType<typeof useRouter>;
@@ -498,7 +523,32 @@ function LeaguesBody({ summary, tab, setTab, router, refreshing, onRefresh }: {
           {summary?.leagues?.length ? `${summary.leagues.length} ligue(s) rejointe(s).` : 'Ton historique apparaîtra ici après tes premiers matchs.'}
         </Text>
       ) : (
-        <Text className="text-white/45 text-sm text-center py-8">Tes buts, passes et faits marquants apparaîtront ici.</Text>
+        activity.length ? (
+          activity.map((e) => {
+            const m = ACTIVITY_META(e.type);
+            const when = e.scheduled_at ? new Date(e.scheduled_at) : new Date(e.created_at);
+            const dateLabel = Number.isNaN(when.getTime()) ? '' : `${when.getDate()} ${MONTHS[when.getMonth()]}`;
+            return (
+              <Pressable
+                key={e.id}
+                disabled={!e.match_id}
+                onPress={() => e.match_id && router.push(`/match/${e.match_id}` as Href)}
+                className="flex-row items-center gap-3 rounded-2xl p-3.5 mb-2.5"
+                style={{ backgroundColor: 'rgba(255,255,255,0.05)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' }}
+              >
+                <View className="w-10 h-10 rounded-xl items-center justify-center" style={{ backgroundColor: m.bg }}>
+                  <Text style={{ fontSize: 18 }}>{m.emoji}</Text>
+                </View>
+                <View className="flex-1">
+                  <Text className="text-white font-semibold text-sm">{m.label}{e.opponent ? ` · vs ${e.opponent}` : ''}</Text>
+                  <Text className="text-white/45 text-xs mt-0.5">{[dateLabel, `${e.minute}'`].filter(Boolean).join(' · ')}</Text>
+                </View>
+              </Pressable>
+            );
+          })
+        ) : (
+          <Text className="text-white/45 text-sm text-center py-8">Tes buts, passes et faits marquants apparaîtront ici.</Text>
+        )
       )}
     </ScrollView>
   );

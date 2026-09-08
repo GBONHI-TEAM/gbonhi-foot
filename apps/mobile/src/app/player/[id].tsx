@@ -82,8 +82,12 @@ export default function PlayerCardScreen() {
   return (
     <ScreenBackground>
       <PatternedGreenHeader style={{ paddingHorizontal: 20, paddingTop: 56, paddingBottom: 16 }} patternOpacity={0.5}>
-        <View style={{ position: 'relative', justifyContent: 'center', minHeight: 34 }}>
-          <Pressable onPress={() => (router.canGoBack() ? router.back() : router.replace('/(tabs)/match'))} hitSlop={8} style={{ position: 'absolute', left: 0, top: 0, bottom: 0, justifyContent: 'center' }}>
+        <View style={{ position: 'relative', justifyContent: 'center', minHeight: 44 }}>
+          <Pressable
+            onPress={() => (router.canGoBack() ? router.back() : router.replace('/(tabs)/match'))}
+            hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
+            style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 48, alignItems: 'flex-start', justifyContent: 'center', zIndex: 10 }}
+          >
             <Text className="text-white text-2xl">←</Text>
           </Pressable>
           <Text className="text-white font-black text-lg text-center">Carte de joueur</Text>
