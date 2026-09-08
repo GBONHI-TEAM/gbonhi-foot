@@ -1,4 +1,4 @@
-import { IsArray, IsInt, IsOptional, IsUUID, Max, Min, ValidateNested } from 'class-validator';
+import { IsArray, IsInt, IsNumber, IsOptional, IsUUID, Max, Min, ValidateNested } from 'class-validator';
 import { Type } from 'class-transformer';
 import { CreateTerrainDto } from './create-terrain.dto';
 
@@ -28,6 +28,13 @@ export class TerrainOpeningDayDto {
 export class CreateAdminTerrainDto extends CreateTerrainDto {
   @IsUUID()
   partner_id: string;
+
+  /** Taux de commission plateforme négocié (0..1, ex. 0.1 = 10 %). */
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(1)
+  commission_rate?: number;
 
   @IsOptional()
   @IsArray()

@@ -2,6 +2,7 @@ import {
   Injectable,
   NotFoundException,
   ForbiddenException,
+  BadRequestException,
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { UserPayload } from '../../common/types/user-payload.type';
@@ -334,6 +335,20 @@ export class TerrainsService {
     }
 
     return terrain;
+  }
+
+  /**
+   * Réglage du taux de commission plateforme d'un terrain (terme contractuel).
+   * Réservé au back-office admin : ce n'est PAS modifiable par le partenaire.
+   * `rate` attendu entre 0 et 1 (ex. 0.1 = 10 %) ; `null` rétablit le défaut global.
+   */
+  async setCommission(id: string, rate: number | null) {
+    if (rate !== null && (typeof rate !== 'number' || Number.isNaN(rate) || rate < 0 || rate > 1)) {
+      throw new BadRequestException('Le taux de commission doit être compris entre 0 et 1 (ex. 0.1 = 10 %).');
+    }
+    const terrain = await this.prisma.terrain.findUnique({ where: { id }, select: { id: true } });
+    if (!terrain) throw new NotFoundException('Terrain introuvable');
+    return this.prisma.terrain.update({ where: { id }, data: { commission_rate: rate }, select: { id: true, commission_rate: true } });
   }
 
   async update(id: string, dto: UpdateTerrainDto, user: UserPayload) {

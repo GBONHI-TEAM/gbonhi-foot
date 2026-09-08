@@ -98,6 +98,14 @@ export class TerrainsController {
     return this.terrainsService.update(id, dto, user);
   }
 
+  /** Taux de commission plateforme (contrat) — back-office admin uniquement. */
+  @Patch(':id/commission')
+  @UseGuards(RolesGuard)
+  @Roles('SUPER_ADMIN', 'ADMIN')
+  setCommission(@Param('id') id: string, @Body() dto: { commission_rate: number | null }) {
+    return this.terrainsService.setCommission(id, dto?.commission_rate ?? null);
+  }
+
   @Get(':id/slots')
   getSlots(@Param('id') id: string) {
     return this.terrainsService.getSlots(id);

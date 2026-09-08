@@ -35,6 +35,7 @@ interface ApiTerrain {
   format: string | null;
   capacity: number | null;
   price_per_hour: number | null;
+  commission_rate: number | null;
   latitude: number | null;
   longitude: number | null;
   description: string | null;
@@ -130,6 +131,8 @@ function TerrainForm({
   const [format, setFormat] = useState(terrain?.format?.trim() || '5vs5');
   const [capacity, setCapacity] = useState(terrain?.capacity != null ? String(terrain.capacity) : '10');
   const [price, setPrice] = useState(terrain?.price_per_hour != null ? String(terrain.price_per_hour) : '');
+  // Commission en % (vide = taux global par défaut, 10 %).
+  const [commission, setCommission] = useState(terrain?.commission_rate != null ? String(Math.round(terrain.commission_rate * 100)) : '');
   const [address, setAddress] = useState(terrain?.address ?? '');
   const [city, setCity] = useState(terrain?.city ?? '');
   const [latitude, setLatitude] = useState(terrain?.latitude != null ? String(terrain.latitude) : '');
@@ -199,6 +202,16 @@ function TerrainForm({
       return setError('Les coordonnées GPS doivent être des nombres valides.');
     }
 
+    // Commission : vide → taux global par défaut (null). Sinon 0..100 % → 0..1.
+    let commissionRate: number | null = null;
+    if (commission.trim() !== '') {
+      const pct = Number(commission);
+      if (!Number.isFinite(pct) || pct < 0 || pct > 100) {
+        return setError('La commission doit être un pourcentage entre 0 et 100.');
+      }
+      commissionRate = Math.round(pct) / 100;
+    }
+
     const payload: Record<string, unknown> = {
       name: name.trim(), surface, format, capacity: parsedCapacity, price_per_hour: parsedPrice,
       address: address.trim(), city: city.trim() || 'Abidjan', phone_contact: phone.trim() || undefined,
@@ -208,6 +221,7 @@ function TerrainForm({
     if (longitude) payload.longitude = parsedLongitude;
     if (!editing) {
       payload.partner_id = partnerId;
+      payload.commission_rate = commissionRate; // accepté par la création admin
       if (closeHour <= openHour) return setError("L'heure de fermeture doit être postérieure à l'ouverture.");
       payload.hours = openDays
         .map((open, day) => (open ? { day_of_week: day, start_hour: openHour, end_hour: closeHour } : null))
@@ -219,6 +233,12 @@ function TerrainForm({
       await apiFetch(editing ? `/terrains/${terrain!.id}` : '/terrains/admin', {
         method: editing ? 'PATCH' : 'POST', body: JSON.stringify(payload),
       });
+      // En édition, la commission passe par l'endpoint admin dédié (hors DTO partenaire).
+      if (editing) {
+        await apiFetch(`/terrains/${terrain!.id}/commission`, {
+          method: 'PATCH', body: JSON.stringify({ commission_rate: commissionRate }),
+        });
+      }
       onSaved();
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "L'enregistrement a échoué. Réessaie dans quelques instants.");
@@ -304,6 +324,7 @@ function TerrainForm({
           <section className="min-h-[250px] rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
             <h2 className="text-base font-bold text-slate-900">Tarifs & horaires</h2>
             <Field label="Tarif / heure (FCFA)"><input type="number" min="1" value={price} onChange={(event) => setPrice(event.target.value)} className={INPUT_CLASS} placeholder="15 000" /></Field>
+            <Field label="Commission plateforme (%) — vide = 10 % par défaut"><input type="number" min="0" max="100" value={commission} onChange={(event) => setCommission(event.target.value)} className={INPUT_CLASS} placeholder="10" /></Field>
             <div className="mt-5 overflow-hidden rounded-lg border border-slate-100 text-sm">
               <div className="grid grid-cols-2 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-500"><span>Créneaux</span><span>Tarif indicatif</span></div>
               {['Matin', 'Après-midi', 'Soir'].map((period) => <div key={period} className="grid grid-cols-2 border-t border-slate-100 px-3 py-3 text-slate-600"><span>{period}</span><span className="font-semibold text-slate-800">{Number.isFinite(hourlyRate) && hourlyRate > 0 ? formatFcfa(hourlyRate) : '—'}</span></div>)}
@@ -407,7 +428,7 @@ export default function TerrainsPage() {
         </div>
         <div className="flex gap-2"><label className="relative hidden md:block"><Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" /><input value={search} onChange={(event) => setSearch(event.target.value)} className="h-10 w-60 rounded-lg border border-slate-200 bg-white pl-9 pr-3 text-sm outline-none focus:border-[#1E7A3A]" placeholder="Rechercher un terrain…" /></label><button onClick={() => setFormTerrain(null)} className="inline-flex h-10 items-center gap-2 rounded-lg bg-[#F7921E] px-4 text-sm font-bold text-slate-900 transition hover:bg-[#E98515]"><Plus size={17} strokeWidth={2.5} /> Ajouter un terrain</button></div>
       </div>
-      {loading ? <div className="rounded-xl border border-slate-200 bg-white p-12 text-center text-sm text-slate-400">Chargement des terrains…</div> : displayedTerrains.length === 0 ? <EmptyState icon={MapPin} title="Aucun terrain trouvé" message={terrains.length ? 'Modifiez vos filtres pour afficher les terrains correspondants.' : 'Ajoutez le premier terrain partenaire.'} /> : <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm"><div className="overflow-x-auto"><table className="min-w-[960px] w-full text-left text-sm"><thead className="bg-slate-50 text-xs font-semibold text-slate-500"><tr><th className="px-5 py-3">Terrain</th><th className="px-4 py-3">Partenaire</th><th className="px-4 py-3">Type</th><th className="px-4 py-3">Capacité</th><th className="px-4 py-3">Tarif/h</th><th className="px-4 py-3">Comm.</th><th className="px-4 py-3">Coût match</th><th className="px-4 py-3">Statut</th><th className="px-4 py-3"><span className="sr-only">Actions</span></th></tr></thead><tbody className="divide-y divide-slate-100">{displayedTerrains.map((terrain) => <tr key={terrain.id} className="transition hover:bg-slate-50/70"><td className="px-5 py-3"><div className="flex items-center gap-3"><TerrainThumbnail terrain={terrain} /><span className="font-bold text-slate-900">{terrain.name}</span></div></td><td className="px-4 py-3 text-slate-700">{partnerName(terrain.partner)}</td><td className="px-4 py-3 text-slate-700">{terrain.surface ? SURFACE_LABEL[terrain.surface.trim()] ?? terrain.surface : '—'}</td><td className="px-4 py-3 text-slate-700"><span className="inline-flex items-center gap-1"><Users size={14} className="text-slate-400" />{terrain.capacity ?? '—'} j.</span></td><td className="px-4 py-3 font-medium text-slate-800">{formatFcfa(terrain.price_per_hour)}</td><td className="px-4 py-3 text-slate-700">10%</td><td className="px-4 py-3 text-slate-700">—</td><td className="px-4 py-3"><StatusBadge active={terrain.is_active} /></td><td className="px-4 py-3"><button onClick={() => setFormTerrain(terrain)} className="inline-flex h-8 items-center gap-1 rounded-md px-2 text-sm font-semibold text-[#24883F] hover:bg-emerald-50"><Pencil size={14} /> Modifier</button></td></tr>)}</tbody></table></div></div>}
+      {loading ? <div className="rounded-xl border border-slate-200 bg-white p-12 text-center text-sm text-slate-400">Chargement des terrains…</div> : displayedTerrains.length === 0 ? <EmptyState icon={MapPin} title="Aucun terrain trouvé" message={terrains.length ? 'Modifiez vos filtres pour afficher les terrains correspondants.' : 'Ajoutez le premier terrain partenaire.'} /> : <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm"><div className="overflow-x-auto"><table className="min-w-[960px] w-full text-left text-sm"><thead className="bg-slate-50 text-xs font-semibold text-slate-500"><tr><th className="px-5 py-3">Terrain</th><th className="px-4 py-3">Partenaire</th><th className="px-4 py-3">Type</th><th className="px-4 py-3">Capacité</th><th className="px-4 py-3">Tarif/h</th><th className="px-4 py-3">Comm.</th><th className="px-4 py-3">Coût match</th><th className="px-4 py-3">Statut</th><th className="px-4 py-3"><span className="sr-only">Actions</span></th></tr></thead><tbody className="divide-y divide-slate-100">{displayedTerrains.map((terrain) => <tr key={terrain.id} className="transition hover:bg-slate-50/70"><td className="px-5 py-3"><div className="flex items-center gap-3"><TerrainThumbnail terrain={terrain} /><span className="font-bold text-slate-900">{terrain.name}</span></div></td><td className="px-4 py-3 text-slate-700">{partnerName(terrain.partner)}</td><td className="px-4 py-3 text-slate-700">{terrain.surface ? SURFACE_LABEL[terrain.surface.trim()] ?? terrain.surface : '—'}</td><td className="px-4 py-3 text-slate-700"><span className="inline-flex items-center gap-1"><Users size={14} className="text-slate-400" />{terrain.capacity ?? '—'} j.</span></td><td className="px-4 py-3 font-medium text-slate-800">{formatFcfa(terrain.price_per_hour)}</td><td className="px-4 py-3 text-slate-700">{terrain.commission_rate != null ? `${Math.round(terrain.commission_rate * 100)}%` : '10%'}</td><td className="px-4 py-3 text-slate-700">—</td><td className="px-4 py-3"><StatusBadge active={terrain.is_active} /></td><td className="px-4 py-3"><button onClick={() => setFormTerrain(terrain)} className="inline-flex h-8 items-center gap-1 rounded-md px-2 text-sm font-semibold text-[#24883F] hover:bg-emerald-50"><Pencil size={14} /> Modifier</button></td></tr>)}</tbody></table></div></div>}
     </>
   );
 }

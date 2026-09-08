@@ -396,6 +396,7 @@ model Terrain {
   format         String
   capacity       Int
   price_per_hour Int
+  commission_rate Float?  // Taux commission plateforme (0..1) négocié par contrat ; NULL = défaut global
   photos         String[] @default([])
   amenities      String[] @default([])
   description    String?
@@ -484,6 +485,7 @@ model Reservation {
   total_price      Int
   platform_fee     Int
   partner_amount   Int
+  fee_rate         Float?   // Taux de commission appliqué (snapshot au moment de la résa)
   status           String   @default("pending")
   cancel_reason    String?
   notes            String?

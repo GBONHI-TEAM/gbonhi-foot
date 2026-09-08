@@ -289,7 +289,13 @@ export class ReservationsService {
 
     const unit = terrain.price_per_hour;
     const total = Math.round(unit * duration);
-    const fee = Math.round(total * PLATFORM_FEE_RATE);
+    // Taux de commission : celui négocié pour ce terrain s'il est défini et
+    // valide (0..1), sinon le taux global par défaut. On le fige (snapshot)
+    // sur la réservation pour que l'historique reste juste si le contrat change.
+    const rate = typeof terrain.commission_rate === 'number' && terrain.commission_rate >= 0 && terrain.commission_rate <= 1
+      ? terrain.commission_rate
+      : PLATFORM_FEE_RATE;
+    const fee = Math.round(total * rate);
 
     // Chaque mise au panier crée une réservation NEUVE (nouveau created_at →
     // délai de 15 min qui repart à zéro). Les anciennes lignes annulées du même
@@ -310,6 +316,7 @@ export class ReservationsService {
           total_price: total,
           platform_fee: fee,
           partner_amount: total - fee,
+          fee_rate: rate,
           status: 'pending',
           notes: dto.notes,
         },
