@@ -100,7 +100,6 @@ export default function CreateTeamPage() {
       const rawExt = (asset.uri.split('.').pop() || 'jpg').toLowerCase();
       const ext = rawExt === 'png' ? 'png' : 'jpg';
       const contentType = ext === 'png' ? 'image/png' : 'image/jpeg';
-      const path = `${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
 
       // Vérifie qu'une session est bien présente (le bucket exige le rôle authenticated).
       const { data: sess } = await supabase.auth.getSession();
@@ -108,6 +107,10 @@ export default function CreateTeamPage() {
         Alert.alert('Session expirée', 'Reconnecte-toi puis réessaie l\'envoi du logo.');
         return;
       }
+
+      // Chemin préfixé par l'UID → un utilisateur n'écrit que dans son dossier
+      // (les policies Storage restreignent l'écriture à `<uid>/…`).
+      const path = `${sess.session.user.id}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
 
       const { error } = await supabase.storage.from('teams').upload(path, bytes.buffer as ArrayBuffer, { contentType, upsert: true });
       if (error) {

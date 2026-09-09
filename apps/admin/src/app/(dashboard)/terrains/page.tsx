@@ -161,10 +161,14 @@ function TerrainForm({
     setUploading(true);
     setError(null);
     const supabase = createSupabaseBrowserClient();
+    const { data: auth } = await supabase.auth.getUser();
+    const uid = auth.user?.id;
+    if (!uid) { setError('Session expirée. Reconnecte-toi puis réessaie.'); setUploading(false); return; }
     const urls: string[] = [];
     for (const file of Array.from(files)) {
       const extension = file.name.split('.').pop()?.toLowerCase() || 'jpg';
-      const path = `${Date.now()}-${crypto.randomUUID()}.${extension}`;
+      // Chemin préfixé par l'UID (les policies Storage restreignent l'écriture à `<uid>/…`).
+      const path = `${uid}/${Date.now()}-${crypto.randomUUID()}.${extension}`;
       const { error: uploadError } = await supabase.storage.from('terrains').upload(path, file, {
         cacheControl: '3600',
         contentType: file.type || undefined,

@@ -79,7 +79,9 @@ export default function CreatePostScreen() {
         return;
       }
       const ext = (asset.uri.split('.').pop() || 'jpg').toLowerCase() === 'png' ? 'png' : 'jpg';
-      const path = `${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+      if (!user?.id) { Alert.alert('Session expirée', 'Reconnecte-toi puis réessaie.'); return; }
+      // Chemin préfixé par l'UID (les policies Storage restreignent l'écriture à `<uid>/…`).
+      const path = `${user.id}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
       const { error } = await supabase.storage.from('community').upload(path, bytes.buffer as ArrayBuffer, {
         contentType: ext === 'png' ? 'image/png' : 'image/jpeg',
         upsert: true,

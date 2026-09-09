@@ -267,8 +267,12 @@ function LeagueFormModal({ leagueId, onClose, onSaved }: { leagueId?: string | n
     setError(null);
     try {
       const supabase = createSupabaseBrowserClient();
+      const { data: auth } = await supabase.auth.getUser();
+      const uid = auth.user?.id;
+      if (!uid) { setError('Session expirée. Reconnecte-toi puis réessaie.'); return; }
       const ext = (file.name.split('.').pop() || 'jpg').toLowerCase();
-      const path = `${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+      // Chemin préfixé par l'UID (les policies Storage restreignent l'écriture à `<uid>/…`).
+      const path = `${uid}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
       const { error: upErr } = await supabase.storage.from('leagues').upload(path, file, { cacheControl: '3600', upsert: false, contentType: file.type || undefined });
       if (upErr) { setError(`Échec de l'envoi de la bannière : ${upErr.message}`); return; }
       const { data } = supabase.storage.from('leagues').getPublicUrl(path);

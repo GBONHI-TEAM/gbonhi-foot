@@ -233,13 +233,14 @@ export default function PlayerProfileScreen() {
       const rawExt = (asset.uri.split('.').pop() || 'jpg').toLowerCase();
       const ext = rawExt === 'png' ? 'png' : 'jpg';
       const contentType = ext === 'png' ? 'image/png' : 'image/jpeg';
-      const path = `${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
 
       const { data: sess } = await supabase.auth.getSession();
       if (!sess.session) {
         Alert.alert('Session expirée', 'Reconnecte-toi puis réessaie l\'envoi de la photo.');
         return;
       }
+      // Chemin préfixé par l'UID (les policies Storage restreignent l'écriture à `<uid>/…`).
+      const path = `${sess.session.user.id}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
 
       let uploadError: unknown;
       for (let attempt = 1; attempt <= 3; attempt += 1) {

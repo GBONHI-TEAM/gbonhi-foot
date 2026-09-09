@@ -60,7 +60,9 @@ export default function AccountProfileScreen() {
       const asset = result.assets[0];
       const bytes = base64ToBytes(asset.base64!);
       const ext = (asset.uri.split('.').pop() || 'jpg').toLowerCase() === 'png' ? 'png' : 'jpg';
-      const path = `${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+      if (!user?.id) { Alert.alert('Session expirée', 'Reconnecte-toi puis réessaie.'); return; }
+      // Chemin préfixé par l'UID (les policies Storage restreignent l'écriture à `<uid>/…`).
+      const path = `${user.id}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
       const { error } = await supabase.storage.from('avatars').upload(path, bytes.buffer as ArrayBuffer, {
         contentType: ext === 'png' ? 'image/png' : 'image/jpeg',
         upsert: true,
