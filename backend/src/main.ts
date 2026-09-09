@@ -43,6 +43,24 @@ async function bootstrap() {
     credentials: true,
   });
 
+  // En-têtes de sécurité (équivalent helmet, sans dépendance). La CSP autorise
+  // explicitement ce que les pages HTML servies par l'API utilisent (styles/JS
+  // inline, images même-origine + Supabase Storage + data:) afin de NE PAS
+  // casser les smart links (/join, /r/*, /p/*) ni les reçus/brand.
+  const fastify = app.getHttpAdapter().getInstance();
+  fastify.addHook('onSend', (_req: unknown, reply: { header: (k: string, v: string) => void }, payload: unknown, done: (err: Error | null, p?: unknown) => void) => {
+    reply.header('X-Content-Type-Options', 'nosniff');
+    reply.header('X-Frame-Options', 'SAMEORIGIN');
+    reply.header('Referrer-Policy', 'no-referrer');
+    reply.header('X-DNS-Prefetch-Control', 'off');
+    reply.header('Strict-Transport-Security', 'max-age=15552000; includeSubDomains');
+    reply.header(
+      'Content-Security-Policy',
+      "default-src 'self'; img-src 'self' https: data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'self' https:; base-uri 'self'; frame-ancestors 'self'; object-src 'none'",
+    );
+    done(null, payload);
+  });
+
   // API prefix. Les smart links HTTPS restent hors API pour être cliquables dans
   // WhatsApp/SMS et ouvrir l'app sur le contenu correspondant.
   app.setGlobalPrefix('api/v1', { exclude: ['/', 'join', 'r/*', 'brand/*', 'p/*'] });

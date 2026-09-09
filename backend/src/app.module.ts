@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
-import { APP_INTERCEPTOR } from '@nestjs/core';
+import { APP_INTERCEPTOR, APP_GUARD } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
-import { ThrottlerModule } from '@nestjs/throttler';
+import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { AppController } from './app.controller';
 import { PrismaModule } from './prisma/prisma.module';
 import { HealthModule } from './modules/health/health.module';
@@ -60,6 +60,10 @@ import { AnalyticsModule } from './modules/analytics/analytics.module';
   ],
   controllers: [AppController],
   // (UsersModule est importé ci-dessus ; UsersService est injecté dans AppController)
-  providers: [{ provide: APP_INTERCEPTOR, useClass: AuditLogInterceptor }],
+  providers: [
+    { provide: APP_INTERCEPTOR, useClass: AuditLogInterceptor },
+    // Rate limiting effectivement appliqué (le module seul ne suffit pas).
+    { provide: APP_GUARD, useClass: ThrottlerGuard },
+  ],
 })
 export class AppModule {}
