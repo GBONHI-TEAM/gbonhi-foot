@@ -30,14 +30,50 @@ export class UsersService {
   }
 
   /** Liste des utilisateurs (admin BO). */
-  findAll(query: { role?: string; search?: string }) {
+  /**
+   * Liste des comptes filtrée par GROUPE logique (et non par rôle brut) :
+   *  - players  : utilisateurs de l'app (hors admins et partenaires) — défaut
+   *  - captains : capitaines d'équipe (coachs)
+   *  - partners : propriétaires de terrain + accès partenaires délégués
+   *  - admins   : comptes du back-office
+   *  - all      : tout le monde
+   */
+  async findAll(query: { role?: string; search?: string }) {
+    const group = (query.role ?? 'players').toLowerCase();
+    const search = query.search?.trim();
+    const searchWhere = search ? { full_name: { contains: search, mode: 'insensitive' as const } } : {};
+
+    const adminRoles = ['SUPER_ADMIN', 'ADMIN', 'CONTROLEUR', 'SUPPORT', 'OPERATEUR'];
+    let where: Record<string, unknown> = { ...searchWhere };
+
+    if (group === 'admins' || group === 'admin') {
+      where = { ...searchWhere, role: { in: adminRoles } };
+    } else if (group === 'all') {
+      where = { ...searchWhere };
+    } else {
+      // Groupes basés sur des relations : on calcule les ensembles d'ids.
+      const [admins, owners, accesses, coaches] = await Promise.all([
+        this.prisma.profile.findMany({ where: { role: { in: adminRoles } }, select: { id: true } }),
+        this.prisma.terrain.findMany({ distinct: ['partner_id'], select: { partner_id: true } }),
+        this.prisma.partnerAccess.findMany({ select: { user_id: true } }).catch(() => [] as { user_id: string }[]),
+        this.prisma.team.findMany({ where: { coach_id: { not: null } }, distinct: ['coach_id'], select: { coach_id: true } }),
+      ]);
+      const partnerIds = [...new Set([...owners.map((o) => o.partner_id), ...accesses.map((a) => a.user_id)])];
+      const adminIds = admins.map((a) => a.id);
+      const captainIds = coaches.map((c) => c.coach_id).filter((id): id is string => !!id);
+
+      if (group === 'partners' || group === 'partner') {
+        where = { ...searchWhere, id: { in: partnerIds } };
+      } else if (group === 'captains' || group === 'captain') {
+        where = { ...searchWhere, id: { in: captainIds } };
+      } else {
+        // players (défaut) : app users = ni admin, ni partenaire.
+        where = { ...searchWhere, id: { notIn: [...new Set([...adminIds, ...partnerIds])] } };
+      }
+    }
+
     return this.prisma.profile.findMany({
-      where: {
-        ...(query.role ? { role: query.role } : {}),
-        ...(query.search
-          ? { full_name: { contains: query.search, mode: 'insensitive' } }
-          : {}),
-      },
+      where,
       select: {
         id: true,
         full_name: true,
