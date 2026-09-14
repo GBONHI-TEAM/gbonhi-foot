@@ -185,10 +185,11 @@ export class NotificationsService {
       return [...new Set([...owners.map((o) => o.partner_id), ...accesses.map((a) => a.user_id)])];
     }
 
-    // Pour les segments JOUEURS (app mobile), on exclut les comptes admin et
-    // les comptes partenaires : une campagne « utilisateurs » ne doit jamais
-    // atterrir dans le back-office admin ni dans le portail partenaire.
-    const excluded = await this.excludedNonPlayerIds();
+    // Pour les segments JOUEURS (app mobile), on exclut UNIQUEMENT les comptes
+    // partenaires : une campagne « utilisateurs » ne doit pas atterrir dans le
+    // portail partenaire. Les admins, eux, restent inclus (ce sont aussi des
+    // utilisateurs de l'app mobile).
+    const excluded = await this.partnerIds();
 
     if (target === 'all') {
       const profiles = await this.prisma.profile.findMany({ select: { id: true } });
@@ -212,18 +213,13 @@ export class NotificationsService {
     return [...new Set(reservations.map((r) => r.user_id))].filter((id): id is string => id !== null && !excluded.has(id));
   }
 
-  /** IDs des comptes NON joueurs (admins + partenaires) à exclure des diffusions app. */
-  private async excludedNonPlayerIds(): Promise<Set<string>> {
-    const [admins, owners, accesses] = await Promise.all([
-      this.prisma.profile.findMany({
-        where: { role: { in: ['SUPER_ADMIN', 'ADMIN', 'CONTROLEUR', 'SUPPORT', 'OPERATEUR'] } },
-        select: { id: true },
-      }),
+  /** IDs des comptes PARTENAIRES (propriétaires de terrain + accès délégués). */
+  private async partnerIds(): Promise<Set<string>> {
+    const [owners, accesses] = await Promise.all([
       this.prisma.terrain.findMany({ distinct: ['partner_id'], select: { partner_id: true } }),
       this.prisma.partnerAccess.findMany({ select: { user_id: true } }).catch(() => [] as { user_id: string }[]),
     ]);
     return new Set([
-      ...admins.map((a) => a.id),
       ...owners.map((o) => o.partner_id),
       ...accesses.map((a) => a.user_id),
     ]);
