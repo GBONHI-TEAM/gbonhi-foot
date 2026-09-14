@@ -204,6 +204,91 @@ const FORMATS: { value: string; label: string }[] = [
   { value: 'league', label: 'Championnat + Play-offs' },
 ];
 
+/** Ajoute des jours à une date ISO (yyyy-mm-dd). */
+function addDaysIso(iso: string, days: number): string {
+  if (!iso) return '';
+  const d = new Date(`${iso}T00:00:00`);
+  if (Number.isNaN(d.getTime())) return '';
+  d.setDate(d.getDate() + days);
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${d.getFullYear()}-${mm}-${dd}`;
+}
+
+/**
+ * Génère intelligemment le nombre de journées et de matchs par équipe selon
+ * le format, le nombre d'équipes et le type de matchs (aller / aller-retour).
+ */
+function computeSchedule(opts: {
+  format: string; teams: number; legs: number; poolCount: number; qualifiersPerPool: number;
+}): { journees: number; matchesPerTeam: number } {
+  const n = Math.max(2, opts.teams || 0);
+  const L = opts.legs === 2 ? 2 : 1;
+  const log2 = (x: number) => Math.ceil(Math.log2(Math.max(2, x)));
+  switch (opts.format) {
+    case 'round_robin': {
+      const j = (n - 1) * L;
+      return { journees: j, matchesPerTeam: j };
+    }
+    case 'league': {
+      // Championnat aller(-retour) + play-offs (demi + finale ≈ 2 tours).
+      const rr = (n - 1) * L;
+      return { journees: rr + 2, matchesPerTeam: rr + 1 };
+    }
+    case 'groups': {
+      const pools = Math.max(2, opts.poolCount || 2);
+      const perPool = Math.ceil(n / pools);
+      const groupJ = (perPool - 1) * L;
+      const qualifs = pools * Math.max(1, opts.qualifiersPerPool || 1);
+      const finals = qualifs >= 2 ? log2(qualifs) : 0;
+      return { journees: groupJ + finals, matchesPerTeam: groupJ + 1 };
+    }
+    case 'single_elimination': {
+      const r = log2(n);
+      return { journees: r, matchesPerTeam: r };
+    }
+    case 'double_elimination': {
+      const r = log2(n);
+      return { journees: 2 * r - 1, matchesPerTeam: r + 1 };
+    }
+    default:
+      return { journees: (n - 1) * L, matchesPerTeam: (n - 1) * L };
+  }
+}
+
+const REGLEMENT_DEFAUT = `1. Éligibilité : chaque équipe doit être inscrite et à jour de ses frais.
+2. Feuille de match : la composition doit être publiée avant le coup d'envoi.
+3. Retard/forfait : 15 min de retard = forfait (défaite 3-0).
+4. Points : victoire 3, nul 1, défaite 0.
+5. Discipline : 2 cartons jaunes = 1 match de suspension ; carton rouge = exclusion.
+6. Litiges : toute réclamation se fait auprès de l'organisation sous 24 h.`;
+
+/** Prix standard d'une ligue (champs de récompenses pré-définis). */
+const REWARD_SLOTS = ['1er', '2e', '3e', 'Meilleur buteur', 'Meilleur joueur'];
+
+/** Assemble les récompenses structurées en texte (une ligne par prix rempli). */
+function buildRewards(values: Record<string, string>): string {
+  return REWARD_SLOTS
+    .map((slot) => ({ slot, val: (values[slot] ?? '').trim() }))
+    .filter((r) => r.val)
+    .map((r) => `${r.slot} : ${r.val}`)
+    .join('\n');
+}
+
+/** Reparse un texte de récompenses en champs structurés (best-effort). */
+function parseRewards(text: string): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const line of (text ?? '').split('\n')) {
+    const idx = line.indexOf(':');
+    if (idx === -1) continue;
+    const label = line.slice(0, idx).trim();
+    const val = line.slice(idx + 1).trim();
+    const match = REWARD_SLOTS.find((s) => s.toLowerCase() === label.toLowerCase());
+    if (match) out[match] = val;
+  }
+  return out;
+}
+
 /** Modal création / édition d'une ligue — tous les champs configurables. */
 function LeagueFormModal({ leagueId, onClose, onSaved }: { leagueId?: string | null; onClose: () => void; onSaved: () => void }) {
   const isEdit = !!leagueId;
@@ -225,6 +310,8 @@ function LeagueFormModal({ leagueId, onClose, onSaved }: { leagueId?: string | n
   const [description, setDescription] = useState('');
   const [rules, setRules] = useState('');
   const [rewards, setRewards] = useState('');
+  // Récompenses en champs structurés (un champ par prix) → assemblés en texte.
+  const [rewardValues, setRewardValues] = useState<Record<string, string>>({});
   const [banner, setBanner] = useState('');
   const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -254,12 +341,36 @@ function LeagueFormModal({ leagueId, onClose, onSaved }: { leagueId?: string | n
         setDescription((l.description as string) ?? '');
         setRules((l.rules as string) ?? '');
         setRewards((l.rewards as string) ?? '');
+        setRewardValues(parseRewards((l.rewards as string) ?? ''));
         setBanner((l.banner_url as string) ?? '');
       } catch {
         setError('Impossible de charger la ligue.');
       }
     })();
   }, [leagueId]);
+
+  // Création : pré-remplit un règlement type (modifiable) pour éviter la page blanche.
+  useEffect(() => {
+    if (!leagueId) setRules((r) => r || REGLEMENT_DEFAUT);
+  }, [leagueId]);
+
+  // Génération intelligente : matchs/équipe + date de fin déduits du format,
+  // du nombre d'équipes, du type de matchs et de l'écart entre journées.
+  const schedule = computeSchedule({
+    format,
+    teams: parseInt(maxTeams, 10) || 0,
+    legs: parseInt(legs, 10) || 1,
+    poolCount: parseInt(poolCount, 10) || 2,
+    qualifiersPerPool: parseInt(qualifiersPerPool, 10) || 2,
+  });
+  useEffect(() => {
+    setMatchesPerTeam(String(schedule.matchesPerTeam));
+    const interval = Math.max(1, parseInt(roundInterval, 10) || 7);
+    if (startDate && schedule.journees > 0) {
+      setEndDate(addDaysIso(startDate, (schedule.journees - 1) * interval));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [format, maxTeams, legs, poolCount, qualifiersPerPool, roundInterval, startDate]);
 
   async function uploadBanner(file: File | null) {
     if (!file) return;
@@ -286,6 +397,11 @@ function LeagueFormModal({ leagueId, onClose, onSaved }: { leagueId?: string | n
     setError(null);
     if (name.trim().length < 3) { setError('Le nom doit contenir au moins 3 caractères.'); return; }
     if (!startDate || !endDate) { setError('Renseigne les dates de début et de fin.'); return; }
+    // La date de fin ne peut pas être antérieure (ni égale) à la date de début.
+    if (new Date(`${endDate}T00:00:00`) <= new Date(`${startDate}T00:00:00`)) {
+      setError('La date de fin doit être postérieure à la date de début.');
+      return;
+    }
     const maxN = parseInt(maxTeams, 10);
     if (!Number.isFinite(maxN) || maxN < 4) { setError('Le nombre max d\'équipes doit être ≥ 4.'); return; }
 
@@ -301,7 +417,7 @@ function LeagueFormModal({ leagueId, onClose, onSaved }: { leagueId?: string | n
       location: location.trim() || undefined,
       description: description.trim() || undefined,
       rules: rules.trim() || undefined,
-      rewards: rewards.trim() || undefined,
+      rewards: buildRewards(rewardValues) || rewards.trim() || undefined,
       banner_url: banner || undefined,
     };
     const mpt = parseInt(matchesPerTeam, 10);
@@ -367,7 +483,7 @@ function LeagueFormModal({ leagueId, onClose, onSaved }: { leagueId?: string | n
 
           <div className="grid grid-cols-2 gap-6">
             <Field label="Max équipes"><input className={INPUT_CLS} type="number" min={4} value={maxTeams} onChange={(e) => setMaxTeams(e.target.value)} /></Field>
-            <Field label="Matchs par équipe"><input className={INPUT_CLS} type="number" min={1} placeholder="Ex : 6" value={matchesPerTeam} onChange={(e) => setMatchesPerTeam(e.target.value)} /></Field>
+            <Field label="Matchs par équipe (auto)"><input className={`${INPUT_CLS} bg-gray-50 text-gray-500`} type="number" value={matchesPerTeam} readOnly title="Calculé automatiquement selon le format, le nombre d'équipes et le type de matchs" /></Field>
           </div>
 
           {format === 'groups' && (
@@ -404,7 +520,7 @@ function LeagueFormModal({ leagueId, onClose, onSaved }: { leagueId?: string | n
 
           <div className="grid grid-cols-2 gap-6">
             <Field label="Date de début"><input className={INPUT_CLS} type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} /></Field>
-            <Field label="Date de fin"><input className={INPUT_CLS} type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} /></Field>
+            <Field label="Date de fin (auto)"><input className={`${INPUT_CLS} bg-gray-50 text-gray-500`} type="date" value={endDate} readOnly title="Calculée : date de début + (nombre de journées − 1) × écart entre journées" /></Field>
           </div>
 
           <div className="grid grid-cols-2 gap-6">
@@ -418,7 +534,22 @@ function LeagueFormModal({ leagueId, onClose, onSaved }: { leagueId?: string | n
 
           <Field label="Règlement"><textarea className={`${INPUT_CLS.replace('h-11', 'min-h-[110px] py-3')}`} placeholder="Règlement intérieur de la ligue…" value={rules} onChange={(e) => setRules(e.target.value)} /></Field>
 
-          <Field label="Récompenses"><textarea className={`${INPUT_CLS.replace('h-11', 'min-h-[90px] py-3')}`} placeholder="1er : trophée + 150 000 F&#10;2e : 75 000 F&#10;Meilleur buteur : …" value={rewards} onChange={(e) => setRewards(e.target.value)} /></Field>
+          <Field label="Récompenses">
+            <div className="space-y-2">
+              {REWARD_SLOTS.map((slot) => (
+                <div key={slot} className="grid grid-cols-[120px_1fr] items-center gap-3">
+                  <span className="text-[13px] font-semibold text-gray-600">{slot}</span>
+                  <input
+                    className={INPUT_CLS}
+                    placeholder={slot === '1er' ? 'Ex : trophée + 150 000 F' : slot === 'Meilleur buteur' ? 'Ex : 50 000 F' : 'Ex : 75 000 F'}
+                    value={rewardValues[slot] ?? ''}
+                    onChange={(e) => setRewardValues((v) => ({ ...v, [slot]: e.target.value }))}
+                  />
+                </div>
+              ))}
+              <p className="text-[12px] text-gray-400">Remplis uniquement les prix concernés — les champs vides sont ignorés.</p>
+            </div>
+          </Field>
 
           {/* Bannière */}
           <div>
