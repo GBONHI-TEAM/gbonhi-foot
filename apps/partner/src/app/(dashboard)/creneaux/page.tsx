@@ -9,6 +9,13 @@ import { useTerrain } from '../../../lib/terrain-context';
 type SlotStatut = 'dispo' | 'reserve' | 'attente' | 'bloque' | 'ferme';
 type Cell = { statut: SlotStatut; label?: string; sub?: string };
 
+/** Formate une heure décimale : 20 → « 20h », 20.5 → « 20h30 ». */
+function fmtHour(h: number): string {
+  const whole = Math.floor(h);
+  const min = Math.round((h - whole) * 60);
+  return min === 0 ? `${whole}h` : `${whole}h${String(min).padStart(2, '0')}`;
+}
+
 const LEGEND = [
   { label: 'Disponible', color: '#1E7A3A' },
   { label: 'Réservé', color: '#EF4444' },
@@ -46,6 +53,8 @@ export default function CreneauxPage() {
   const { selectedTerrain: terrain } = useTerrain();
   const [vue, setVue] = useState<'semaine' | 'jour'>('semaine');
   const [modal, setModal] = useState(false);
+  // Pré-remplissage du blocage quand on clique directement sur une case libre.
+  const [prefill, setPrefill] = useState<{ date: string; hour: number } | null>(null);
   const [blocks, setBlocks] = useState<ApiBlock[]>([]);
   const [reservations, setReservations] = useState<ApiReservation[]>([]);
 
@@ -121,20 +130,23 @@ export default function CreneauxPage() {
     });
     if (block) return { statut: 'bloque', label: 'Bloqué', sub: block.reason ?? undefined };
 
-    // Réservation ?
+    // Réservation ? On ancre sur les lignes réellement couvertes en tenant
+    // compte des demi-heures : une résa 20h30–21h30 doit apparaître dès la
+    // ligne 20h (et non décalée à 21h comme avant).
     const resa = reservations.find(
       (r) =>
         r.reservation_date.slice(0, 10) === date &&
-        r.start_hour <= hour &&
-        hour < r.end_hour &&
+        Math.floor(r.start_hour) <= hour &&
+        hour < Math.ceil(r.end_hour) &&
         r.status !== 'cancelled'
     );
     if (resa) {
       const statut: SlotStatut = resa.status === 'pending' ? 'attente' : 'reserve';
+      // Affiche les vraies heures du créneau réservé (ex. « 20h30 – 21h30 »).
       return {
         statut,
-        label: resa.status === 'pending' ? 'En attente' : 'Réservation',
-        sub: resa.user?.full_name,
+        label: `${fmtHour(resa.start_hour)} – ${fmtHour(resa.end_hour)}`,
+        sub: resa.user?.full_name ?? (resa.status === 'pending' ? 'En attente' : 'Réservé'),
       };
     }
 
@@ -214,15 +226,24 @@ export default function CreneauxPage() {
               {weekDates.map((_, dayIdx) => {
                 const cell = cellFor(dayIdx, h);
                 const style = STATUT_STYLE[cell.statut];
+                // Une case libre est cliquable pour bloquer directement ce créneau.
+                const clickable = cell.statut === 'dispo';
                 return (
                   <div key={dayIdx} className="border-b border-l border-gray-100 p-1">
-                    <div className="rounded-md px-1.5 py-1 h-11 flex flex-col justify-center" style={style}>
-                      {cell.label && (
+                    <div
+                      onClick={clickable ? () => { setPrefill({ date: isoDate(weekDates[dayIdx]), hour: h }); setModal(true); } : undefined}
+                      title={clickable ? 'Cliquer pour bloquer ce créneau' : undefined}
+                      className={`rounded-md px-1.5 py-1 h-11 flex flex-col justify-center ${clickable ? 'cursor-pointer hover:brightness-95 transition' : ''}`}
+                      style={style}
+                    >
+                      {cell.label ? (
                         <>
                           <p className="text-[9px] font-semibold leading-tight text-gray-700 truncate">{cell.label}</p>
                           {cell.sub && <p className="text-[8px] text-gray-500 leading-tight truncate">{cell.sub}</p>}
                         </>
-                      )}
+                      ) : clickable ? (
+                        <p className="text-[8px] text-emerald-700/50 leading-tight text-center opacity-0 hover:opacity-100">+ Bloquer</p>
+                      ) : null}
                     </div>
                   </div>
                 );
@@ -259,11 +280,13 @@ export default function CreneauxPage() {
       {modal && terrain && (
         <BlockModal
           terrainId={terrain.id}
-          defaultDate={isoDate(new Date())}
+          defaultDate={prefill?.date ?? isoDate(new Date())}
+          defaultStart={prefill?.hour}
           hourRange={hours}
-          onClose={() => setModal(false)}
+          onClose={() => { setModal(false); setPrefill(null); }}
           onDone={async () => {
             setModal(false);
+            setPrefill(null);
             await loadBlocks(terrain.id);
           }}
         />
@@ -275,20 +298,24 @@ export default function CreneauxPage() {
 function BlockModal({
   terrainId,
   defaultDate,
+  defaultStart,
   hourRange,
   onClose,
   onDone,
 }: {
   terrainId: string;
   defaultDate: string;
+  defaultStart?: number;
   hourRange: number[];
   onClose: () => void;
   onDone: () => void;
 }) {
   const options = hourRange.length > 0 ? hourRange : Array.from({ length: 16 }, (_, i) => i + 6);
   const [date, setDate] = useState(defaultDate);
-  const [start, setStart] = useState(options[0]);
-  const [end, setEnd] = useState(options[Math.min(1, options.length - 1)] + 1);
+  // Si on a cliqué une case précise, on pré-sélectionne son heure (créneau 1h).
+  const initialStart = defaultStart != null && options.includes(defaultStart) ? defaultStart : options[0];
+  const [start, setStart] = useState(initialStart);
+  const [end, setEnd] = useState(initialStart + 1);
   const [reason, setReason] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);

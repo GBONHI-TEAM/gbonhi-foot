@@ -174,10 +174,25 @@ export class NotificationsService {
    *  - leagues     : joueurs engagés (membres d'équipe actifs ∪ participations ligue)
    *  - reservation : utilisateurs ayant déjà réservé un terrain
    */
-  private async resolveAudience(target: 'all' | 'leagues' | 'reservation'): Promise<string[]> {
+  private async resolveAudience(target: 'all' | 'leagues' | 'reservation' | 'partners'): Promise<string[]> {
+    // Diffusion dédiée aux partenaires (portail partenaire) : comptes qui
+    // possèdent un terrain OU disposent d'un accès partenaire délégué.
+    if (target === 'partners') {
+      const [owners, accesses] = await Promise.all([
+        this.prisma.terrain.findMany({ distinct: ['partner_id'], select: { partner_id: true } }),
+        this.prisma.partnerAccess.findMany({ select: { user_id: true } }).catch(() => [] as { user_id: string }[]),
+      ]);
+      return [...new Set([...owners.map((o) => o.partner_id), ...accesses.map((a) => a.user_id)])];
+    }
+
+    // Pour les segments JOUEURS (app mobile), on exclut les comptes admin et
+    // les comptes partenaires : une campagne « utilisateurs » ne doit jamais
+    // atterrir dans le back-office admin ni dans le portail partenaire.
+    const excluded = await this.excludedNonPlayerIds();
+
     if (target === 'all') {
       const profiles = await this.prisma.profile.findMany({ select: { id: true } });
-      return profiles.map((p) => p.id);
+      return profiles.map((p) => p.id).filter((id) => !excluded.has(id));
     }
 
     if (target === 'leagues') {
@@ -185,7 +200,8 @@ export class NotificationsService {
         this.prisma.teamMember.findMany({ where: { status: 'active' }, select: { user_id: true } }),
         this.prisma.leaguePlayerRegistration.findMany({ select: { user_id: true } }),
       ]);
-      return [...new Set([...members.map((m) => m.user_id), ...participations.map((p) => p.user_id)])];
+      return [...new Set([...members.map((m) => m.user_id), ...participations.map((p) => p.user_id)])]
+        .filter((id) => !excluded.has(id));
     }
 
     // reservation
@@ -193,6 +209,23 @@ export class NotificationsService {
       distinct: ['user_id'],
       select: { user_id: true },
     });
-    return [...new Set(reservations.map((r) => r.user_id))];
+    return [...new Set(reservations.map((r) => r.user_id))].filter((id) => !excluded.has(id));
+  }
+
+  /** IDs des comptes NON joueurs (admins + partenaires) à exclure des diffusions app. */
+  private async excludedNonPlayerIds(): Promise<Set<string>> {
+    const [admins, owners, accesses] = await Promise.all([
+      this.prisma.profile.findMany({
+        where: { role: { in: ['SUPER_ADMIN', 'ADMIN', 'CONTROLEUR', 'SUPPORT', 'OPERATEUR'] } },
+        select: { id: true },
+      }),
+      this.prisma.terrain.findMany({ distinct: ['partner_id'], select: { partner_id: true } }),
+      this.prisma.partnerAccess.findMany({ select: { user_id: true } }).catch(() => [] as { user_id: string }[]),
+    ]);
+    return new Set([
+      ...admins.map((a) => a.id),
+      ...owners.map((o) => o.partner_id),
+      ...accesses.map((a) => a.user_id),
+    ]);
   }
 }

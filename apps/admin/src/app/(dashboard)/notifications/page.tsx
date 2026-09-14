@@ -6,7 +6,7 @@ import { Header } from '../../../components/layout/header';
 import { apiFetch } from '../../../lib/api';
 
 interface ApiNotification { id: string; title: string | null; body: string | null; type: string | null; broadcast: boolean | null; created_at: string | null; }
-type Target = 'all' | 'league' | 'reservation';
+type Target = 'all' | 'league' | 'reservation' | 'partners';
 
 function fmtDateTime(iso: string | null) {
   if (!iso) return '—';
@@ -36,7 +36,9 @@ export default function NotificationsPage() {
     if (!title.trim() || !body.trim()) { setFeedback('Saisissez un titre et un message avant l’envoi.'); return; }
     setSending(true); setFeedback(null);
     try {
-      // Ciblage réel par segment : all / leagues (joueurs) / reservation.
+      // Ciblage réel par segment : all / leagues (joueurs) / reservation / partners.
+      // Les segments joueurs excluent admins et partenaires côté backend ;
+      // « partners » ne cible QUE le portail partenaire.
       const apiTarget = target === 'league' ? 'leagues' : target;
       const res = await apiFetch<{ count: number }>('/notifications', { method: 'POST', body: JSON.stringify({ title: title.trim(), body: body.trim(), broadcast: apiTarget === 'all', target: apiTarget }) });
       setTitle(''); setBody('');
@@ -46,7 +48,7 @@ export default function NotificationsPage() {
     finally { setSending(false); }
   }
 
-  const targetLabels: Record<Target, string> = { all: 'Tous les utilisateurs', league: 'Mode League', reservation: 'Mode Réservation' };
+  const targetLabels: Record<Target, string> = { all: 'Tous les utilisateurs', league: 'Mode League', reservation: 'Mode Réservation', partners: 'Partenaires' };
   return <>
     <Header title="Envoyer une notification push" />
     <div className="grid grid-cols-1 items-start gap-5 xl:grid-cols-[minmax(0,1.75fr)_minmax(320px,0.9fr)]">
@@ -67,10 +69,12 @@ export default function NotificationsPage() {
           </div>
           <p className="mt-3 text-xs text-gray-500">
             {target === 'all'
-              ? 'Diffusion à tous les utilisateurs.'
+              ? 'Diffusion à tous les joueurs de l’app (hors admins et partenaires).'
               : target === 'league'
               ? 'Ciblage : joueurs engagés (membres d’une équipe active ou inscrits à une ligue).'
-              : 'Ciblage : utilisateurs ayant déjà réservé un terrain.'}
+              : target === 'reservation'
+              ? 'Ciblage : utilisateurs ayant déjà réservé un terrain.'
+              : 'Ciblage : partenaires uniquement (portail partenaire). N’atteint pas l’app mobile des joueurs.'}
           </p>
         </div>
         {feedback && <p className="rounded-lg border px-4 py-3 text-sm" style={{ backgroundColor: feedback.startsWith('Notification') ? '#F0FDF4' : '#FEF2F2', borderColor: feedback.startsWith('Notification') ? '#BBF7D0' : '#FECACA', color: feedback.startsWith('Notification') ? '#166534' : '#B91C1C' }}>{feedback}</p>}

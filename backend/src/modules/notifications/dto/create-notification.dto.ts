@@ -20,8 +20,13 @@ export class CreateNotificationDto {
   @IsBoolean()
   broadcast?: boolean;
 
-  /** Segment ciblé pour une diffusion : tous, joueurs (leagues) ou réservation. */
+  /**
+   * Segment ciblé pour une diffusion :
+   *  - all / leagues / reservation : utilisateurs de l'app mobile (joueurs),
+   *    en excluant les comptes admin et partenaires.
+   *  - partners : uniquement les partenaires (portail partenaire).
+   */
   @IsOptional()
-  @IsIn(['all', 'leagues', 'reservation'])
-  target?: 'all' | 'leagues' | 'reservation';
+  @IsIn(['all', 'leagues', 'reservation', 'partners'])
+  target?: 'all' | 'leagues' | 'reservation' | 'partners';
 }
