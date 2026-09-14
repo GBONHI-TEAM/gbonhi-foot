@@ -201,6 +201,7 @@ model Tournament {
   matches_per_team Int?
   rules            String?
   rewards          String?
+  rewards_json     Json?    // Récompenses structurées [{label, amount, type, description}]
   // Configuration de génération du calendrier
   legs                Int  @default(1) // 1 = aller simple, 2 = aller-retour (championnat / phase de poules)
   pool_count          Int? // Nombre de poules (format POULES)

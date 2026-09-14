@@ -9,6 +9,7 @@ import {
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateLeagueDto } from './dto/create-league.dto';
 import { UpdateLeagueDto } from './dto/update-league.dto';
+import { LeagueRewardDto } from './dto/league-reward.dto';
 import { RegisterTeamDto } from './dto/register-team.dto';
 import { ChangeStatusDto } from './dto/change-status.dto';
 import { UserPayload } from '../../common/types/user-payload.type';
@@ -31,6 +32,46 @@ export class LeaguesService {
     private readonly notifications: NotificationsService,
   ) {}
 
+  /**
+   * Construit un résumé textuel des récompenses structurées, conservé dans la
+   * colonne `rewards` (texte) pour rester lisible par le mobile qui affiche
+   * encore `rewards` / `prize_info`. Ex: "1er : 100 000 FCFA" par ligne.
+   */
+  private rewardsToText(rewards?: LeagueRewardDto[] | null): string | null {
+    if (!rewards || rewards.length === 0) return null;
+    const fmt = new Intl.NumberFormat('fr-FR');
+    const lines = rewards
+      .filter((r) => r && r.label && r.label.trim().length > 0)
+      .map((r) => {
+        const label = r.label.trim();
+        if (r.type === 'money' && typeof r.amount === 'number' && r.amount > 0) {
+          return `${label} : ${fmt.format(r.amount)} FCFA`;
+        }
+        if (r.description && r.description.trim().length > 0) {
+          return `${label} : ${r.description.trim()}`;
+        }
+        return label;
+      });
+    return lines.length > 0 ? lines.join('\n') : null;
+  }
+
+  /**
+   * Nettoie le tableau de récompenses : supprime les lignes vides (sans
+   * intitulé) et normalise les montants (null hors type 'money').
+   */
+  private normalizeRewards(rewards?: LeagueRewardDto[] | null): LeagueRewardDto[] | null {
+    if (!rewards) return null;
+    const cleaned = rewards
+      .filter((r) => r && typeof r.label === 'string' && r.label.trim().length > 0)
+      .map((r) => ({
+        label: r.label.trim(),
+        type: r.type,
+        amount: r.type === 'money' && typeof r.amount === 'number' ? r.amount : null,
+        description: r.description?.trim() || null,
+      }));
+    return cleaned.length > 0 ? cleaned : null;
+  }
+
   /** IDs des membres actifs des équipes données. */
   private async activeMemberIds(teamIds: string[]): Promise<string[]> {
     if (teamIds.length === 0) return [];
@@ -42,6 +83,8 @@ export class LeaguesService {
   }
 
   async create(dto: CreateLeagueDto, user: UserPayload) {
+    const rewardsJson = this.normalizeRewards(dto.rewards_json);
+    const rewardsText = rewardsJson ? this.rewardsToText(rewardsJson) : (dto.rewards ?? null);
     return this.prisma.tournament.create({
       data: {
         name: dto.name,
@@ -64,7 +107,8 @@ export class LeaguesService {
         match_duration_min: dto.match_duration_min ?? 60,
         round_interval_days: dto.round_interval_days ?? 7,
         rules: dto.rules ?? null,
-        rewards: dto.rewards ?? null,
+        rewards: rewardsText,
+        rewards_json: (rewardsJson ?? undefined) as any,
       },
     });
   }
@@ -118,10 +162,25 @@ export class LeaguesService {
     if (!league) throw new NotFoundException('Ligue introuvable');
     if (league.status === 'ARCHIVÉE') throw new BadRequestException('Une ligue archivée ne peut pas être modifiée');
 
+    const { rewards_json, ...rest } = dto;
+    // Si des récompenses structurées sont fournies, elles font autorité et on
+    // régénère aussi le résumé texte (rewards) pour la compatibilité mobile.
+    const rewardsPatch =
+      rewards_json !== undefined
+        ? (() => {
+            const normalized = this.normalizeRewards(rewards_json);
+            return {
+              rewards_json: (normalized ?? null) as any,
+              rewards: normalized ? this.rewardsToText(normalized) : null,
+            };
+          })()
+        : {};
+
     return this.prisma.tournament.update({
       where: { id },
       data: {
-        ...dto,
+        ...rest,
+        ...rewardsPatch,
         start_date: dto.start_date ? new Date(dto.start_date) : undefined,
         end_date: dto.end_date ? new Date(dto.end_date) : undefined,
         updated_at: new Date(),

@@ -8,7 +8,12 @@ import {
   MinLength,
   MaxLength,
   IsNumber,
+  IsArray,
+  ValidateNested,
+  ArrayMaxSize,
 } from 'class-validator';
+import { Type } from 'class-transformer';
+import { LeagueRewardDto } from './league-reward.dto';
 
 export class CreateLeagueDto {
   @IsString()
@@ -100,4 +105,12 @@ export class CreateLeagueDto {
   @IsString()
   @MaxLength(5000)
   rewards?: string;
+
+  /** Récompenses structurées (remplace progressivement le champ texte `rewards`). */
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(20)
+  @ValidateNested({ each: true })
+  @Type(() => LeagueRewardDto)
+  rewards_json?: LeagueRewardDto[];
 }

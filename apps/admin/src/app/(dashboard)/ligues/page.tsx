@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   Plus,
   MoreHorizontal,
@@ -11,6 +11,8 @@ import {
   Lock,
   Play,
   Flag,
+  Trash2,
+  RotateCcw,
 } from 'lucide-react';
 import { Header } from '../../../components/layout/header';
 import { apiFetch } from '../../../lib/api';
@@ -256,37 +258,147 @@ function computeSchedule(opts: {
   }
 }
 
-const REGLEMENT_DEFAUT = `1. Éligibilité : chaque équipe doit être inscrite et à jour de ses frais.
-2. Feuille de match : la composition doit être publiée avant le coup d'envoi.
-3. Retard/forfait : 15 min de retard = forfait (défaite 3-0).
-4. Points : victoire 3, nul 1, défaite 0.
-5. Discipline : 2 cartons jaunes = 1 match de suspension ; carton rouge = exclusion.
-6. Litiges : toute réclamation se fait auprès de l'organisation sous 24 h.`;
-
-/** Prix standard d'une ligue (champs de récompenses pré-définis). */
-const REWARD_SLOTS = ['1er', '2e', '3e', 'Meilleur buteur', 'Meilleur joueur'];
-
-/** Assemble les récompenses structurées en texte (une ligne par prix rempli). */
-function buildRewards(values: Record<string, string>): string {
-  return REWARD_SLOTS
-    .map((slot) => ({ slot, val: (values[slot] ?? '').trim() }))
-    .filter((r) => r.val)
-    .map((r) => `${r.slot} : ${r.val}`)
-    .join('\n');
+/**
+ * Section « Classement » du règlement, adaptée au format de la compétition.
+ * C'est la principale différence de règles d'un format à l'autre.
+ */
+function classementRubrique(format: string): string {
+  switch (format) {
+    case 'single_elimination':
+      return `4. CLASSEMENT & QUALIFICATION
+- Compétition à élimination directe : le perdant est éliminé.
+- En cas d'égalité à la fin du temps réglementaire : prolongation, puis tirs au but.
+- Le vainqueur de la finale est déclaré champion.`;
+    case 'double_elimination':
+      return `4. CLASSEMENT & QUALIFICATION
+- Double élimination : une équipe n'est éliminée qu'après deux défaites.
+- Tableau principal (winners) et tableau de repêchage (losers).
+- En cas d'égalité : prolongation, puis tirs au but.`;
+    case 'groups':
+      return `4. CLASSEMENT & QUALIFICATION
+- Phase de poules au classement par points : victoire 3, match nul 1, défaite 0.
+- Départage : différence de buts, puis buts marqués, puis confrontation directe.
+- Les qualifiés de chaque poule accèdent à la phase finale (élimination directe).
+- Phase finale : en cas d'égalité, prolongation puis tirs au but.`;
+    case 'league':
+      return `4. CLASSEMENT & QUALIFICATION
+- Saison régulière au classement par points : victoire 3, match nul 1, défaite 0.
+- Départage : différence de buts, puis buts marqués, puis confrontation directe.
+- Les mieux classés disputent les play-offs (élimination directe) pour le titre.`;
+    default: // round_robin
+      return `4. CLASSEMENT
+- Classement au point : victoire 3, match nul 1, défaite 0.
+- Départage : différence de buts, puis buts marqués, puis confrontation directe.
+- L'équipe en tête à l'issue de toutes les journées est déclarée championne.`;
+  }
 }
 
-/** Reparse un texte de récompenses en champs structurés (best-effort). */
-function parseRewards(text: string): Record<string, string> {
-  const out: Record<string, string> = {};
-  for (const line of (text ?? '').split('\n')) {
-    const idx = line.indexOf(':');
-    if (idx === -1) continue;
-    const label = line.slice(0, idx).trim();
-    const val = line.slice(idx + 1).trim();
-    const match = REWARD_SLOTS.find((s) => s.toLowerCase() === label.toLowerCase());
-    if (match) out[match] = val;
+/**
+ * Règlement intérieur type, organisé en rubriques et adapté au format.
+ * Entièrement modifiable par l'organisateur après pré-remplissage.
+ */
+function reglementFor(format: string): string {
+  return `RÈGLEMENT INTÉRIEUR
+
+1. ÉLIGIBILITÉ
+- Chaque équipe doit être inscrite et à jour de ses frais d'engagement.
+- Seuls les joueurs figurant sur la liste officielle déposée peuvent participer.
+- Un joueur ne peut représenter qu'une seule équipe sur toute la compétition.
+
+2. FEUILLE DE MATCH
+- La composition doit être communiquée avant le coup d'envoi.
+- Une pièce d'identité peut être exigée pour vérifier l'identité des joueurs.
+- Le nombre de remplaçants autorisés est fixé par l'organisation.
+
+3. RETARDS & FORFAITS
+- 15 minutes de retard après l'heure officielle = forfait.
+- Un forfait est sanctionné par une défaite 3-0.
+- Deux forfaits peuvent entraîner l'exclusion de l'équipe.
+
+${classementRubrique(format)}
+
+5. DISCIPLINE
+- 2 cartons jaunes cumulés = 1 match de suspension.
+- Carton rouge = exclusion du match en cours + suspension automatique.
+- Tout comportement antisportif peut entraîner des sanctions, jusqu'à l'exclusion.
+
+6. REPORTS & LITIGES
+- Toute demande de report doit parvenir à l'organisation au moins 48 h à l'avance.
+- Un match reporté est rejoué dans le délai fixé par l'organisation.
+- Toute réclamation se fait par écrit auprès de l'organisation sous 24 h.`;
+}
+
+// ── Récompenses structurées ──
+type RewardType = 'money' | 'trophy' | 'equipment' | 'other';
+
+const REWARD_TYPE_OPTIONS: { value: RewardType; label: string }[] = [
+  { value: 'money', label: 'Argent' },
+  { value: 'trophy', label: 'Trophée' },
+  { value: 'equipment', label: 'Équipement' },
+  { value: 'other', label: 'Autre' },
+];
+
+interface RewardRow {
+  key: string;
+  label: string;
+  type: RewardType;
+  amount: string; // saisie brute, convertie en nombre à l'enregistrement
+  description: string;
+  preset: boolean; // ligne pré-définie (intitulé verrouillé) ou personnalisée
+}
+
+/** Intitulés pré-définis, tous optionnels. */
+const PRESET_REWARD_LABELS = ['Champion', 'Finaliste (2e)', '3e place', 'Meilleur buteur', 'Meilleur joueur'];
+
+let rewardKeySeq = 0;
+const nextRewardKey = () => `rw-${++rewardKeySeq}`;
+
+function makePresetRows(): RewardRow[] {
+  return PRESET_REWARD_LABELS.map((label) => ({
+    key: nextRewardKey(),
+    label,
+    type: 'money' as RewardType,
+    amount: '',
+    description: '',
+    preset: true,
+  }));
+}
+
+/** Une ligne est « renseignée » dès qu'un montant ou une description est saisi. */
+function isRewardFilled(r: RewardRow): boolean {
+  return r.amount.trim().length > 0 || r.description.trim().length > 0;
+}
+
+function parseAmount(raw: string): number | null {
+  const cleaned = raw.replace(/[\s.]/g, '').replace(',', '.');
+  if (cleaned === '') return null;
+  const n = Number(cleaned);
+  return Number.isFinite(n) ? n : NaN;
+}
+
+const fmtFcfa = new Intl.NumberFormat('fr-FR');
+
+/** Hydrate les lignes du formulaire depuis le rewards_json de l'API. */
+function rowsFromApi(json: unknown): RewardRow[] {
+  const rows = makePresetRows();
+  if (!Array.isArray(json)) return rows;
+  const byLabel = new Map(rows.map((r) => [r.label.toLowerCase(), r]));
+  for (const item of json as Array<Record<string, unknown>>) {
+    const label = String(item?.label ?? '').trim();
+    if (!label) continue;
+    const type = (['money', 'trophy', 'equipment', 'other'].includes(String(item?.type)) ? item.type : 'other') as RewardType;
+    const amount = item?.amount != null ? String(item.amount) : '';
+    const description = item?.description != null ? String(item.description) : '';
+    const preset = byLabel.get(label.toLowerCase());
+    if (preset) {
+      preset.type = type;
+      preset.amount = amount;
+      preset.description = description;
+    } else {
+      rows.push({ key: nextRewardKey(), label, type, amount, description, preset: false });
+    }
   }
-  return out;
+  return rows;
 }
 
 /** Modal création / édition d'une ligue — tous les champs configurables. */
@@ -309,9 +421,10 @@ function LeagueFormModal({ leagueId, onClose, onSaved }: { leagueId?: string | n
   const [location, setLocation] = useState('');
   const [description, setDescription] = useState('');
   const [rules, setRules] = useState('');
-  const [rewards, setRewards] = useState('');
-  // Récompenses en champs structurés (un champ par prix) → assemblés en texte.
-  const [rewardValues, setRewardValues] = useState<Record<string, string>>({});
+  // Récompenses en lignes structurées (intitulé, type, montant, description).
+  const [rewardRows, setRewardRows] = useState<RewardRow[]>(() => makePresetRows());
+  // Dernier modèle de règlement appliqué automatiquement (détecte une personnalisation).
+  const lastTemplateRef = useRef<string>('');
   const [banner, setBanner] = useState('');
   const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -339,9 +452,10 @@ function LeagueFormModal({ leagueId, onClose, onSaved }: { leagueId?: string | n
         setPrize((l.prize_info as string) ?? '');
         setLocation((l.location as string) ?? '');
         setDescription((l.description as string) ?? '');
-        setRules((l.rules as string) ?? '');
-        setRewards((l.rewards as string) ?? '');
-        setRewardValues(parseRewards((l.rewards as string) ?? ''));
+        const loadedRules = (l.rules as string) ?? '';
+        setRules(loadedRules);
+        lastTemplateRef.current = loadedRules; // en édition, on respecte le texte existant
+        setRewardRows(rowsFromApi(l.rewards_json));
         setBanner((l.banner_url as string) ?? '');
       } catch {
         setError('Impossible de charger la ligue.');
@@ -349,10 +463,56 @@ function LeagueFormModal({ leagueId, onClose, onSaved }: { leagueId?: string | n
     })();
   }, [leagueId]);
 
-  // Création : pré-remplit un règlement type (modifiable) pour éviter la page blanche.
+  // Création : pré-remplit un règlement type adapté au format (modifiable).
   useEffect(() => {
-    if (!leagueId) setRules((r) => r || REGLEMENT_DEFAUT);
-  }, [leagueId]);
+    if (leagueId) return;
+    const tpl = reglementFor(format);
+    setRules(tpl);
+    lastTemplateRef.current = tpl;
+    // Uniquement au montage en mode création.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  /**
+   * Changement de format : régénère la partie basse du calendrier et propose de
+   * mettre à jour le règlement. Si l'organisateur a déjà personnalisé le texte,
+   * on demande confirmation avant de l'écraser.
+   */
+  function handleFormatChange(next: string) {
+    setFormat(next);
+    const tpl = reglementFor(next);
+    const customized = rules.trim() !== '' && rules !== lastTemplateRef.current;
+    if (!customized || window.confirm('Le format a changé. Remplacer le règlement actuel par le modèle adapté au nouveau format ? Vos modifications seront perdues.')) {
+      setRules(tpl);
+      lastTemplateRef.current = tpl;
+    }
+  }
+
+  function restoreReglement() {
+    const tpl = reglementFor(format);
+    if (rules === tpl || window.confirm('Restaurer le modèle de règlement ? Vos modifications seront perdues.')) {
+      setRules(tpl);
+      lastTemplateRef.current = tpl;
+    }
+  }
+
+  // Résumé des récompenses : nombre de prix renseignés + dotation totale (argent).
+  const filledRewards = rewardRows.filter(isRewardFilled);
+  const totalDotation = filledRewards.reduce((sum, r) => {
+    if (r.type !== 'money') return sum;
+    const n = parseAmount(r.amount);
+    return sum + (typeof n === 'number' && Number.isFinite(n) && n > 0 ? n : 0);
+  }, 0);
+
+  function updateRow(key: string, patch: Partial<RewardRow>) {
+    setRewardRows((rows) => rows.map((r) => (r.key === key ? { ...r, ...patch } : r)));
+  }
+  function addCustomRow() {
+    setRewardRows((rows) => [...rows, { key: nextRewardKey(), label: '', type: 'money', amount: '', description: '', preset: false }]);
+  }
+  function removeRow(key: string) {
+    setRewardRows((rows) => rows.filter((r) => r.key !== key));
+  }
 
   // Génération intelligente : matchs/équipe + date de fin déduits du format,
   // du nombre d'équipes, du type de matchs et de l'écart entre journées.
@@ -405,6 +565,30 @@ function LeagueFormModal({ leagueId, onClose, onSaved }: { leagueId?: string | n
     const maxN = parseInt(maxTeams, 10);
     if (!Number.isFinite(maxN) || maxN < 4) { setError('Le nombre max d\'équipes doit être ≥ 4.'); return; }
 
+    // ── Validation & assemblage des récompenses (toutes optionnelles) ──
+    const rewardsJson: { label: string; type: RewardType; amount: number | null; description: string | null }[] = [];
+    for (const r of rewardRows) {
+      const touched = isRewardFilled(r);
+      const labelOk = r.label.trim().length > 0;
+      // Une ligne personnalisée renseignée doit avoir un intitulé.
+      if (touched && !labelOk) { setError('Chaque récompense renseignée doit avoir un intitulé.'); return; }
+      if (!touched || !labelOk) continue; // ligne vide → ignorée
+
+      const amountNum = parseAmount(r.amount);
+      if (amountNum !== null && Number.isNaN(amountNum)) { setError(`Montant invalide pour « ${r.label.trim()} ».`); return; }
+      if (typeof amountNum === 'number' && amountNum < 0) { setError('Un montant ne peut pas être négatif.'); return; }
+      if (r.type === 'money' && !(typeof amountNum === 'number' && amountNum > 0)) {
+        setError(`Renseigne un montant pour la récompense en argent « ${r.label.trim()} ».`);
+        return;
+      }
+      rewardsJson.push({
+        label: r.label.trim(),
+        type: r.type,
+        amount: r.type === 'money' ? (amountNum as number) : null,
+        description: r.description.trim() || null,
+      });
+    }
+
     const payload: Record<string, unknown> = {
       name: name.trim(),
       level,
@@ -417,7 +601,7 @@ function LeagueFormModal({ leagueId, onClose, onSaved }: { leagueId?: string | n
       location: location.trim() || undefined,
       description: description.trim() || undefined,
       rules: rules.trim() || undefined,
-      rewards: buildRewards(rewardValues) || rewards.trim() || undefined,
+      rewards_json: rewardsJson.length > 0 ? rewardsJson : [],
       banner_url: banner || undefined,
     };
     const mpt = parseInt(matchesPerTeam, 10);
@@ -475,7 +659,7 @@ function LeagueFormModal({ leagueId, onClose, onSaved }: { leagueId?: string | n
               </div>
             </Field>
             <Field label="Format">
-              <select value={format} onChange={(e) => setFormat(e.target.value)} className={`${INPUT_CLS} bg-white`}>
+              <select value={format} onChange={(e) => handleFormatChange(e.target.value)} className={`${INPUT_CLS} bg-white`}>
                 {FORMATS.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
               </select>
             </Field>
@@ -532,24 +716,111 @@ function LeagueFormModal({ leagueId, onClose, onSaved }: { leagueId?: string | n
 
           <Field label="Description"><textarea className={`${INPUT_CLS.replace('h-11', 'min-h-[80px] py-3')}`} placeholder="Présentation de la ligue…" value={description} onChange={(e) => setDescription(e.target.value)} /></Field>
 
-          <Field label="Règlement"><textarea className={`${INPUT_CLS.replace('h-11', 'min-h-[110px] py-3')}`} placeholder="Règlement intérieur de la ligue…" value={rules} onChange={(e) => setRules(e.target.value)} /></Field>
+          {/* Règlement intérieur — pré-rempli par rubriques, entièrement modifiable */}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <label className="block text-[13px] font-semibold text-gray-800">Règlement intérieur</label>
+              <button
+                type="button"
+                onClick={restoreReglement}
+                className="inline-flex items-center gap-1.5 text-[12px] font-semibold text-gray-500 hover:text-gray-800 transition"
+                title="Remplacer par le modèle adapté au format sélectionné"
+              >
+                <RotateCcw size={13} /> Restaurer le modèle
+              </button>
+            </div>
+            <textarea
+              className={`${INPUT_CLS.replace('h-11', 'min-h-[220px] py-3 font-mono text-[13px] leading-relaxed')}`}
+              placeholder="Règlement intérieur de la ligue…"
+              value={rules}
+              onChange={(e) => setRules(e.target.value)}
+            />
+            <p className="mt-1.5 text-[12px] text-gray-400">Modèle pré-rempli (éligibilité, feuille de match, retards/forfaits, classement, discipline, reports) adapté au format. Adaptez-le librement.</p>
+          </div>
 
-          <Field label="Récompenses">
-            <div className="space-y-2">
-              {REWARD_SLOTS.map((slot) => (
-                <div key={slot} className="grid grid-cols-[120px_1fr] items-center gap-3">
-                  <span className="text-[13px] font-semibold text-gray-600">{slot}</span>
+          {/* Récompenses structurées — toutes optionnelles */}
+          <div>
+            <label className="block text-[13px] font-semibold text-gray-800 mb-1">Récompenses</label>
+            <p className="mb-3 text-[12px] text-gray-400">Chaque récompense est facultative. Laissez une ligne vide pour l'ignorer. Un montant est requis uniquement pour le type « Argent ».</p>
+
+            <div className="space-y-2.5">
+              {/* En-têtes de colonnes */}
+              <div className="hidden md:grid grid-cols-[1.3fr_0.9fr_1fr_1.4fr_32px] gap-2 px-1 text-[11px] font-semibold uppercase tracking-wide text-gray-400">
+                <span>Intitulé</span><span>Type</span><span>Montant (FCFA)</span><span>Description</span><span />
+              </div>
+
+              {rewardRows.map((r) => (
+                <div key={r.key} className="grid grid-cols-2 md:grid-cols-[1.3fr_0.9fr_1fr_1.4fr_32px] gap-2 items-center">
+                  {r.preset ? (
+                    <span className="text-[13px] font-semibold text-gray-700 px-1">{r.label}</span>
+                  ) : (
+                    <input
+                      className={`${INPUT_CLS} h-10`}
+                      placeholder="Prix personnalisé"
+                      value={r.label}
+                      onChange={(e) => updateRow(r.key, { label: e.target.value })}
+                    />
+                  )}
+
+                  <select
+                    className={`${INPUT_CLS} h-10 bg-white`}
+                    value={r.type}
+                    onChange={(e) => updateRow(r.key, { type: e.target.value as RewardType })}
+                  >
+                    {REWARD_TYPE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                  </select>
+
                   <input
-                    className={INPUT_CLS}
-                    placeholder={slot === '1er' ? 'Ex : trophée + 150 000 F' : slot === 'Meilleur buteur' ? 'Ex : 50 000 F' : 'Ex : 75 000 F'}
-                    value={rewardValues[slot] ?? ''}
-                    onChange={(e) => setRewardValues((v) => ({ ...v, [slot]: e.target.value }))}
+                    className={`${INPUT_CLS} h-10 ${r.type !== 'money' ? 'bg-gray-50 text-gray-400' : ''}`}
+                    type="text"
+                    inputMode="numeric"
+                    placeholder={r.type === 'money' ? 'Ex : 150 000' : '—'}
+                    value={r.amount}
+                    disabled={r.type !== 'money'}
+                    onChange={(e) => updateRow(r.key, { amount: e.target.value })}
                   />
+
+                  <input
+                    className={`${INPUT_CLS} h-10`}
+                    placeholder="Détail (optionnel)"
+                    value={r.description}
+                    onChange={(e) => updateRow(r.key, { description: e.target.value })}
+                  />
+
+                  {r.preset ? (
+                    <span className="hidden md:block" />
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => removeRow(r.key)}
+                      className="justify-self-end p-2 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition"
+                      title="Supprimer cette récompense"
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  )}
                 </div>
               ))}
-              <p className="text-[12px] text-gray-400">Remplis uniquement les prix concernés — les champs vides sont ignorés.</p>
             </div>
-          </Field>
+
+            <button
+              type="button"
+              onClick={addCustomRow}
+              className="mt-3 inline-flex items-center gap-1.5 px-3 h-10 rounded-lg text-sm font-semibold border border-dashed border-gray-300 text-gray-600 hover:border-primary hover:text-primary transition"
+            >
+              <Plus size={15} /> Ajouter une récompense personnalisée
+            </button>
+
+            {/* Récapitulatif */}
+            <div className="mt-4 flex flex-wrap items-center gap-x-6 gap-y-1 rounded-lg bg-gray-50 px-4 py-3 text-[13px]">
+              <span className="text-gray-600">
+                <strong className="text-gray-900">{filledRewards.length}</strong> récompense{filledRewards.length > 1 ? 's' : ''} renseignée{filledRewards.length > 1 ? 's' : ''}
+              </span>
+              <span className="text-gray-600">
+                Dotation totale : <strong className="text-gray-900">{fmtFcfa.format(totalDotation)} FCFA</strong>
+              </span>
+            </div>
+          </div>
 
           {/* Bannière */}
           <div>

@@ -1,4 +1,19 @@
-import { IsString, IsOptional, IsInt, Min, Max, IsDateString, MinLength, MaxLength, IsNumber } from 'class-validator';
+import {
+  IsString,
+  IsOptional,
+  IsInt,
+  Min,
+  Max,
+  IsDateString,
+  MinLength,
+  MaxLength,
+  IsNumber,
+  IsArray,
+  ValidateNested,
+  ArrayMaxSize,
+} from 'class-validator';
+import { Type } from 'class-transformer';
+import { LeagueRewardDto } from './league-reward.dto';
 
 export class UpdateLeagueDto {
   @IsOptional()
@@ -95,4 +110,11 @@ export class UpdateLeagueDto {
   @IsString()
   @MaxLength(5000)
   rewards?: string;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(20)
+  @ValidateNested({ each: true })
+  @Type(() => LeagueRewardDto)
+  rewards_json?: LeagueRewardDto[];
 }
