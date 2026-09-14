@@ -237,7 +237,9 @@ export function createPartnerRevenueStatementPdf(input: PartnerRevenueStatementP
   });
   const content = [
     '1 1 1 rg 0 0 595 842 re f',
-    '0.102 0.239 0.169 rg 0 745 595 97 re f',
+    // En-tête identique aux autres reçus : bandeau vert + motif ivoirien.
+    '0.118 0.478 0.227 rg 0 745 595 97 re f',
+    HEADER_BAND,
     drawLogo(474, 758, 64),
     '1 1 1 rg',
     text(42, 804, 21, 'GBONHI FOOT', 'F2'),
