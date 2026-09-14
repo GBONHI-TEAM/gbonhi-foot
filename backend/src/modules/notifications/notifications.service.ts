@@ -209,7 +209,7 @@ export class NotificationsService {
       distinct: ['user_id'],
       select: { user_id: true },
     });
-    return [...new Set(reservations.map((r) => r.user_id))].filter((id) => !excluded.has(id));
+    return [...new Set(reservations.map((r) => r.user_id))].filter((id): id is string => id !== null && !excluded.has(id));
   }
 
   /** IDs des comptes NON joueurs (admins + partenaires) à exclure des diffusions app. */

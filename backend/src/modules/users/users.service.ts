@@ -521,9 +521,11 @@ export class UsersService {
         });
       }
 
-      // Paiements avant réservations : les deux relations sont restrictives.
-      await tx.payment.deleteMany({ where: { user_id: user.id } });
-      await tx.reservation.deleteMany({ where: { user_id: user.id } });
+      // Historique de réservation CONSERVÉ pour le partenaire (revenus + suivi
+      // client). On DÉTACHE le compte (user_id = null) au lieu de supprimer ;
+      // le nom du client reste figé dans `client_name`.
+      await tx.payment.updateMany({ where: { user_id: user.id }, data: { user_id: null } });
+      await tx.reservation.updateMany({ where: { user_id: user.id }, data: { user_id: null } });
       await tx.leagueRegistrationPayment.deleteMany({ where: { user_id: user.id } });
 
       // Les historiques de match sont gardés mais ne pointent plus vers la

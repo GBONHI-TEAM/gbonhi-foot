@@ -103,7 +103,7 @@ export default function RevenusPage() {
         ...moisResas.map((reservation) => [
           new Date(reservation.reservation_date).toLocaleDateString('fr-FR'),
           reservation.terrain?.name ?? 'Terrain',
-          reservation.user?.full_name ?? 'Client',
+          reservation.user?.full_name ?? reservation.client_name ?? 'Client',
           reservation.start_hour,
           reservation.end_hour,
           reservation.status,
@@ -136,7 +136,7 @@ export default function RevenusPage() {
   const exportXlsx = () => {
     const rows = [
       ['Date', 'Terrain', 'Client', 'Début', 'Fin', 'Statut', 'Montant brut (FCFA)', 'Commission (FCFA)', 'Net reversé (FCFA)'],
-      ...moisResas.map((reservation) => [new Date(reservation.reservation_date).toLocaleDateString('fr-FR'), reservation.terrain?.name ?? 'Terrain', reservation.user?.full_name ?? 'Client', reservation.start_hour, reservation.end_hour, reservation.status, reservation.total_price, reservation.platform_fee, reservation.partner_amount]),
+      ...moisResas.map((reservation) => [new Date(reservation.reservation_date).toLocaleDateString('fr-FR'), reservation.terrain?.name ?? 'Terrain', reservation.user?.full_name ?? reservation.client_name ?? 'Client', reservation.start_hour, reservation.end_hour, reservation.status, reservation.total_price, reservation.platform_fee, reservation.partner_amount]),
     ];
     downloadBlob(createXlsxBlob('Revenus partenaire', rows), `gbonhi-foot-revenus-${from ?? annee}-${to ?? String(now.getMonth() + 1).padStart(2, '0')}.xlsx`);
   };

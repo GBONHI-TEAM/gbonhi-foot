@@ -146,7 +146,7 @@ export default function CreneauxPage() {
       return {
         statut,
         label: `${fmtHour(resa.start_hour)} – ${fmtHour(resa.end_hour)}`,
-        sub: resa.user?.full_name ?? (resa.status === 'pending' ? 'En attente' : 'Réservé'),
+        sub: resa.user?.full_name ?? resa.client_name ?? (resa.status === 'pending' ? 'En attente' : 'Réservé'),
       };
     }
 

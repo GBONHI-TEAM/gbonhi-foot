@@ -67,6 +67,8 @@ export interface ApiReservation {
   notes: string | null;
   terrain: { id: string; name: string; city: string };
   user: { id: string; full_name: string; avatar_url: string | null } | null;
+  /** Nom figé du client (conservé même si le compte joueur est supprimé). */
+  client_name: string | null;
   payment: { status: string; payment_method: string; amount: number } | null;
 }
 

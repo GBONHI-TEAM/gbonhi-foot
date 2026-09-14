@@ -68,7 +68,7 @@ export default function PartnerDashboardPage() {
               .sort((a, b) => a.start_hour - b.start_hour)
               .map((r) => ({
                 heure: `${String(r.start_hour).padStart(2, '0')}h00`,
-                client: r.user?.full_name ?? 'Client',
+                client: r.user?.full_name ?? r.client_name ?? 'Client',
                 detail: isOwner && typeof r.total_price === 'number' ? `Terrain · ${fcfa(r.total_price)}` : 'Terrain',
                 statut: STATUS_FR[r.status],
               }))

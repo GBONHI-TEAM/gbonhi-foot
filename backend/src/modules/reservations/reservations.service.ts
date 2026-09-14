@@ -87,6 +87,7 @@ export class ReservationsService {
     let sent = 0;
     for (const r of due) {
       if (alreadyReminded.has(r.id)) continue;
+      if (!r.user_id) continue; // réservation d'un compte supprimé (détachée) → pas de rappel
       const hh = String(Math.floor(r.start_hour)).padStart(2, '0');
       const mm = String(Math.round((r.start_hour % 1) * 60)).padStart(2, '0');
       await this.notifications.notify(r.user_id, {
@@ -303,6 +304,13 @@ export class ReservationsService {
     // garanti par l'index unique PARTIEL `no_double_booking` (statuts actifs
     // uniquement), et non plus par une contrainte couvrant toutes les lignes.
     // On rechoisit donc librement un créneau qu'on vient d'annuler.
+    // Nom du client figé sur la réservation : il reste visible par le partenaire
+    // même si le compte joueur est supprimé plus tard.
+    const clientProfile = await this.prisma.profile.findUnique({
+      where: { id: user.id },
+      select: { full_name: true },
+    });
+
     let reservation: Awaited<ReturnType<typeof this.prisma.reservation.create>>;
     try {
       reservation = await this.prisma.reservation.create({
@@ -311,6 +319,7 @@ export class ReservationsService {
           reservation_date: reservationDate,
           start_hour: dto.start_hour,
           user_id: user.id,
+          client_name: clientProfile?.full_name ?? null,
           end_hour: dto.end_hour,
           unit_price: unit,
           total_price: total,

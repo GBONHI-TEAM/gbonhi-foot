@@ -49,7 +49,7 @@ function mapRow(r: ApiReservation, showFinancials: boolean): Row {
   return {
     id: r.id,
     ref: r.id.slice(0, 8).toUpperCase(),
-    client: r.user?.full_name ?? 'Client',
+    client: r.user?.full_name ?? r.client_name ?? 'Client',
     date: dateCourteFR(r.reservation_date),
     creneau: heureRange(r.start_hour, r.end_hour),
     montant: showFinancials && typeof r.total_price === 'number' ? fcfa(r.total_price) : '—',

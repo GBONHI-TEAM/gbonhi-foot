@@ -476,7 +476,8 @@ model TerrainBlock {
 model Reservation {
   id               String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   terrain_id       String   @db.Uuid
-  user_id          String   @db.Uuid
+  user_id          String?  @db.Uuid
+  client_name      String?  // Nom du client figé à la réservation (survit à la suppression du compte)
   reservation_date DateTime @db.Date
   start_hour       Float
   end_hour         Float
@@ -493,7 +494,7 @@ model Reservation {
   updated_at       DateTime @default(now()) @db.Timestamptz(6)
 
   terrain Terrain  @relation(fields: [terrain_id], references: [id])
-  user    Profile  @relation(fields: [user_id], references: [id])
+  user    Profile? @relation(fields: [user_id], references: [id])
   payment Payment?
 
   // Anti-double-booking : index UNIQUE PARTIEL en base (non exprimable par
@@ -530,7 +531,7 @@ model SupportTicket {
 model Payment {
   id                  String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   reservation_id      String    @unique @db.Uuid
-  user_id             String    @db.Uuid
+  user_id             String?   @db.Uuid
   transaction_id      String    @unique
   amount              Int
   currency            String    @default("XOF")
@@ -543,7 +544,7 @@ model Payment {
   updated_at          DateTime  @default(now()) @db.Timestamptz(6)
 
   reservation Reservation @relation(fields: [reservation_id], references: [id])
-  user        Profile     @relation(fields: [user_id], references: [id])
+  user        Profile?    @relation(fields: [user_id], references: [id])
 
   @@map("payments")
 }
