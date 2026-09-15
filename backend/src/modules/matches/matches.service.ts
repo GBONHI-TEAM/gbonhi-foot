@@ -133,8 +133,8 @@ export class MatchesService {
       where: { id: matchId },
       select: {
         id: true, scheduled_at: true,
-        home_team: { select: { id: true, name: true } },
-        away_team: { select: { id: true, name: true } },
+        home_team: { select: { id: true, name: true, primary_color: true, secondary_color: true } },
+        away_team: { select: { id: true, name: true, primary_color: true, secondary_color: true } },
         lineups: { select: { team_id: true, formation: true, players: true, published_at: true } },
       },
     });
@@ -152,7 +152,10 @@ export class MatchesService {
       profiles.forEach((p) => avatarById.set(p.id, p.avatar_url));
     }
 
-    const build = async (team: { id: string; name: string } | null) => {
+    const build = async (
+      team: { id: string; name: string; primary_color: string | null; secondary_color: string | null } | null,
+      isHome: boolean,
+    ) => {
       if (!team) return null;
       const row = match.lineups.find((l) => l.team_id === team.id) ?? null;
       // Le capitaine de l'équipe OU le staff/admin (pour faciliter les tests).
@@ -166,13 +169,18 @@ export class MatchesService {
       const lineup = row && (published || editable)
         ? { formation: row.formation, players, published }
         : null;
-      return { team, editable, lineup };
+      // Maillot : l'équipe à domicile porte sa couleur principale, l'équipe à
+      // l'extérieur sa couleur secondaire (repli sur la principale puis défaut).
+      const jersey_color = isHome
+        ? (team.primary_color || '#1E7A3A')
+        : (team.secondary_color || team.primary_color || '#F7921E');
+      return { team, is_home: isHome, jersey_color, editable, lineup };
     };
 
     return {
       kickoff: match.scheduled_at,
-      home: await build(match.home_team),
-      away: await build(match.away_team),
+      home: await build(match.home_team, true),
+      away: await build(match.away_team, false),
     };
   }
 

@@ -61,7 +61,7 @@ function PlayerAvatar({ name, avatar }: { name: string; avatar?: string | null }
     </View>
   );
 }
-interface LineupSide { team: { id: string; name: string }; editable: boolean; lineup: { formation: string | null; players: LineupPlayer[]; published: boolean } | null }
+interface LineupSide { team: { id: string; name: string; primary_color?: string | null; secondary_color?: string | null }; is_home?: boolean; jersey_color?: string | null; editable: boolean; lineup: { formation: string | null; players: LineupPlayer[]; published: boolean } | null }
 interface LineupsResponse { kickoff: string; home: LineupSide | null; away: LineupSide | null }
 
 // Nom court affiché sous le maillot (dernier mot du nom).
@@ -70,8 +70,22 @@ function shortName(name: string): string {
   return parts.length > 1 ? parts[parts.length - 1] : name;
 }
 
+/** Couleur de texte lisible (noir ou blanc) sur un fond hex donné. */
+function readableOn(hex?: string | null): string {
+  const h = (hex ?? '').replace('#', '');
+  const full = h.length === 3 ? h.split('').map((c) => c + c).join('') : h;
+  if (full.length !== 6) return '#FFFFFF';
+  const r = parseInt(full.slice(0, 2), 16);
+  const g = parseInt(full.slice(2, 4), 16);
+  const b = parseInt(full.slice(4, 6), 16);
+  // Luminance perçue : au-delà de ~0.6, le fond est clair → texte foncé.
+  const lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  return lum > 0.6 ? '#0D1F0D' : '#FFFFFF';
+}
+
 /** Jeton joueur : maillot à numéro (style diffusion TV) + nom. */
-function PlayerToken({ p, onPress }: { p: LineupPlayer; onPress: (userId: string) => void }) {
+function PlayerToken({ p, onPress, jersey, jerseyText }: { p: LineupPlayer; onPress: (userId: string) => void; jersey: string; jerseyText: string }) {
+  const shirtBorder = jerseyText === '#FFFFFF' ? 'rgba(255,255,255,0.30)' : 'rgba(0,0,0,0.30)';
   return (
     <Pressable
       onPress={() => p.user_id && onPress(p.user_id)}
@@ -79,12 +93,12 @@ function PlayerToken({ p, onPress }: { p: LineupPlayer; onPress: (userId: string
       className="items-center active:opacity-80"
       style={{ width: 76 }}
     >
-      {/* Maillot */}
-      <View style={{ width: 46, height: 46, borderRadius: 13, backgroundColor: '#15151A', borderWidth: 1, borderColor: 'rgba(255,255,255,0.28)', alignItems: 'center', justifyContent: 'center', shadowColor: '#000', shadowOpacity: 0.35, shadowRadius: 4, shadowOffset: { width: 0, height: 2 }, elevation: 3 }}>
+      {/* Maillot (couleur de l'équipe) */}
+      <View style={{ width: 46, height: 46, borderRadius: 13, backgroundColor: jersey, borderWidth: 1, borderColor: shirtBorder, alignItems: 'center', justifyContent: 'center', shadowColor: '#000', shadowOpacity: 0.35, shadowRadius: 4, shadowOffset: { width: 0, height: 2 }, elevation: 3 }}>
         {/* Épaules du maillot */}
-        <View style={{ position: 'absolute', top: 6, left: -4, width: 12, height: 12, borderRadius: 3, backgroundColor: '#15151A', borderWidth: 1, borderColor: 'rgba(255,255,255,0.28)', transform: [{ rotate: '45deg' }] }} />
-        <View style={{ position: 'absolute', top: 6, right: -4, width: 12, height: 12, borderRadius: 3, backgroundColor: '#15151A', borderWidth: 1, borderColor: 'rgba(255,255,255,0.28)', transform: [{ rotate: '45deg' }] }} />
-        <Text style={{ color: '#FFFFFF', fontWeight: '800', fontSize: 17 }}>{p.number ?? ''}</Text>
+        <View style={{ position: 'absolute', top: 6, left: -4, width: 12, height: 12, borderRadius: 3, backgroundColor: jersey, borderWidth: 1, borderColor: shirtBorder, transform: [{ rotate: '45deg' }] }} />
+        <View style={{ position: 'absolute', top: 6, right: -4, width: 12, height: 12, borderRadius: 3, backgroundColor: jersey, borderWidth: 1, borderColor: shirtBorder, transform: [{ rotate: '45deg' }] }} />
+        <Text style={{ color: jerseyText, fontWeight: '800', fontSize: 17 }}>{p.number ?? ''}</Text>
       </View>
       {/* Nom */}
       <View style={{ marginTop: 6, backgroundColor: 'rgba(0,0,0,0.4)', borderRadius: 6, paddingHorizontal: 6, paddingVertical: 1, maxWidth: 76 }}>
@@ -95,7 +109,7 @@ function PlayerToken({ p, onPress }: { p: LineupPlayer; onPress: (userId: string
 }
 
 /** Terrain façon diffusion TV : titulaires placés par ligne (ATT en haut → GK en bas). */
-function LineupPitch({ starters, subs, onPlayerPress }: { starters: LineupPlayer[]; subs: LineupPlayer[]; onPlayerPress: (userId: string) => void }) {
+function LineupPitch({ starters, subs, onPlayerPress, jersey, jerseyText }: { starters: LineupPlayer[]; subs: LineupPlayer[]; onPlayerPress: (userId: string) => void; jersey: string; jerseyText: string }) {
   const byBucket: Record<PosBucket, LineupPlayer[]> = { GK: [], DEF: [], MID: [], ATT: [] };
   for (const p of starters) byBucket[positionBucket(p.position)].push(p);
   const lines = (['ATT', 'MID', 'DEF', 'GK'] as PosBucket[]).map((b) => byBucket[b]).filter((arr) => arr.length > 0);
@@ -121,7 +135,7 @@ function LineupPitch({ starters, subs, onPlayerPress }: { starters: LineupPlayer
         <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, paddingVertical: 22, justifyContent: 'space-between' }}>
           {lines.map((l, i) => (
             <View key={i} className="flex-row items-center justify-evenly">
-              {l.map((p, j) => <PlayerToken key={`${i}-${j}`} p={p} onPress={onPlayerPress} />)}
+              {l.map((p, j) => <PlayerToken key={`${i}-${j}`} p={p} onPress={onPlayerPress} jersey={jersey} jerseyText={jerseyText} />)}
             </View>
           ))}
         </View>
@@ -151,6 +165,13 @@ function LineupCard({ side, onEdit, onPlayerPress }: { side: LineupSide | null; 
   const l = side.lineup;
   const starters = l?.players.filter((p) => p.role === 'starter') ?? [];
   const subs = l?.players.filter((p) => p.role === 'sub') ?? [];
+  // Couleur du maillot = celle paramétrée par l'équipe. Domicile → couleur
+  // principale, extérieur → couleur secondaire (calculé côté API, avec repli).
+  const jersey = side.jersey_color
+    || (side.is_home ? side.team.primary_color : side.team.secondary_color)
+    || side.team.primary_color
+    || '#15151A';
+  const jerseyText = readableOn(jersey);
   return (
     <View className="rounded-2xl p-4 mb-3" style={{ width: '100%', alignSelf: 'stretch', backgroundColor: 'rgba(255,255,255,0.05)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' }}>
       <View className="flex-row items-center justify-between mb-2">
@@ -166,7 +187,7 @@ function LineupCard({ side, onEdit, onPlayerPress }: { side: LineupSide | null; 
             <Text className="text-xs mb-2" style={{ color: '#FFB830' }}>Brouillon — non publié</Text>
           ) : null}
           {starters.length ? (
-            <LineupPitch starters={starters} subs={subs} onPlayerPress={onPlayerPress} />
+            <LineupPitch starters={starters} subs={subs} onPlayerPress={onPlayerPress} jersey={jersey} jerseyText={jerseyText} />
           ) : (
             <Text className="text-white/40 text-sm">Aucun titulaire sélectionné.</Text>
           )}
