@@ -34,6 +34,7 @@ interface Reservation {
   end_hour: number;
   status: string;
   created_at?: string | null;
+  updated_at?: string | null;
   cancel_reason?: string | null;
   terrain: { id: string; name: string; city: string; surface: string } | null;
 }
@@ -82,6 +83,14 @@ const RES_TABS = ['À venir', 'Passées', 'Annulées', 'Favoris'] as const;
 // Réservations expirées faute de validation dans le délai du panier : ce sont
 // des « non-actions », on ne les affiche ni dans Passées ni dans Annulées.
 const EXPIRED_CART_REASON = 'Délai de validation du panier expiré';
+// Opérations de panier « silencieuses » : ni le retrait du panier, ni la
+// modification de créneau, ni l'expiration ne sont de vraies annulations.
+// Seul le bouton « Annuler » de l'écran de paiement doit apparaître ici.
+const SILENT_CANCEL_REASONS = [
+  EXPIRED_CART_REASON,
+  'Retirée du panier',
+  'Créneau modifié',
+];
 
 export default function ProfileScreen() {
   const router = useRouter();
@@ -156,8 +165,16 @@ export default function ProfileScreen() {
   );
   // Passées : uniquement celles VALIDÉES (confirmées) dont la date est déjà passée.
   const past = reservations.filter((r) => r.status === 'confirmed' && r.reservation_date < todayYmd);
-  // Annulées : vraies annulations (clic « Annuler » / annulation partenaire), pas les expirations de panier.
-  const cancelledList = reservations.filter((r) => r.status === 'cancelled' && r.cancel_reason !== EXPIRED_CART_REASON);
+  // Annulées : vraies annulations (bouton « Annuler » de l'écran de paiement /
+  // annulation partenaire), PAS les retraits/modifications/expirations de panier.
+  // Triées de l'annulation la plus récente à la plus ancienne.
+  const cancelledList = reservations
+    .filter((r) => r.status === 'cancelled' && !SILENT_CANCEL_REASONS.includes(r.cancel_reason ?? ''))
+    .sort((a, b) => {
+      const ta = Date.parse(a.updated_at ?? a.created_at ?? '') || 0;
+      const tb = Date.parse(b.updated_at ?? b.created_at ?? '') || 0;
+      return tb - ta;
+    });
   async function submitReview() {
     if (!pendingReview || reviewRating === 0) {
       Alert.alert('Note requise', 'Choisis une note entre 1 et 5 étoiles.');

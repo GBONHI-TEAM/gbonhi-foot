@@ -92,8 +92,12 @@ export class ReservationsController {
   }
 
   @Patch('mine/:id/cancel')
-  cancelMinePending(@Param('id') id: string, @CurrentUser() user: UserPayload) {
-    return this.reservationsService.cancelMinePending(id, user);
+  cancelMinePending(
+    @Param('id') id: string,
+    @CurrentUser() user: UserPayload,
+    @Query('context') context?: string,
+  ) {
+    return this.reservationsService.cancelMinePending(id, user, context);
   }
 
   @Get('mine/:id')

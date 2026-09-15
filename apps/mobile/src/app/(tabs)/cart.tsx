@@ -51,11 +51,13 @@ export default function ReservationCartScreen() {
     if (hasExpired) void loadCart();
   }, [hasExpired, loadCart]);
 
-  async function removeFromCart(id: string, afterRemove?: () => void) {
+  async function removeFromCart(id: string, context: 'cart' | 'modify', afterRemove?: () => void) {
     if (actingId) return;
     try {
       setActingId(id);
-      await apiClient.patch(`/api/v1/reservations/mine/${id}/cancel`);
+      // `context` marque une opération de panier silencieuse (retrait/modif) :
+      // elle ne doit PAS apparaître dans l'onglet « Annulées » du profil.
+      await apiClient.patch(`/api/v1/reservations/mine/${id}/cancel`, null, { params: { context } });
       removePendingReservation(id);
       afterRemove?.();
     } catch (error: unknown) {
@@ -73,7 +75,7 @@ export default function ReservationCartScreen() {
       'Le créneau sera immédiatement libéré pour les autres joueurs.',
       [
         { text: 'Conserver', style: 'cancel' },
-        { text: 'Retirer', style: 'destructive', onPress: () => { void removeFromCart(id); } },
+        { text: 'Retirer', style: 'destructive', onPress: () => { void removeFromCart(id, 'cart'); } },
       ],
     );
   }
@@ -86,7 +88,7 @@ export default function ReservationCartScreen() {
         { text: 'Retour', style: 'cancel' },
         {
           text: 'Modifier',
-          onPress: () => { void removeFromCart(reservation.id, () => router.push(`/terrain/${reservation.terrain_id}/creneau`)); },
+          onPress: () => { void removeFromCart(reservation.id, 'modify', () => router.push(`/terrain/${reservation.terrain_id}/creneau`)); },
         },
       ],
     );

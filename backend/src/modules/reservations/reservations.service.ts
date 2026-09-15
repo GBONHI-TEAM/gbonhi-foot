@@ -16,6 +16,19 @@ import { createPartnerRevenueStatementPdf } from '../payments/receipt-pdf';
 
 const PLATFORM_FEE_RATE = 0.1; // 10 % commission plateforme
 const CART_HOLD_MINUTES = 15;
+
+/**
+ * Raisons d'annulation. Seule `cancelled` correspond à une annulation réelle
+ * (bouton « Annuler » de l'écran de paiement) et est affichée dans l'onglet
+ * « Annulées ». Les autres sont des opérations de panier silencieuses, filtrées
+ * à l'affichage (voir le mobile : profile.tsx).
+ */
+export const RESERVATION_CANCEL_REASONS = {
+  cancelled: 'Annulée par le joueur avant paiement',
+  cartRemoved: 'Retirée du panier',
+  modified: 'Créneau modifié',
+  expiredCart: 'Délai de validation du panier expiré',
+} as const;
 const CART_CLEANUP_INTERVAL_MS = 60_000;
 // Fenêtre de rappel : on prévient l'utilisateur jusqu'à 90 min avant le début.
 const REMINDER_LEAD_MINUTES = 90;
@@ -378,10 +391,20 @@ export class ReservationsService {
   }
 
   /** Annulation volontaire d'une réservation qui n'a pas encore été payée. */
-  async cancelMinePending(id: string, user: UserPayload) {
+  async cancelMinePending(id: string, user: UserPayload, context?: string) {
+    // On distingue une VRAIE annulation (bouton « Annuler » de l'écran de
+    // paiement) d'un simple retrait/modification du panier. Seule la première
+    // doit apparaître dans l'onglet « Annulées » du profil ; les autres sont des
+    // « non-actions » et sont filtrées à l'affichage via ces raisons dédiées.
+    const reason =
+      context === 'cart'
+        ? RESERVATION_CANCEL_REASONS.cartRemoved
+        : context === 'modify'
+          ? RESERVATION_CANCEL_REASONS.modified
+          : RESERVATION_CANCEL_REASONS.cancelled;
     const result = await this.prisma.reservation.updateMany({
       where: { id, user_id: user.id, status: 'pending' },
-      data: { status: 'cancelled', cancel_reason: 'Annulée par le joueur avant paiement' },
+      data: { status: 'cancelled', cancel_reason: reason },
     });
     if (result.count === 0) {
       throw new NotFoundException('Cette réservation en attente est introuvable.');
@@ -414,7 +437,7 @@ export class ReservationsService {
       },
       data: {
         status: 'cancelled',
-        cancel_reason: 'Délai de validation du panier expiré',
+        cancel_reason: RESERVATION_CANCEL_REASONS.expiredCart,
       },
     });
   }

@@ -99,11 +99,13 @@ export default function CartPaymentScreen() {
     if (!reservation && (fromStore !== null || fetchDone)) goBackToCart();
   }, [reservation, fromStore, fetchDone, goBackToCart]);
 
-  async function removeAndLeave(afterRemove?: () => void) {
+  async function removeAndLeave(context: 'cancel' | 'modify', afterRemove?: () => void) {
     if (!reservation || busy) return;
     try {
       setBusy(true);
-      await apiClient.patch(`/api/v1/reservations/mine/${reservation.id}/cancel`);
+      // 'cancel' = vraie annulation (visible dans « Annulées ») ; 'modify' = on
+      // libère le créneau pour en rechoisir un (opération silencieuse).
+      await apiClient.patch(`/api/v1/reservations/mine/${reservation.id}/cancel`, null, { params: { context } });
       removePendingReservation(reservation.id);
       (afterRemove ?? goBackToCart)();
     } catch (error: unknown) {
@@ -118,14 +120,14 @@ export default function CartPaymentScreen() {
     if (!reservation) return;
     Alert.alert('Modifier le créneau ?', 'Le créneau actuel sera libéré. Tu pourras en choisir un autre.', [
       { text: 'Retour', style: 'cancel' },
-      { text: 'Modifier', onPress: () => { void removeAndLeave(() => router.replace(`/terrain/${reservation.terrain_id}/creneau`)); } },
+      { text: 'Modifier', onPress: () => { void removeAndLeave('modify', () => router.replace(`/terrain/${reservation.terrain_id}/creneau`)); } },
     ]);
   }
 
   function onAnnuler() {
     Alert.alert('Annuler la réservation ?', 'Le créneau sera libéré pour les autres joueurs.', [
       { text: 'Conserver', style: 'cancel' },
-      { text: 'Annuler', style: 'destructive', onPress: () => { void removeAndLeave(); } },
+      { text: 'Annuler', style: 'destructive', onPress: () => { void removeAndLeave('cancel'); } },
     ]);
   }
 
@@ -227,7 +229,7 @@ export default function CartPaymentScreen() {
 
         {/* Payer (mis en valeur, en premier) puis Modifier + Annuler */}
         <Pressable onPress={onPay} disabled={busy || expired} className="h-14 rounded-btn items-center justify-center" style={{ backgroundColor: '#F7921E', opacity: expired ? 0.5 : 1 }}>
-          {busy ? <ActivityIndicator color="#FFFFFF" /> : <Text className="text-white font-black text-base">💳 Payer ma réservation</Text>}
+          {busy ? <ActivityIndicator color="#FFFFFF" /> : <Text className="text-white font-black text-base">Payer ma réservation</Text>}
         </Pressable>
         <View className="flex-row gap-2.5">
           <Pressable onPress={onModifier} disabled={busy || expired} className="flex-1 h-12 rounded-btn items-center justify-center" style={{ borderWidth: 1, borderColor: 'rgba(46,158,79,0.65)', opacity: busy || expired ? 0.5 : 1 }}>
