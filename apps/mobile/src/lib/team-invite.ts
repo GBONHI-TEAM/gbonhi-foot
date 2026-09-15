@@ -1,9 +1,12 @@
+import { PUBLIC_LINK_BASE } from './api';
+
 /**
  * Lien de téléchargement / ouverture de l'app partagé dans les invitations.
- * À remplacer par les vraies fiches stores (App Store / Play Store) à la
- * publication ; d'ici là, la page web redirige vers le bon store.
+ * Pointe vers la page smart-link `/download` du backend : elle tente d'ouvrir
+ * l'app si installée, sinon redirige vers le bon store (iOS/Android) — les
+ * URLs stores se configurent côté serveur (env) à la publication.
  */
-export const APP_DOWNLOAD_URL = 'https://gbonhifoot.com';
+export const APP_DOWNLOAD_URL = `${PUBLIC_LINK_BASE}/download`;
 
 /**
  * Message d'invitation d'équipe partagé (WhatsApp, SMS, etc.).

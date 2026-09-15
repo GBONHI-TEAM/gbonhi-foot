@@ -51,6 +51,27 @@ export class AppController {
     reply.type('text/html').send(html);
   }
 
+  /**
+   * Page de téléchargement générique (partagée dans les invitations, QR, etc.).
+   * Tente d'ouvrir l'app si installée, sinon propose de la télécharger avec
+   * redirection store intelligente (iOS/Android). Alias : /app.
+   */
+  @Get('download')
+  downloadPage(@Res() reply: FastifyReply) {
+    return reply.type('text/html').send(
+      this.brandedPage({
+        title: 'Télécharge GBONHI FOOT',
+        subtitle: 'Le football amateur commence ici. Installe l’app, réserve ton terrain et rejoins ta communauté !',
+        deepLink: 'gbonhi://home',
+      }),
+    );
+  }
+
+  @Get('app')
+  appAlias(@Res() reply: FastifyReply) {
+    return this.downloadPage(reply);
+  }
+
   /** Smart links de match et publication : lien HTTPS partageable → app. */
   @Get('r/:kind/:id')
   contentRedirect(
