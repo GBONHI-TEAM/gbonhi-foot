@@ -3,6 +3,7 @@ import { Text, Animated, Easing, ImageBackground, StatusBar, StyleSheet, Dimensi
 import Svg, { Circle, Line, Path, Polygon, Defs, RadialGradient, Stop, G } from 'react-native-svg';
 import { useRouter } from 'expo-router';
 import { useAuthStore } from '../../store/auth.store';
+import { getPendingOtp, type PendingOtp } from '../../lib/pending-flow';
 
 const { width: W, height: H } = Dimensions.get('window');
 const CY = H * 0.5; // centre vertical (écusson)
@@ -32,6 +33,17 @@ export default function SplashScreen() {
   const { session, isLoading } = useAuthStore();
   const navigated = useRef(false);
   const [animDone, setAnimDone] = useState(false);
+  // Contexte OTP en cours (SecureStore). `undefined` = pas encore lu.
+  // Sur Android, l'app peut être détruite quand l'utilisateur va chercher son
+  // code dans Gmail : au redémarrage, on doit revenir sur l'écran de saisie du
+  // code plutôt que de repartir de la connexion.
+  const [otpCtx, setOtpCtx] = useState<PendingOtp | null | undefined>(undefined);
+
+  useEffect(() => {
+    let mounted = true;
+    getPendingOtp().then((v) => { if (mounted) setOtpCtx(v ?? null); });
+    return () => { mounted = false; };
+  }, []);
 
   const veil = useRef(new Animated.Value(1)).current;
   const bgScale = useRef(new Animated.Value(1.12)).current;
@@ -44,6 +56,22 @@ export default function SplashScreen() {
   function go() {
     if (navigated.current) return;
     navigated.current = true;
+    // Un code OTP est en attente (contexte < 15 min, sinon déjà purgé) → on
+    // reprend TOUJOURS la saisie du code, que ce soit une inscription (sans
+    // session) ou une vérification de numéro d'un compte Apple/Google (avec
+    // session). Cela évite de perdre l'écran quand on va chercher le code.
+    if (otpCtx) {
+      router.replace({
+        pathname: '/(auth)/otp',
+        params: {
+          ...(otpCtx.email ? { email: otpCtx.email } : {}),
+          ...(otpCtx.phone ? { phone: otpCtx.phone } : {}),
+          channel: otpCtx.channel,
+          ...(otpCtx.purpose ? { purpose: otpCtx.purpose } : {}),
+        },
+      });
+      return;
+    }
     router.replace(session ? '/(tabs)' : '/(auth)/login');
   }
 
@@ -76,9 +104,11 @@ export default function SplashScreen() {
   }, []);
 
   useEffect(() => {
-    if (animDone && !isLoading) go();
+    // On attend aussi la lecture du contexte OTP (otpCtx !== undefined) pour ne
+    // jamais rediriger vers la connexion alors qu'un code est en attente.
+    if (animDone && !isLoading && otpCtx !== undefined) go();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [animDone, isLoading]);
+  }, [animDone, isLoading, otpCtx]);
 
   const ballX = ball.interpolate({ inputRange: [0, 1], outputRange: [-80, W + 80] });
   const ballY = ball.interpolate({ inputRange: [0, 0.25, 0.5, 0.75, 1], outputRange: [0, -36, 0, -20, 0] });
@@ -89,7 +119,7 @@ export default function SplashScreen() {
   const glowOpacity = glow.interpolate({ inputRange: [0.45, 1], outputRange: [0.5, 1] });
 
   return (
-    <Pressable style={{ flex: 1, backgroundColor: '#0D1F0D' }} onPress={() => { if (!isLoading) go(); }}>
+    <Pressable style={{ flex: 1, backgroundColor: '#0D1F0D' }} onPress={() => { if (!isLoading && otpCtx !== undefined) go(); }}>
       <StatusBar hidden />
 
       {/* Fond artwork + léger zoom */}
