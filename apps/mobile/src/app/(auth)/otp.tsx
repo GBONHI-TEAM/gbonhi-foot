@@ -14,7 +14,7 @@ import {
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { useAuthStore } from '../../store/auth.store';
-import { clearPendingOtp } from '../../lib/pending-flow';
+import { setPendingOtp, clearPendingOtp } from '../../lib/pending-flow';
 import { frenchAuthError } from '../../lib/auth-errors';
 
 /**
@@ -57,6 +57,18 @@ export default function OtpScreen() {
     const t = setTimeout(() => setCountdown((c) => c - 1), 1000);
     return () => clearTimeout(t);
   }, [countdown]);
+
+  // Persiste le contexte de CET écran OTP (inscription, connexion ou vérif. de
+  // numéro) afin de pouvoir le restaurer si l'app est tuée par le système —
+  // typiquement quand l'utilisateur va chercher son code dans sa boîte mail.
+  useEffect(() => {
+    void setPendingOtp({
+      ...(email ? { email } : {}),
+      ...(phone ? { phone } : {}),
+      channel,
+      ...(isVerifyPhone ? { purpose: 'verify-phone' } : {}),
+    });
+  }, [email, phone, channel, isVerifyPhone]);
 
   function goBack() {
     // L'utilisateur abandonne la saisie du code → on oublie le contexte OTP.
