@@ -341,14 +341,28 @@ function HomeReservation() {
       : terrain.format === selectedFilter.key;
   });
 
-  const upcoming = reservations.filter((r) => {
-    if ((r.status ?? '').toLowerCase() === 'cancelled') return false;
-    // Un panier « en attente » expire au bout de 15 min : il ne doit plus
-    // apparaître dans « À venir » une fois le délai de validation dépassé.
-    if (isPendingExpired(r)) return false;
-    const d = new Date(r.reservation_date);
-    return !Number.isNaN(d.getTime()) && d.getTime() >= Date.now() - 12 * 3600e3;
-  });
+  // Comparaison par date calendaire (même logique que l'onglet « À venir » du
+  // profil) : on compare les chaînes AAAA-MM-JJ, sinon une réservation du jour
+  // l'après-midi disparaissait (la date était interprétée à minuit UTC et
+  // tombait sous « maintenant − 12 h »).
+  const todayYmd = (() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  })();
+  const upcoming = reservations
+    .filter((r) => {
+      if ((r.status ?? '').toLowerCase() === 'cancelled') return false;
+      // Un panier « en attente » expire au bout de 15 min : il ne doit plus
+      // apparaître dans « À venir » une fois le délai de validation dépassé.
+      if (isPendingExpired(r)) return false;
+      return String(r.reservation_date).slice(0, 10) >= todayYmd;
+    })
+    // Les plus proches en premier.
+    .sort((a, b) =>
+      String(a.reservation_date).slice(0, 10) === String(b.reservation_date).slice(0, 10)
+        ? a.start_hour - b.start_hour
+        : String(a.reservation_date).slice(0, 10) < String(b.reservation_date).slice(0, 10) ? -1 : 1,
+    );
 
   return (
     <>
