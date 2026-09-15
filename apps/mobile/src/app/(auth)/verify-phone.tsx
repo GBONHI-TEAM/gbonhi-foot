@@ -22,23 +22,24 @@ export default function VerifyPhoneScreen() {
   const [phone, setPhone] = useState('');
   const [loading, setLoading] = useState(false);
 
-  // Sortie de secours : cet écran est imposé aux comptes Apple/Google sans
-  // numéro. Sans échappatoire, un utilisateur qui ne reçoit pas le code (ex.
-  // adresse « Hide My Email » qui ne délivre pas) reste bloqué même après
-  // réinstallation (la session persiste). On lui permet de se déconnecter.
-  function changeAccount() {
+  // Retour : l'utilisateur est en pleine création de compte (Apple/Google sans
+  // numéro). On le renvoie vers l'espace d'inscription pour recommencer. Sous le
+  // capot on invalide la session OAuth à moitié créée (sinon l'AuthGate le
+  // ramènerait ici) — mais côté utilisateur il s'agit bien de revenir à
+  // l'inscription, pas d'une déconnexion.
+  function backToRegister() {
     Alert.alert(
-      'Changer de compte ?',
-      'Tu seras déconnecté et pourras te reconnecter avec un autre compte ou une adresse e-mail qui reçoit bien les e-mails.',
+      "Revenir à l'inscription ?",
+      "Tu seras redirigé(e) vers l'espace d'inscription afin de recommencer la création de ton compte.",
       [
-        { text: 'Rester', style: 'cancel' },
+        { text: 'Annuler', style: 'cancel' },
         {
-          text: 'Se déconnecter',
+          text: "Revenir à l'inscription",
           style: 'destructive',
           onPress: async () => {
             await clearPendingOtp();
             await supabase.auth.signOut();
-            router.replace('/(auth)/sign-in');
+            router.replace('/(auth)/register');
           },
         },
       ],
@@ -91,7 +92,7 @@ export default function VerifyPhoneScreen() {
     <KeyboardAvoidingView className="flex-1 bg-primary-deep" behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ImageBackground source={require('../../../assets/images/kente-tile.png')} resizeMode="repeat" style={{ flex: 1 }} imageStyle={{ opacity: 0.6 }}>
         {/* Retour / changer de compte (évite de rester bloqué sur cet écran) */}
-        <Pressable onPress={changeAccount} hitSlop={12} style={{ position: 'absolute', top: 56, left: 20, zIndex: 10, width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.12)' }}>
+        <Pressable onPress={backToRegister} hitSlop={12} style={{ position: 'absolute', top: 56, left: 20, zIndex: 10, width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.12)' }}>
           <Text style={{ color: '#FFFFFF', fontSize: 20, fontWeight: '800' }}>‹</Text>
         </Pressable>
         <ScrollView contentContainerStyle={{ flexGrow: 1, justifyContent: 'center', paddingHorizontal: 28, paddingVertical: 48 }} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
@@ -107,7 +108,8 @@ export default function VerifyPhoneScreen() {
           </Text>
 
           <View className="h-14 rounded-input px-4 flex-row items-center mb-4" style={{ backgroundColor: 'rgba(255,255,255,0.08)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)' }}>
-            <Text className="text-white font-bold mr-3">+225</Text>
+            <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 16, lineHeight: 20, includeFontPadding: false, textAlignVertical: 'center' }}>+225</Text>
+            <View style={{ width: 1, height: 22, backgroundColor: 'rgba(255,255,255,0.22)', marginHorizontal: 12 }} />
             <TextInput
               value={phone}
               onChangeText={setPhone}
@@ -116,8 +118,7 @@ export default function VerifyPhoneScreen() {
               keyboardType="phone-pad"
               inputAccessoryViewID={KB_DONE_ID}
               selectionColor="#F7921E"
-              className="flex-1 text-white text-base"
-              style={{ paddingVertical: 0, textAlignVertical: 'center', height: '100%' }}
+              style={{ flex: 1, color: '#FFFFFF', fontSize: 16, lineHeight: 20, padding: 0, includeFontPadding: false, textAlignVertical: 'center' }}
             />
           </View>
 
