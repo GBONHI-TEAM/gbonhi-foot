@@ -185,7 +185,22 @@ export default function MonEquipePage() {
   /* ── Équipe existante ── */
   return (
     <ScreenBackground>
-      <AppHeader title="Mon équipe" onBack={() => (router.canGoBack() ? router.back() : router.replace('/(tabs)/profile'))} showLogo={false} centered />
+      <AppHeader
+        title="Mon équipe"
+        onBack={() => (router.canGoBack() ? router.back() : router.replace('/(tabs)/profile'))}
+        showLogo={false}
+        centered
+        actions={isCaptain ? (
+          <Pressable
+            onPress={() => router.push(`/team/edit?id=${team.id}` as unknown as Href)}
+            accessibilityLabel="Paramètres de l'équipe"
+            hitSlop={10}
+            style={{ width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.15)' }}
+          >
+            <Text style={{ color: '#FFFFFF', fontSize: 18 }}>⚙️</Text>
+          </Pressable>
+        ) : undefined}
+      />
       <ScrollView className="flex-1" contentContainerStyle={{ padding: 20, paddingBottom: 40 }}>
         {/* En-tête équipe */}
         <View className="items-center mb-5">
