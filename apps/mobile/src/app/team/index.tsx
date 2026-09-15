@@ -5,7 +5,7 @@ import { ScreenBackground } from '../../components/ui/screen-background';
 import { AppHeader } from '../../components/ui/app-header';
 import { copyToClipboard } from '../../lib/clipboard';
 import { apiClient, teamInviteLink } from '../../lib/api';
-import { buildTeamInviteMessage } from '../../lib/team-invite';
+import { buildTeamInviteMessage, buildTeamInviteCodeMessage } from '../../lib/team-invite';
 import { imageThumb } from '../../lib/image';
 import { RemoteImage } from '../../components/ui/remote-image';
 import { useAuthStore } from '../../store/auth.store';
@@ -76,9 +76,11 @@ export default function MonEquipePage() {
 
   async function shareInvite(kind: 'code' | 'link') {
     if (!team?.invitation_code) return;
-    // 'code' → partage le code SEUL (copiable sans le reste) ; 'link' → message complet.
+    // Les deux partages envoient un message complet et attractif :
+    //  - 'code' met le CODE en avant (avec la marche à suivre + liens app) ;
+    //  - 'link' met le LIEN de rejointe en avant.
     const message = kind === 'code'
-      ? team.invitation_code
+      ? buildTeamInviteCodeMessage(team.name, team.invitation_code, joinLink)
       : buildTeamInviteMessage(team.name, team.invitation_code, joinLink);
     await Share.share({ message });
   }
