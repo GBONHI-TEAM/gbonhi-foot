@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { Text, Animated, Easing, ImageBackground, StatusBar, StyleSheet, Dimensions, Pressable } from 'react-native';
 import Svg, { Circle, Line, Path, Polygon, Defs, RadialGradient, Stop, G } from 'react-native-svg';
-import { useRouter } from 'expo-router';
+import * as Linking from 'expo-linking';
+import { useRouter, type Href } from 'expo-router';
 import { useAuthStore } from '../../store/auth.store';
-import { getPendingOtp, type PendingOtp } from '../../lib/pending-flow';
+import { getPendingOtp, getPendingDeepRoute, clearPendingDeepRoute, type PendingOtp } from '../../lib/pending-flow';
+import { routeFromGbonhiLink } from '../../lib/deep-link';
 
 const { width: W, height: H } = Dimensions.get('window');
 const CY = H * 0.5; // centre vertical (écusson)
@@ -38,10 +40,23 @@ export default function SplashScreen() {
   // code dans Gmail : au redémarrage, on doit revenir sur l'écran de saisie du
   // code plutôt que de repartir de la connexion.
   const [otpCtx, setOtpCtx] = useState<PendingOtp | null | undefined>(undefined);
+  // Lien partagé (match / publication / invitation) à ouvrir au lancement.
+  // `undefined` = pas encore résolu. Sur Android, au démarrage à froid par un
+  // lien, il faut router vers la cible plutôt que vers l'accueil/le choix de mode.
+  const [deepRoute, setDeepRoute] = useState<string | null | undefined>(undefined);
 
   useEffect(() => {
     let mounted = true;
     getPendingOtp().then((v) => { if (mounted) setOtpCtx(v ?? null); });
+    (async () => {
+      let route: string | null = null;
+      try {
+        const url = await Linking.getInitialURL(); // lien de lancement (cold start)
+        if (url) route = routeFromGbonhiLink(url);
+      } catch { /* ignore */ }
+      if (!route) { try { route = await getPendingDeepRoute(); } catch { /* ignore */ } }
+      if (mounted) setDeepRoute(route ?? null);
+    })();
     return () => { mounted = false; };
   }, []);
 
@@ -70,6 +85,14 @@ export default function SplashScreen() {
           ...(otpCtx.purpose ? { purpose: otpCtx.purpose } : {}),
         },
       });
+      return;
+    }
+    // Lien partagé + utilisateur connecté → on ouvre directement la cible
+    // (match en direct, publication, invitation). Non connecté : la route reste
+    // persistée et sera appliquée après connexion (géré par l'AuthGate).
+    if (session && deepRoute) {
+      router.replace(deepRoute as Href);
+      void clearPendingDeepRoute();
       return;
     }
     router.replace(session ? '/(tabs)' : '/(auth)/login');
@@ -106,9 +129,9 @@ export default function SplashScreen() {
   useEffect(() => {
     // On attend aussi la lecture du contexte OTP (otpCtx !== undefined) pour ne
     // jamais rediriger vers la connexion alors qu'un code est en attente.
-    if (animDone && !isLoading && otpCtx !== undefined) go();
+    if (animDone && !isLoading && otpCtx !== undefined && deepRoute !== undefined) go();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [animDone, isLoading, otpCtx]);
+  }, [animDone, isLoading, otpCtx, deepRoute]);
 
   const ballX = ball.interpolate({ inputRange: [0, 1], outputRange: [-80, W + 80] });
   const ballY = ball.interpolate({ inputRange: [0, 0.25, 0.5, 0.75, 1], outputRange: [0, -36, 0, -20, 0] });
@@ -119,7 +142,7 @@ export default function SplashScreen() {
   const glowOpacity = glow.interpolate({ inputRange: [0.45, 1], outputRange: [0.5, 1] });
 
   return (
-    <Pressable style={{ flex: 1, backgroundColor: '#0D1F0D' }} onPress={() => { if (!isLoading && otpCtx !== undefined) go(); }}>
+    <Pressable style={{ flex: 1, backgroundColor: '#0D1F0D' }} onPress={() => { if (!isLoading && otpCtx !== undefined && deepRoute !== undefined) go(); }}>
       <StatusBar hidden />
 
       {/* Fond artwork + léger zoom */}
