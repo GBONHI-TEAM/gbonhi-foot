@@ -1,16 +1,20 @@
 import * as Linking from 'expo-linking';
+import * as WebBrowser from 'expo-web-browser';
 import { supabase } from './supabase';
 
 /**
- * Connexion Google via Supabase OAuth, sans dépendance native supplémentaire.
+ * Connexion Google via Supabase OAuth.
  * - `signInWithOAuth` (skipBrowserRedirect) renvoie l'URL d'autorisation Google.
- * - On l'ouvre dans le navigateur système ; après connexion, Supabase redirige
- *   vers `gbonhi://?code=...` → l'OS rouvre l'app.
- * - Le handler de deep link (root _layout) échange le `code` contre une session.
+ * - On ouvre cette URL dans une SESSION d'authentification (ASWebAuthenticationSession
+ *   sur iOS / Custom Tab sur Android) via `openAuthSessionAsync`. Contrairement à
+ *   `Linking.openURL` + Safari, cette session CAPTURE de façon fiable la redirection
+ *   vers `gbonhi://?code=...` et nous rend l'URL directement — sans dépendre du fait
+ *   que le navigateur système accepte de rouvrir l'app (ce qui échouait sur iOS et
+ *   renvoyait l'utilisateur à l'écran d'accueil sans session).
+ * - On échange ensuite le `code` contre une session (PKCE).
  *
  * Redirection = `gbonhi://` (déjà autorisée dans Supabase → Redirect URLs).
- * On distingue ce retour du lien d'invitation d'équipe (`gbonhi://join?code=…`)
- * par l'absence de hostname (voir handleOAuthDeepLink).
+ * Le handler de deep link global (root _layout) reste un filet de secours.
  */
 export const OAUTH_REDIRECT = 'gbonhi://';
 
@@ -21,7 +25,16 @@ export async function signInWithGoogle(): Promise<void> {
   });
   if (error) throw error;
   if (!data?.url) throw new Error("URL d'autorisation Google indisponible");
-  await Linking.openURL(data.url);
+
+  // Ouvre la session d'auth et attend le retour sur `gbonhi://`.
+  const result = await WebBrowser.openAuthSessionAsync(data.url, OAUTH_REDIRECT);
+
+  // L'utilisateur a fermé la fenêtre sans terminer : on n'affiche pas d'erreur.
+  if (result.type !== 'success' || !result.url) return;
+
+  // Échange le code renvoyé dans l'URL contre une session Supabase.
+  const exchanged = await handleOAuthDeepLink(result.url);
+  if (!exchanged) throw new Error('La connexion Google n’a pas pu être finalisée. Réessaie.');
 }
 
 /**
