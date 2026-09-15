@@ -32,17 +32,27 @@ export default function ConfirmationPage() {
       const { data } = await apiClient.get<PaymentStatus>(`/api/v1/payments/reservations/${reservationId}`);
       setPayment(data);
     } catch {
-      setPayment(null);
+      // On NE remet PAS le statut à null : un rafraîchissement qui échoue (ex. au
+      // retour de l'app en avant-plan) ne doit pas faire repasser l'écran en
+      // « Vérification en cours » et cacher le bouton de reçu déjà obtenu.
     } finally {
       setLoading(false);
     }
   }, [reservationId]);
 
+  // Premier chargement.
   useEffect(() => {
     void loadPayment();
+  }, [loadPayment]);
+
+  // Polling tant que le paiement n'est pas dans un état définitif. Une fois
+  // accepté/refusé, on arrête : l'écran reste stable même en revenant dans l'app.
+  useEffect(() => {
+    const terminal = payment?.status === 'accepted' || payment?.status === 'refused' || payment?.status === 'cancelled';
+    if (terminal) return;
     const interval = setInterval(() => { void loadPayment(); }, 5000);
     return () => clearInterval(interval);
-  }, [loadPayment]);
+  }, [loadPayment, payment?.status]);
 
   async function downloadReceipt() {
     if (!reservationId || payment?.status !== 'accepted') return;

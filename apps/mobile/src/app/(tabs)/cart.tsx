@@ -128,7 +128,7 @@ export default function ReservationCartScreen() {
         {pendingReservations.length > 0 ? (
           <>
             <Text className="text-white/70 text-sm mb-1">
-              {pendingReservations.length} réservation{pendingReservations.length > 1 ? 's' : ''} en attente · valide celles que tu souhaites.
+              {pendingReservations.length} réservation{pendingReservations.length > 1 ? 's' : ''} en attente · valide {pendingReservations.length > 1 ? 'celles' : 'celle'} que tu souhaites.
             </Text>
 
             {/* Blocs compacts : au moins 2 visibles sans scroller */}

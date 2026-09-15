@@ -158,14 +158,19 @@ export default function TerrainDetailPage() {
   // heures ENCORE à venir aujourd'hui (cohérence avec le bouton « Réserver »).
   const todaySlots = useMemo(() => {
     const dow = (new Date().getDay() + 6) % 7; // 0 = lundi
-    const nowHour = new Date().getHours();
+    const now = new Date();
+    const nowMinutes = now.getHours() * 60 + now.getMinutes();
+    // Premier créneau proposé : au moins 30 min à l'avance, aligné sur :00/:30.
+    // Ex. 15h24 → 16h00 ; 15h00 → 15h30.
+    const earliestHour = (Math.ceil((nowMinutes + 30) / 30) * 30) / 60;
+    // Grille par pas de 30 min (cohérence avec l'écran « Choisir un créneau »).
     const hours = new Set<number>();
     for (const s of terrain?.slots ?? []) {
       if (s.day_of_week !== dow) continue;
-      for (let h = s.start_hour; h < s.end_hour; h++) hours.add(h);
+      for (let h = s.start_hour; h < s.end_hour; h += 0.5) hours.add(Number(h.toFixed(1)));
     }
     if (hours.size === 0) {
-      for (let h = 6; h < 23; h++) hours.add(h); // repli (terrains sans horaires configurés)
+      for (let h = 6; h < 23; h += 0.5) hours.add(Number(h.toFixed(1))); // repli (terrains sans horaires)
     }
     const unavailable = new Set<number>([
       ...(availability?.booked ?? []),
@@ -173,7 +178,7 @@ export default function TerrainDetailPage() {
       ...(availability?.blocked ?? []),
     ]);
     return Array.from(hours)
-      .filter((h) => h >= nowHour)
+      .filter((h) => h >= earliestHour)
       .sort((a, b) => a - b)
       .map((h) => ({ hour: h, available: !unavailable.has(h) }));
   }, [terrain, availability]);
@@ -303,7 +308,7 @@ export default function TerrainDetailPage() {
                     className="font-bold text-base"
                     style={{ color: s.available ? '#4ADE80' : 'rgba(255,255,255,0.35)', textDecorationLine: s.available ? 'none' : 'line-through' }}
                   >
-                    {String(s.hour).padStart(2, '0')}:00
+                    {`${String(Math.floor(s.hour)).padStart(2, '0')}:${s.hour % 1 === 0.5 ? '30' : '00'}`}
                   </Text>
                 </Pressable>
               ))}
