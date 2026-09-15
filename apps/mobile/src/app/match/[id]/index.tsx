@@ -152,7 +152,7 @@ function LineupCard({ side, onEdit, onPlayerPress }: { side: LineupSide | null; 
   const starters = l?.players.filter((p) => p.role === 'starter') ?? [];
   const subs = l?.players.filter((p) => p.role === 'sub') ?? [];
   return (
-    <View className="rounded-2xl p-4 mb-3" style={{ backgroundColor: 'rgba(255,255,255,0.05)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' }}>
+    <View className="rounded-2xl p-4 mb-3" style={{ width: '100%', alignSelf: 'stretch', backgroundColor: 'rgba(255,255,255,0.05)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' }}>
       <View className="flex-row items-center justify-between mb-2">
         <Text className="text-white font-black text-base flex-1" numberOfLines={1}>{side.team.name}</Text>
         {l?.formation ? (
