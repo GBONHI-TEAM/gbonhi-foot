@@ -323,6 +323,33 @@ export class LeaguesService {
       this.prisma.tournamentTeam.count({ where: { tournament_id: leagueId } }),
     ]);
     const participation = playerParticipation ?? memberParticipation;
+
+    // Équipe dont le joueur est simple membre (toutes fonctions confondues) :
+    // permet au mobile d'expliquer qu'un non-capitaine ne peut pas inscrire son
+    // équipe et doit demander à son capitaine, plutôt que d'afficher « Tu n'as
+    // pas d'équipe ».
+    const memberTeam = this.isStaff(user)
+      ? null
+      : await this.prisma.teamMember.findFirst({
+          where: { user_id: user.id, status: 'active' },
+          select: {
+            role: true,
+            team: { select: { id: true, name: true, primary_color: true, logo_url: true, coach_id: true } },
+          },
+          orderBy: { created_at: 'asc' },
+        });
+    const memberOf = memberTeam
+      ? {
+          team: {
+            id: memberTeam.team.id,
+            name: memberTeam.team.name,
+            primary_color: memberTeam.team.primary_color,
+            logo_url: memberTeam.team.logo_url,
+          },
+          is_captain: memberTeam.role === 'captain' || memberTeam.team.coach_id === user.id,
+        }
+      : null;
+
     return {
       teams,
       registrations,
@@ -332,6 +359,10 @@ export class LeaguesService {
       already_registered: registrations.length > 0 || participation !== null,
       registrations_open: league.status === 'INSCRIPTIONS_OUVERTES',
       league_full: totalRegistered >= league.max_teams,
+      // true = le joueur peut inscrire une équipe (capitaine, créateur ou staff).
+      can_register: this.isStaff(user) || teams.length > 0,
+      // Équipe du joueur s'il en a une (même sans droit d'inscription).
+      member_team: memberOf,
     };
   }
 

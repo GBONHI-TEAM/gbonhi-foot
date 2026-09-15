@@ -29,6 +29,8 @@ interface RegistrationState {
   registrations_open: boolean;
   league_full: boolean;
   participation?: { team: MyTeam } | null;
+  can_register?: boolean;
+  member_team?: { team: MyTeam; is_captain: boolean } | null;
 }
 
 function fcfa(n?: number | null) {
@@ -51,6 +53,8 @@ export default function InscriptionLeaguePage() {
   const [downloading, setDownloading] = useState(false);
   const [methods, setMethods] = useState<{ code: string; label: string }[]>([]);
   const [selectedMethod, setSelectedMethod] = useState('cash');
+  // Équipe dont le joueur est membre sans pouvoir l'inscrire (non-capitaine).
+  const [memberTeam, setMemberTeam] = useState<{ team: MyTeam; is_captain: boolean } | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -60,7 +64,12 @@ export default function InscriptionLeaguePage() {
         apiClient.get<{ code: string; label: string }[]>(`/api/v1/payments/methods`).then((r) => r.data).catch(() => null),
       ]);
       setLeague(l);
-      setTeam(state?.participation?.team ?? state?.teams?.[0] ?? null);
+      // `team` = équipe que le joueur peut inscrire (capitaine/créateur/staff) ou
+      // celle déjà inscrite. Un simple membre n'a PAS de `team` inscriptible.
+      const registrableTeam = state?.participation?.team ?? state?.teams?.[0] ?? null;
+      setTeam(registrableTeam);
+      // Cas non-capitaine : pas de droit d'inscription mais bien dans une équipe.
+      setMemberTeam(!registrableTeam && state?.member_team && !state.member_team.is_captain ? state.member_team : null);
       setRegistration(state?.registrations?.[0] ?? null);
       if (state?.already_registered) setDone(true);
       const list = Array.isArray(pm) && pm.length > 0 ? pm : [{ code: 'cash', label: 'Espèces' }];
@@ -190,10 +199,34 @@ export default function InscriptionLeaguePage() {
                 <Text className="text-white font-bold">{team.name}</Text>
               </View>
             </View>
+          ) : memberTeam ? (
+            <View className="flex-row items-center gap-3">
+              <View className="w-11 h-11 rounded-xl items-center justify-center overflow-hidden" style={{ backgroundColor: memberTeam.team.primary_color?.trim() || '#1E7A3A' }}>
+                {memberTeam.team.logo_url?.trim() ? (
+                  <RemoteImage uri={imageThumb(memberTeam.team.logo_url, 120)} contentFit="cover" style={{ width: '100%', height: '100%' }} />
+                ) : (
+                  <Text className="text-white font-black text-sm">{initials(memberTeam.team.name)}</Text>
+                )}
+              </View>
+              <View className="flex-1">
+                <Text className="text-xs mb-0.5" style={{ color: 'rgba(255,255,255,0.45)' }}>Ton équipe</Text>
+                <Text className="text-white font-bold">{memberTeam.team.name}</Text>
+              </View>
+            </View>
           ) : (
             <Text className="text-sm" style={{ color: '#F7921E' }}>Tu n&apos;as pas d&apos;équipe. Crée ou rejoins-en une d&apos;abord.</Text>
           )}
         </View>
+
+        {/* Non-capitaine : explication claire, pas de paiement possible. */}
+        {!team && memberTeam ? (
+          <View className="rounded-2xl p-4 mb-4" style={{ backgroundColor: 'rgba(247,146,30,0.08)', borderWidth: 1, borderColor: 'rgba(247,146,30,0.4)' }}>
+            <Text className="font-bold text-base mb-1.5" style={{ color: '#F7921E' }}>Réservé au capitaine</Text>
+            <Text className="text-sm leading-5" style={{ color: 'rgba(255,255,255,0.75)' }}>
+              Seul le capitaine de {memberTeam.team.name} peut inscrire l&apos;équipe à une ligue. Demande à ton capitaine de finaliser l&apos;inscription depuis son compte.
+            </Text>
+          </View>
+        ) : null}
 
         {/* Coûts */}
         <View className="rounded-2xl p-4 mb-4" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
@@ -247,20 +280,24 @@ export default function InscriptionLeaguePage() {
           </View>
         ) : null}
 
-        {/* Accept règlement */}
-        <Pressable onPress={() => setAccepted(!accepted)} className="flex-row items-center gap-3 p-4 rounded-xl" style={{ backgroundColor: 'rgba(255,255,255,0.05)', borderWidth: 1, borderColor: accepted ? '#1E7A3A' : 'rgba(255,255,255,0.1)' }}>
-          <View className="w-5 h-5 rounded border-2 items-center justify-center flex-shrink-0" style={{ borderColor: accepted ? '#1E7A3A' : 'rgba(255,255,255,0.3)', backgroundColor: accepted ? '#1E7A3A' : 'transparent' }}>
-            {accepted && <Text className="text-white text-xs font-bold">✓</Text>}
-          </View>
-          <Text className="text-sm flex-1" style={{ color: 'rgba(255,255,255,0.7)' }}>
-            J&apos;ai lu et j&apos;accepte le{' '}
-            <Text onPress={() => router.push(`/league/${id}`)} style={{ color: '#F7921E', textDecorationLine: 'underline' }}>règlement intérieur</Text>{' '}de la league
-          </Text>
-        </Pressable>
+        {/* Accept règlement + note — uniquement si le joueur peut payer/inscrire. */}
+        {team ? (
+          <>
+            <Pressable onPress={() => setAccepted(!accepted)} className="flex-row items-center gap-3 p-4 rounded-xl" style={{ backgroundColor: 'rgba(255,255,255,0.05)', borderWidth: 1, borderColor: accepted ? '#1E7A3A' : 'rgba(255,255,255,0.1)' }}>
+              <View className="w-5 h-5 rounded border-2 items-center justify-center flex-shrink-0" style={{ borderColor: accepted ? '#1E7A3A' : 'rgba(255,255,255,0.3)', backgroundColor: accepted ? '#1E7A3A' : 'transparent' }}>
+                {accepted && <Text className="text-white text-xs font-bold">✓</Text>}
+              </View>
+              <Text className="text-sm flex-1" style={{ color: 'rgba(255,255,255,0.7)' }}>
+                J&apos;ai lu et j&apos;accepte le{' '}
+                <Text onPress={() => router.push(`/league/${id}`)} style={{ color: '#F7921E', textDecorationLine: 'underline' }}>règlement intérieur</Text>{' '}de la league
+              </Text>
+            </Pressable>
 
-        <Text className="text-xs mt-3 text-center" style={{ color: 'rgba(255,255,255,0.35)' }}>
-          Le paiement simulé valide l&apos;inscription pour cette phase de test. Ton équipe ne sera jamais enregistrée sans règlement confirmé.
-        </Text>
+            <Text className="text-xs mt-3 text-center" style={{ color: 'rgba(255,255,255,0.35)' }}>
+              Le paiement simulé valide l&apos;inscription pour cette phase de test. Ton équipe ne sera jamais enregistrée sans règlement confirmé.
+            </Text>
+          </>
+        ) : null}
       </ScrollView>
 
       <View className="px-5 pb-8">
@@ -270,7 +307,13 @@ export default function InscriptionLeaguePage() {
           className="h-14 rounded-2xl items-center justify-center"
           style={{ backgroundColor: team ? '#1E7A3A' : '#F7921E', opacity: !!team && !accepted ? 0.4 : 1 }}
         >
-          {submitting ? <ActivityIndicator color="white" /> : <Text className="text-white font-bold text-base">{team ? 'Valider le paiement simulé' : 'Créer / rejoindre une équipe'}</Text>}
+          {submitting ? (
+            <ActivityIndicator color="white" />
+          ) : (
+            <Text className="text-white font-bold text-base">
+              {team ? 'Valider le paiement simulé' : memberTeam ? 'Voir mon équipe' : 'Créer / rejoindre une équipe'}
+            </Text>
+          )}
         </Pressable>
       </View>
     </ScreenBackground>
