@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { View, Text, ScrollView, Pressable, ActivityIndicator } from 'react-native';
+import { View, Text, ScrollView, Pressable, ActivityIndicator, Alert } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { ScreenBackground } from '../../../components/ui/screen-background';
 import { AppHeader } from '../../../components/ui/app-header';
@@ -166,8 +166,20 @@ export default function CreneauPage() {
   }
 
   function onSelectHour(h: number) {
-    if (slotState(h) !== 'available') return;
-    setStartHour(h === startHour ? null : h);
+    const state = slotState(h);
+    if (state === 'available') {
+      setStartHour(h === startHour ? null : h);
+      return;
+    }
+    // Un créneau « trop court » est libre mais ne peut pas accueillir la durée
+    // choisie : on l'explique clairement au lieu de ne rien faire.
+    if (state === 'tooShort') {
+      const durLabel = DURATIONS.find((o) => o.value === duration)?.label ?? `${duration} h`;
+      Alert.alert(
+        'Ce créneau est trop court',
+        `${hh(h)} est libre, mais une réservation de ${durLabel} ne tient pas à partir d'ici : le créneau suivant est déjà pris ou le terrain ferme avant la fin.\n\nChoisis un horaire plus tôt, ou réduis la durée.`,
+      );
+    }
   }
 
   const total = terrain ? Math.round(terrain.price_per_hour * duration) : 0;
@@ -267,7 +279,7 @@ export default function CreneauPage() {
                 <View key={h} style={{ width: '33.333%', padding: 6 }}>
                   <Pressable
                     onPress={() => onSelectHour(h)}
-                    disabled={!available}
+                    disabled={occupied}
                     className="h-14 rounded-btn items-center justify-center"
                     style={{
                       backgroundColor: selected
@@ -327,6 +339,9 @@ export default function CreneauPage() {
             </View>
           ))}
         </View>
+        <Text className="text-white/45 text-xs mt-3 leading-5">
+          « Trop court » : le créneau est libre, mais ta durée de {DURATIONS.find((o) => o.value === duration)?.label ?? `${duration} h`} n'y tient pas (une réservation suit ou le terrain ferme). Touche-le pour plus de détails, ou réduis la durée.
+        </Text>
       </ScrollView>
 
       {/* Barre de bas */}
