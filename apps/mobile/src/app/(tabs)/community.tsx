@@ -51,7 +51,7 @@ function isOfficial(post: Post) {
   return (post.author.full_name ?? '').trim().toUpperCase() === 'GBONHI FOOT';
 }
 
-const TABS = ['Tout', 'Mon équipe', 'Leagues', 'Terrains'] as const;
+const TABS = ['Tout', 'Mon équipe', 'Ligues', 'Terrains'] as const;
 type Tab = (typeof TABS)[number];
 
 export function PostCard({ post, onPress, onReact }: { post: Post; onPress?: () => void; onReact?: (type: ReactionType) => void }) {
@@ -182,7 +182,7 @@ export default function CommunityScreen() {
     if (tab === 'Mon équipe') {
       return posts.filter((p) => p.category === 'equipe' || (myTeamId && p.team?.id === myTeamId));
     }
-    if (tab === 'Leagues') return posts.filter((p) => p.category === 'league');
+    if (tab === 'Ligues') return posts.filter((p) => p.category === 'league');
     if (tab === 'Terrains') return posts.filter((p) => p.category === 'terrain');
     return [];
   }, [posts, tab, myTeamId]);
@@ -233,8 +233,8 @@ export default function CommunityScreen() {
             <View className="items-center py-24 px-8">
               <Text style={{ fontSize: 40, marginBottom: 12 }}>💬</Text>
               <Text className="text-white/50 text-center">
-                {tab === 'Leagues'
-                  ? 'Aucune publication « Leagues » pour le moment.'
+                {tab === 'Ligues'
+                  ? 'Aucune publication « Ligues » pour le moment.'
                   : tab === 'Terrains'
                     ? 'Aucune publication « Terrains » pour le moment.'
                     : tab === 'Mon équipe'

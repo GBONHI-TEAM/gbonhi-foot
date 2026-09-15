@@ -173,7 +173,7 @@ export default function InscriptionLeaguePage() {
 
   return (
     <ScreenBackground>
-      <AppHeader title="Inscription en league" onBack={() => router.back()} showLogo={false} centered />
+      <AppHeader title="Inscription en ligue" onBack={() => router.back()} showLogo={false} centered />
 
       <ScrollView contentContainerStyle={{ padding: 20, paddingBottom: 40 }}>
         {/* Carte ligue + équipe */}
@@ -289,7 +289,7 @@ export default function InscriptionLeaguePage() {
               </View>
               <Text className="text-sm flex-1" style={{ color: 'rgba(255,255,255,0.7)' }}>
                 J&apos;ai lu et j&apos;accepte le{' '}
-                <Text onPress={() => router.push(`/league/${id}`)} style={{ color: '#F7921E', textDecorationLine: 'underline' }}>règlement intérieur</Text>{' '}de la league
+                <Text onPress={() => router.push(`/league/${id}`)} style={{ color: '#F7921E', textDecorationLine: 'underline' }}>règlement intérieur</Text>{' '}de la ligue
               </Text>
             </Pressable>
 

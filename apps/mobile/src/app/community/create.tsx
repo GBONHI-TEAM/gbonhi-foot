@@ -191,7 +191,7 @@ export default function CreatePostScreen() {
           {([
             { key: 'general', label: 'Général', emoji: '🌍' },
             { key: 'equipe', label: 'Mon équipe', emoji: '🛡️' },
-            { key: 'league', label: 'Leagues', emoji: '🏆' },
+            { key: 'league', label: 'Ligues', emoji: '🏆' },
             { key: 'terrain', label: 'Terrains', emoji: '📍' },
           ] as const).map((c) => {
             const active = category === c.key;

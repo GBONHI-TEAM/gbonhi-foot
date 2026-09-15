@@ -230,7 +230,7 @@ export default function ProfileScreen() {
             >
               <Text style={{ fontSize: 12 }}>{isReservation ? '🏟️' : '⚽'}</Text>
               <Text className="text-xs font-bold" style={{ color: isReservation ? '#1E7A3A' : '#FFFFFF' }}>
-                {isReservation ? 'Mode Réservation' : 'Mode Leagues'}
+                {isReservation ? 'Mode Réservation' : 'Mode Ligue'}
               </Text>
             </View>
           </View>
