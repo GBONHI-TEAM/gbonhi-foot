@@ -30,11 +30,13 @@ export default function VerifyPhoneScreen() {
     let mounted = true;
     (async () => {
       const { error } = await supabase.auth.getUser();
-      // On NE déconnecte QUE sur une vraie erreur d'auth (compte/JWT invalide,
-      // 401/403) — jamais sur une simple coupure réseau, pour ne pas éjecter un
-      // nouvel utilisateur OAuth légitime qui n'a pas encore de numéro.
+      // On NE déconnecte QUE sur une vraie erreur d'auth (compte/JWT/refresh
+      // token invalide → statut 4xx), jamais sur une simple coupure réseau
+      // (pas de statut / 5xx), pour ne pas éjecter un nouvel utilisateur OAuth
+      // légitime qui n'a pas encore de numéro.
       const status = (error as { status?: number } | null)?.status;
-      if (!mounted || !error || (status !== 401 && status !== 403)) return;
+      const invalidSession = !!error && typeof status === 'number' && status >= 400 && status < 500;
+      if (!mounted || !invalidSession) return;
       await clearPendingOtp();
       await clearPendingDeepRoute();
       await supabase.auth.signOut({ scope: 'local' });
