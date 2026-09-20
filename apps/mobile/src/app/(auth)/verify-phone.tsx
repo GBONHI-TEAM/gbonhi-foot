@@ -1,11 +1,11 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { View, Text, TextInput, Pressable, Alert, ActivityIndicator, ImageBackground, Image, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
 import { useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { apiClient } from '../../lib/api';
 import { useAuthStore } from '../../store/auth.store';
 import { KB_DONE_ID } from '../../components/ui/keyboard-done-bar';
-import { setPendingOtp, clearPendingOtp } from '../../lib/pending-flow';
+import { setPendingOtp, clearPendingOtp, clearPendingDeepRoute } from '../../lib/pending-flow';
 import { frenchAuthError } from '../../lib/auth-errors';
 
 const CIV_PHONE = /^\d{8,10}$/;
@@ -21,6 +21,23 @@ export default function VerifyPhoneScreen() {
   const email = user?.email ?? '';
   const [phone, setPhone] = useState('');
   const [loading, setLoading] = useState(false);
+
+  // Validation de la session au montage : si le compte a été supprimé côté
+  // serveur (JWT encore en cache), getUser renvoie une erreur → on purge et on
+  // repart de la connexion, au lieu de rester coincé sur cet écran (le cas se
+  // produisait après une suppression de compte, même app fermée puis rouverte).
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      const { error } = await supabase.auth.getUser();
+      if (!mounted || !error) return;
+      await clearPendingOtp();
+      await clearPendingDeepRoute();
+      await supabase.auth.signOut({ scope: 'local' });
+      router.replace('/(auth)/login');
+    })();
+    return () => { mounted = false; };
+  }, [router]);
 
   // Retour : l'utilisateur est en pleine création de compte (Apple/Google sans
   // numéro). On le renvoie vers l'espace d'inscription pour recommencer. Sous le
@@ -38,7 +55,10 @@ export default function VerifyPhoneScreen() {
           style: 'destructive',
           onPress: async () => {
             await clearPendingOtp();
-            await supabase.auth.signOut();
+            await clearPendingDeepRoute();
+            // Effacement LOCAL : la session OAuth à moitié créée peut déjà être
+            // invalide (compte supprimé) ; scope 'local' garantit la sortie.
+            await supabase.auth.signOut({ scope: 'local' });
             router.replace('/(auth)/register');
           },
         },

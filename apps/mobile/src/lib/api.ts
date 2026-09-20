@@ -2,6 +2,7 @@ import axios from 'axios';
 import Constants from 'expo-constants';
 import type { Session } from '@supabase/supabase-js';
 import { supabase } from './supabase';
+import { clearPendingOtp, clearPendingDeepRoute } from './pending-flow';
 
 type CachedSession = {
   token?: string;
@@ -152,3 +153,36 @@ apiClient.interceptors.request.use(async (config) => {
   if (token) config.headers.Authorization = `Bearer ${token}`;
   return config;
 });
+
+// Session invalide (ex. compte supprimé côté serveur) : sur un 401, on tente UN
+// rafraîchissement ; s'il n'en sort aucune session valide, la session locale est
+// définitivement morte → on la purge (scope 'local') + les parcours en cours,
+// pour ne jamais rester bloqué sur un écran d'auth (verify-phone) après un
+// redémarrage. L'AuthGate redirige alors vers la connexion. iOS comme Android.
+let handlingInvalidSession = false;
+apiClient.interceptors.response.use(
+  (response) => response,
+  async (error) => {
+    const status = (error as { response?: { status?: number } })?.response?.status;
+    if (status === 401 && !handlingInvalidSession) {
+      handlingInvalidSession = true;
+      try {
+        const { data } = await supabase.auth.refreshSession();
+        if (!data.session) {
+          sessionCache = null;
+          await clearPendingOtp();
+          await clearPendingDeepRoute();
+          await supabase.auth.signOut({ scope: 'local' });
+        }
+      } catch {
+        sessionCache = null;
+        await clearPendingOtp();
+        await clearPendingDeepRoute();
+        await supabase.auth.signOut({ scope: 'local' });
+      } finally {
+        handlingInvalidSession = false;
+      }
+    }
+    return Promise.reject(error);
+  },
+);

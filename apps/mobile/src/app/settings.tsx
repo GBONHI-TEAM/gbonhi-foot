@@ -5,6 +5,7 @@ import Constants from 'expo-constants';
 import { supabase } from '../lib/supabase';
 import { apiClient } from '../lib/api';
 import { useAuthStore } from '../store/auth.store';
+import { clearPendingOtp, clearPendingDeepRoute } from '../lib/pending-flow';
 import { ScreenBackground } from '../components/ui/screen-background';
 import { AppHeader } from '../components/ui/app-header';
 
@@ -102,7 +103,14 @@ export default function SettingsScreen() {
     try { await supabase.auth.updateUser({ data: { language: l } }); } catch { /* non bloquant */ }
   }
 
-  async function signOut() { await supabase.auth.signOut(); }
+  // Déconnexion : purge les parcours en cours (OTP/lien) et efface la session
+  // LOCALE (scope 'local') pour ne jamais rester bloqué sur un écran d'auth.
+  async function signOut() {
+    await clearPendingOtp();
+    await clearPendingDeepRoute();
+    await supabase.auth.signOut({ scope: 'local' });
+    router.replace('/(auth)/login');
+  }
 
   function deleteAccount() {
     Alert.alert(
@@ -115,7 +123,13 @@ export default function SettingsScreen() {
             setDeleting(true);
             try {
               await apiClient.delete('/api/v1/users/me');
-              await supabase.auth.signOut();
+              // Le compte n'existe plus côté serveur : on purge les parcours en
+              // cours (OTP/vérif. numéro/lien) et on force l'effacement LOCAL de
+              // la session (scope 'local'), sinon un JWT en cache pouvait laisser
+              // l'app coincée sur « vérifie ton numéro » même après redémarrage.
+              await clearPendingOtp();
+              await clearPendingDeepRoute();
+              await supabase.auth.signOut({ scope: 'local' });
               router.replace('/(auth)/login');
             } catch (e: unknown) {
               const raw = (e as { response?: { data?: { message?: string | string[] } } }).response?.data?.message;
