@@ -43,7 +43,9 @@ export class FinanceService {
   async partners(from?: string, to?: string) {
     const period = this.period(from, to);
     const reservations = await this.prisma.reservation.findMany({
-      where: { reservation_date: period, status: { in: ['confirmed', 'completed'] } },
+      // Uniquement les réservations NON encore soldées (settlement_id null) :
+      // dès qu'un partenaire est reversé, ses réservations sortent du « à payer ».
+      where: { reservation_date: period, status: { in: ['confirmed', 'completed'] }, settlement_id: null },
       select: {
         partner_amount: true,
         status: true,
@@ -117,6 +119,108 @@ export class FinanceService {
   async deleteCost(id: string) {
     await this.prisma.financeCost.delete({ where: { id } });
     return { success: true };
+  }
+
+  /* ─── Reversements partenaires ───────────────────────────────────────────── */
+
+  /**
+   * Solde le montant dû à un partenaire : crée un reversement (instantané pour le
+   * reçu) et rattache les réservations concernées (`settlement_id`) afin qu'elles
+   * ne soient plus jamais comptées comme « à payer ». Le montant reversé est
+   * exactement la somme des `partner_amount` NON encore soldés de la période.
+   */
+  async settlePartner(
+    partnerId: string,
+    dto: { from?: string; to?: string; method?: string; reference?: string; note?: string },
+    adminId?: string,
+  ) {
+    const period = this.period(dto.from, dto.to);
+    const reservations = await this.prisma.reservation.findMany({
+      where: {
+        settlement_id: null,
+        status: { in: ['confirmed', 'completed'] },
+        reservation_date: period,
+        terrain: { partner_id: partnerId },
+      },
+      select: { id: true, partner_amount: true, total_price: true, platform_fee: true },
+    });
+    if (reservations.length === 0) {
+      throw new BadRequestException('Aucun montant à reverser pour ce partenaire sur cette période.');
+    }
+
+    const amount = reservations.reduce((s, r) => s + (r.partner_amount ?? 0), 0);
+    const gross = reservations.reduce((s, r) => s + (r.total_price ?? 0), 0);
+    const commission = reservations.reduce((s, r) => s + (r.platform_fee ?? 0), 0);
+    const method = (dto.method ?? 'cash').trim() || 'cash';
+
+    const settlement = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.partnerSettlement.create({
+        data: {
+          partner_id: partnerId,
+          amount,
+          gross_amount: gross,
+          commission,
+          transactions: reservations.length,
+          method,
+          reference: dto.reference?.trim() || null,
+          note: dto.note?.trim() || null,
+          period_from: this.parseDate(dto.from),
+          period_to: this.parseDate(dto.to),
+          created_by: adminId,
+        },
+      });
+      await tx.reservation.updateMany({
+        where: { id: { in: reservations.map((r) => r.id) } },
+        data: { settlement_id: created.id },
+      });
+      return created;
+    });
+
+    return this.getSettlement(settlement.id);
+  }
+
+  /** Historique des reversements (onglet « Payé »). */
+  async listSettlements(from?: string, to?: string) {
+    const period = this.period(from, to);
+    const rows = await this.prisma.partnerSettlement.findMany({
+      where: Object.keys(period).length ? { created_at: period } : {},
+      include: { partner: { select: { full_name: true } } },
+      orderBy: { created_at: 'desc' },
+    });
+    return rows.map((s) => this.serializeSettlement(s));
+  }
+
+  /** Détail d'un reversement (pour le reçu). */
+  async getSettlement(id: string) {
+    const s = await this.prisma.partnerSettlement.findUnique({
+      where: { id },
+      include: { partner: { select: { full_name: true } } },
+    });
+    if (!s) throw new BadRequestException('Reversement introuvable.');
+    return this.serializeSettlement(s);
+  }
+
+  private serializeSettlement(s: {
+    id: string; partner_id: string; amount: number; gross_amount: number; commission: number;
+    transactions: number; method: string; reference: string | null; note: string | null;
+    period_from: Date | null; period_to: Date | null; created_at: Date;
+    partner?: { full_name: string | null } | null;
+  }) {
+    return {
+      id: s.id,
+      partnerId: s.partner_id,
+      partnerName: s.partner?.full_name ?? 'Partenaire',
+      amount: s.amount,
+      grossAmount: s.gross_amount,
+      commission: s.commission,
+      transactions: s.transactions,
+      method: s.method,
+      reference: s.reference,
+      note: s.note,
+      periodFrom: s.period_from ? s.period_from.toISOString().slice(0, 10) : null,
+      periodTo: s.period_to ? s.period_to.toISOString().slice(0, 10) : null,
+      createdAt: s.created_at.toISOString(),
+    };
   }
 
   private period(from?: string, to?: string): { gte?: Date; lte?: Date } {

@@ -1,6 +1,6 @@
 import { Controller, Get, Post, Delete, Body, Param, Query, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
-import { IsInt, IsOptional, IsString, Min, MaxLength } from 'class-validator';
+import { IsInt, IsOptional, IsString, Min, MaxLength, IsIn } from 'class-validator';
 import { FinanceService } from './finance.service';
 import { SupabaseAuthGuard } from '../auth/supabase-auth.guard';
 import { RolesGuard } from '../../common/access/roles.guard';
@@ -27,6 +27,30 @@ class CreateCostDto {
   incurred_on?: string;
 }
 
+class SettlePartnerDto {
+  @IsOptional()
+  @IsString()
+  from?: string;
+
+  @IsOptional()
+  @IsString()
+  to?: string;
+
+  @IsOptional()
+  @IsIn(['cash', 'mobile_money', 'bank_transfer', 'other'])
+  method?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  reference?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  note?: string;
+}
+
 @ApiTags('Finance')
 @ApiBearerAuth()
 @UseGuards(SupabaseAuthGuard, RolesGuard)
@@ -51,6 +75,28 @@ export class FinanceController {
   @ApiOperation({ summary: 'Liste des coûts déclarés' })
   listCosts(@Query('from') from?: string, @Query('to') to?: string) {
     return this.finance.listCosts(from, to);
+  }
+
+  @Get('settlements')
+  @ApiOperation({ summary: 'Historique des reversements partenaires' })
+  listSettlements(@Query('from') from?: string, @Query('to') to?: string) {
+    return this.finance.listSettlements(from, to);
+  }
+
+  @Get('settlements/:id')
+  @ApiOperation({ summary: 'Détail d’un reversement (reçu)' })
+  getSettlement(@Param('id') id: string) {
+    return this.finance.getSettlement(id);
+  }
+
+  @Post('partners/:partnerId/settle')
+  @ApiOperation({ summary: 'Solder / reverser le montant dû à un partenaire' })
+  settlePartner(
+    @Param('partnerId') partnerId: string,
+    @Body() dto: SettlePartnerDto,
+    @CurrentUser() user: UserPayload,
+  ) {
+    return this.finance.settlePartner(partnerId, dto, user.id);
   }
 
   @Post('costs')
