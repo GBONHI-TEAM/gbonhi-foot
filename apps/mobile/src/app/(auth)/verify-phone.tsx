@@ -60,6 +60,8 @@ export default function VerifyPhoneScreen() {
           text: "Revenir à l'inscription",
           style: 'destructive',
           onPress: async () => {
+            // Sortie volontaire : l'AuthGate ne doit pas re-forcer cet écran.
+            useAuthStore.getState().beginAuthReset('/(auth)/register');
             await clearPendingOtp();
             await clearPendingDeepRoute();
             // Effacement LOCAL : la session OAuth à moitié créée peut déjà être

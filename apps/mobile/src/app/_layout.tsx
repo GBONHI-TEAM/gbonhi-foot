@@ -20,6 +20,7 @@ import {
   setPendingDeepRoute as persistDeepRoute,
   clearPendingDeepRoute,
   getPendingOtp,
+  clearPendingOtp,
   type PendingOtp,
 } from '../lib/pending-flow';
 
@@ -33,6 +34,8 @@ const queryClient = new QueryClient({
 
 function AuthGate() {
   const { session, isLoading, setSession, setLoading } = useAuthStore();
+  const authResetting = useAuthStore((s) => s.authResetting);
+  const authResetTarget = useAuthStore((s) => s.authResetTarget);
   const { mode, hydrated, startNewAppSession } = useUserModeStore();
   const segments = useSegments();
   const router = useRouter();
@@ -126,6 +129,23 @@ function AuthGate() {
     // Attendre que le navigateur soit monté, la session résolue ET le mode chargé.
     if (!navState?.key || isLoading || !hydrated) return;
 
+    // Sortie VOLONTAIRE en cours (déconnexion / suppression de compte / retour à
+    // l'inscription) : on NE force PLUS « vérifie ton numéro » ni l'écran OTP. On
+    // purge les parcours en cours (y compris l'état en mémoire, qui pouvait être
+    // resté « collé » depuis le démarrage) et on ramène à l'écran de départ dès
+    // que la session est réellement nulle.
+    if (authResetting) {
+      if (pendingOtp) { setPendingOtp(null); void clearPendingOtp(); }
+      if (pendingDeepRoute) { setPendingDeepRoute(null); void clearPendingDeepRoute(); }
+      if (!session) {
+        const target = (authResetTarget ?? '/(auth)/login') as Href;
+        const onTarget = segments[0] === '(auth)' && (segments[1] === 'login' || segments[1] === 'register');
+        if (!onTarget) router.replace(target);
+        useAuthStore.getState().endAuthReset();
+      }
+      return;
+    }
+
     // Écran d'entrée (splash animé, route index → segments vides) : on laisse le
     // splash gérer lui-même la navigation à la fin de son intro. L'AuthGate reprend
     // dès que le splash a navigué vers /(auth) ou /(tabs).
@@ -198,7 +218,7 @@ function AuthGate() {
     // un écran réutilisable (fiche joueur en édition, changement de mode) : sinon
     // « Modifier le profil » / « Modifier ma fiche joueur » rebondiraient vers l'accueil.
     if (inAuth && !onOnboarding) router.replace('/(tabs)');
-  }, [navState?.key, isLoading, hydrated, session, mode, segments, router, pendingDeepRoute, pendingOtp]);
+  }, [navState?.key, isLoading, hydrated, session, mode, segments, router, pendingDeepRoute, pendingOtp, authResetting, authResetTarget]);
 
   return null;
 }

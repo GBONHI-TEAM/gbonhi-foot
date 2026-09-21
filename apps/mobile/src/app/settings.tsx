@@ -106,6 +106,7 @@ export default function SettingsScreen() {
   // Déconnexion : purge les parcours en cours (OTP/lien) et efface la session
   // LOCALE (scope 'local') pour ne jamais rester bloqué sur un écran d'auth.
   async function signOut() {
+    useAuthStore.getState().beginAuthReset('/(auth)/login');
     await clearPendingOtp();
     await clearPendingDeepRoute();
     await supabase.auth.signOut({ scope: 'local' });
@@ -123,10 +124,12 @@ export default function SettingsScreen() {
             setDeleting(true);
             try {
               await apiClient.delete('/api/v1/users/me');
-              // Le compte n'existe plus côté serveur : on purge les parcours en
-              // cours (OTP/vérif. numéro/lien) et on force l'effacement LOCAL de
-              // la session (scope 'local'), sinon un JWT en cache pouvait laisser
-              // l'app coincée sur « vérifie ton numéro » même après redémarrage.
+              // Le compte n'existe plus côté serveur : on signale une sortie
+              // VOLONTAIRE (l'AuthGate ne forcera plus « vérifie ton numéro »/OTP),
+              // on purge les parcours en cours et on force l'effacement LOCAL de la
+              // session (scope 'local'), sinon un JWT en cache pouvait laisser l'app
+              // coincée sur « vérifie ton numéro » même après redémarrage.
+              useAuthStore.getState().beginAuthReset('/(auth)/login');
               await clearPendingOtp();
               await clearPendingDeepRoute();
               await supabase.auth.signOut({ scope: 'local' });
