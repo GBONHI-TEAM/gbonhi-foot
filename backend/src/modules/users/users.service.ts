@@ -131,6 +131,18 @@ export class UsersService {
     });
   }
 
+  /**
+   * Comptes CONTRÔLEUR uniquement — seuls habilités à contrôler un match et
+   * saisir un score. Sert à l'assignation du contrôleur dans le calendrier.
+   */
+  findControllers() {
+    return this.prisma.profile.findMany({
+      where: { role: 'CONTROLEUR' },
+      select: { id: true, full_name: true, username: true, avatar_url: true, role: true },
+      orderBy: { full_name: 'asc' },
+    });
+  }
+
   async inviteAdmin(dto: CreateAdminInvitationDto) {
     const email = dto.email.trim().toLowerCase();
     // Lien de retour après clic sur l'e-mail → page où l'on définit le mot de passe.

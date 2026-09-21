@@ -5,6 +5,8 @@ import Link from 'next/link';
 import { ChevronDown, Trash2, ArrowLeft } from 'lucide-react';
 import { Header } from '../../../../../components/layout/header';
 import { apiFetch } from '../../../../../lib/api';
+import { useCurrentUser } from '../../../../../lib/use-current-user';
+import { normalizeAdminRole } from '../../../../../lib/admin-access';
 
 type MatchStatus =
   | 'PROGRAMMÉ'
@@ -373,6 +375,11 @@ export default function MatchLivePage() {
   const params = useParams<{ id: string }>();
   const matchId = params?.id;
 
+  const { user } = useCurrentUser();
+  // Seuls les comptes CONTRÔLEUR (et le SUPER_ADMIN superviseur) peuvent
+  // contrôler un match et saisir un score. Aligné avec le backend.
+  const canControl = user ? ['SUPER_ADMIN', 'CONTROLEUR'].includes(normalizeAdminRole(user.role ?? undefined)) : null;
+
   const [match, setMatch] = useState<ApiMatch | null>(null);
   const [loading, setLoading] = useState(true);
   const [modalType, setModalType] = useState<EventType | null>(null);
@@ -471,6 +478,26 @@ export default function MatchLivePage() {
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-12 text-center text-gray-400 text-sm">
           Match introuvable.
           <div className="mt-4">
+            <Link href="/matchs" className="text-sm font-semibold" style={{ color: '#1E7A3A' }}>← Retour aux matchs</Link>
+          </div>
+        </div>
+      </>
+    );
+  }
+
+  // Accès refusé aux non-contrôleurs (la sécurité réelle est côté API : les
+  // endpoints de contrôle renvoient 403 ; ici on affiche un message clair).
+  if (canControl === false) {
+    return (
+      <>
+        <Header title="Saisie score — Live" />
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-12 text-center">
+          <p className="text-5xl mb-3">🔒</p>
+          <p className="text-lg font-black text-gray-900">Accès réservé aux contrôleurs</p>
+          <p className="mt-2 text-sm text-gray-500 max-w-md mx-auto">
+            Seuls les comptes « contrôleur » désignés peuvent contrôler un match et saisir un score en direct.
+          </p>
+          <div className="mt-5">
             <Link href="/matchs" className="text-sm font-semibold" style={{ color: '#1E7A3A' }}>← Retour aux matchs</Link>
           </div>
         </div>

@@ -52,6 +52,13 @@ export class UsersController {
     return this.usersService.findAdminMembers();
   }
 
+  /** Comptes contrôleurs (assignation d'un contrôleur de match). */
+  @Get('controllers')
+  @Roles('SUPER_ADMIN', 'ADMIN', 'CONTROLEUR', 'SUPPORT', 'OPERATEUR')
+  controllers() {
+    return this.usersService.findControllers();
+  }
+
   @Post('admin-invitations')
   @Roles('SUPER_ADMIN')
   inviteAdmin(@Body() dto: CreateAdminInvitationDto) {

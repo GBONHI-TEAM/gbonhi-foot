@@ -88,25 +88,29 @@ export class MatchesController {
     return this.matchesService.update(id, dto);
   }
 
+  // ── Contrôle du match (score en direct) : RÉSERVÉ aux comptes contrôleurs.
+  // Le SUPER_ADMIN reste autorisé en tant que superviseur de la plateforme. Un
+  // administrateur « simple » ou tout autre utilisateur est refusé (403).
   @Patch(':id/status')
-  @Roles('SUPER_ADMIN', 'ADMIN', 'CONTROLEUR')
+  @Roles('SUPER_ADMIN', 'CONTROLEUR')
   changeStatus(@Param('id') id: string, @Body() dto: ChangeMatchStatusDto) {
     return this.matchesService.changeStatus(id, dto);
   }
 
   @Get(':id/control')
+  @Roles('SUPER_ADMIN', 'CONTROLEUR')
   getControl(@Param('id') id: string) {
     return this.matchesService.getControl(id);
   }
 
   @Patch(':id/controller')
-  @Roles('SUPER_ADMIN', 'ADMIN', 'CONTROLEUR')
+  @Roles('SUPER_ADMIN', 'CONTROLEUR')
   setController(@Param('id') id: string, @Body() dto: SetControllerDto) {
     return this.matchesService.setController(id, dto.first_name, dto.last_name);
   }
 
   @Patch(':id/phase')
-  @Roles('SUPER_ADMIN', 'ADMIN', 'CONTROLEUR')
+  @Roles('SUPER_ADMIN', 'CONTROLEUR')
   setPhase(@Param('id') id: string, @Body() dto: SetPhaseDto) {
     return this.matchesService.setPhase(id, dto.phase);
   }
@@ -123,13 +127,13 @@ export class MatchesController {
   }
 
   @Post(':id/events')
-  @Roles('SUPER_ADMIN', 'ADMIN', 'CONTROLEUR')
+  @Roles('SUPER_ADMIN', 'CONTROLEUR')
   addEvent(@Param('id') id: string, @Body() dto: CreateEventDto) {
     return this.matchesService.addEvent(id, dto);
   }
 
   @Delete(':id/events/:eventId')
-  @Roles('SUPER_ADMIN', 'ADMIN', 'CONTROLEUR')
+  @Roles('SUPER_ADMIN', 'CONTROLEUR')
   removeEvent(@Param('id') id: string, @Param('eventId') eventId: string) {
     return this.matchesService.removeEvent(id, eventId);
   }

@@ -142,9 +142,10 @@ export default function CalendriersPage() {
     }
   }
 
-  // Liste des contrôleurs possibles (utilisateurs).
+  // Liste des contrôleurs assignables : UNIQUEMENT les comptes « contrôleur »
+  // (seuls habilités à contrôler un match), pas tous les utilisateurs.
   useEffect(() => {
-    apiFetch<ApiUser[]>('/users')
+    apiFetch<ApiUser[]>('/users/controllers')
       .then((d) => setUsers(Array.isArray(d) ? d : []))
       .catch(() => setUsers([]));
   }, []);
