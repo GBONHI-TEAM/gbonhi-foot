@@ -5,7 +5,7 @@ import { Download, FileDown, Search, Sheet, Wallet, X, Check } from 'lucide-reac
 import { useRouter } from 'next/navigation';
 import { Header } from '../../../../components/layout/header';
 import { apiFetch } from '../../../../lib/api';
-import { createPdfBlob, createXlsxBlob, downloadBlob } from '../../../../lib/file-export';
+import { createPdfBlob, createReceiptPdfBlob, createXlsxBlob, downloadBlob } from '../../../../lib/file-export';
 
 interface PartnerRow { partnerId: string; partnerName: string; terrains: string[]; amountOwed: number; transactions: number; status: string; }
 interface Settlement {
@@ -23,23 +23,35 @@ function Badge({ status }: { status: string }) {
   return <span className="inline-flex rounded-full px-2.5 py-1 text-xs font-bold" style={{ backgroundColor: paid ? '#D1FAE5' : '#FEF3C7', color: paid ? '#15803D' : '#B45309' }}>{status}</span>;
 }
 
-/** Génère et télécharge le reçu de reversement (PDF de marque). */
+/** Génère et télécharge le reçu de reversement (PDF clair et explicite). */
 function downloadReceipt(s: Settlement) {
-  const rows: Array<[string, string | number]> = [
-    ['Partenaire', s.partnerName],
-    ['Date du reversement', new Date(s.createdAt).toLocaleDateString('fr-FR')],
-  ];
-  if (s.periodFrom || s.periodTo) rows.push(['Periode couverte', `${s.periodFrom ?? '…'} au ${s.periodTo ?? '…'}`]);
-  rows.push(
-    ['Reservations soldees', s.transactions],
-    ['Montant brut', fcfa(s.grossAmount)],
-    ['Commission GBONHI (10%)', fcfa(s.commission)],
-    ['MONTANT NET REVERSE', fcfa(s.amount)],
-    ['Methode de paiement', METHOD_LABELS[s.method] ?? s.method],
-    ['Reference', s.reference ?? '-'],
+  const lines: Array<[string, string]> = [];
+  if (s.periodFrom || s.periodTo) lines.push(['Période couverte', `${s.periodFrom ?? '—'} au ${s.periodTo ?? '—'}`]);
+  lines.push(
+    ['Nombre de réservations soldées', String(s.transactions)],
+    ['Montant total encaissé (brut)', fcfa(s.grossAmount)],
+    ['Commission GBONHI (10%)', `- ${fcfa(s.commission)}`],
   );
-  if (s.note) rows.push(['Note', s.note]);
-  downloadBlob(createPdfBlob('Recu de reversement', new Date(s.createdAt).toLocaleDateString('fr-FR'), rows), `recu-reversement-${slug(s.partnerName)}-${s.createdAt.slice(0, 10)}.pdf`);
+  const payment: Array<[string, string]> = [
+    ['Méthode de paiement', METHOD_LABELS[s.method] ?? s.method],
+    ['Référence', s.reference || '—'],
+  ];
+  if (s.note) payment.push(['Note', s.note]);
+
+  downloadBlob(
+    createReceiptPdfBlob({
+      docTitle: 'Reçu de reversement',
+      reference: `N° ${s.id.slice(0, 8).toUpperCase()}`,
+      dateLabel: new Date(s.createdAt).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' }),
+      statusLabel: 'PAYÉ',
+      beneficiary: { name: s.partnerName, sub: 'Partenaire GBONHI FOOT' },
+      lines,
+      highlight: { label: 'MONTANT NET REVERSÉ AU PARTENAIRE', value: fcfa(s.amount) },
+      payment,
+      footerNote: 'Ce reçu atteste du reversement ci-dessus au partenaire. Statut : PAYÉ.',
+    }),
+    `recu-reversement-${slug(s.partnerName)}-${s.createdAt.slice(0, 10)}.pdf`,
+  );
 }
 
 export default function PartenairesAPayerPage() {

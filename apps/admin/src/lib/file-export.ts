@@ -189,6 +189,114 @@ export function createPdfBlob(title: string, period: string, rows: Array<[string
   return new Blob([out.buffer], { type: 'application/pdf' });
 }
 
+/**
+ * Reçu de paiement clair et imprimable (fond blanc, en-tête vert de marque,
+ * SANS logo sur fond sombre ni colonnes « INDICATEUR/VALEUR »). Met en avant le
+ * montant et le statut, avec des libellés explicites et une zone de signature.
+ */
+export function createReceiptPdfBlob(opts: {
+  docTitle: string;
+  reference: string;
+  dateLabel: string;
+  statusLabel?: string;
+  beneficiary: { name: string; sub?: string };
+  lines: Array<[string, string]>;
+  highlight: { label: string; value: string };
+  payment: Array<[string, string]>;
+  footerNote?: string;
+}): Blob {
+  const ascii = (value: string) => value.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^\x20-\x7E]/g, ' ').replace(/[()\\]/g, '\\$&');
+  const T = (x: number, y: number, size: number, value: string, bold = false) => `BT /${bold ? 'F2' : 'F1'} ${size} Tf ${x} ${y} Td (${ascii(value)}) Tj ET`;
+  const ops: string[] = [];
+
+  // Fond blanc + bandeau vert.
+  ops.push('1 1 1 rg 0 0 595 842 re f');
+  ops.push('0.118 0.478 0.227 rg 0 752 595 90 re f');
+  ops.push('1 1 1 rg', T(42, 802, 22, 'GBONHI FOOT', true), T(42, 782, 9, 'Recu officiel de paiement'));
+  if (opts.statusLabel) {
+    ops.push('0.969 0.573 0.118 rg 430 792 123 26 re f');
+    ops.push('1 1 1 rg', T(446, 800, 12, opts.statusLabel, true));
+  }
+  ops.push('0.969 0.573 0.118 rg 0 748 595 4 re f');
+
+  // Titre + référence/date.
+  ops.push('0.102 0.161 0.122 rg', T(42, 712, 20, opts.docTitle, true));
+  ops.push('0.42 0.45 0.44 rg', T(42, 692, 10, `${opts.reference}   -   ${opts.dateLabel}`));
+
+  // Bénéficiaire.
+  ops.push('0.55 0.57 0.56 rg', T(42, 662, 9, 'BENEFICIAIRE'));
+  ops.push('0.102 0.161 0.122 rg', T(42, 644, 13, opts.beneficiary.name, true));
+  if (opts.beneficiary.sub) ops.push('0.42 0.45 0.44 rg', T(42, 628, 9, opts.beneficiary.sub));
+  ops.push('0.90 0.92 0.91 rg 42 614 511 1 re f');
+
+  // Détail.
+  ops.push('0.55 0.57 0.56 rg', T(42, 594, 9, 'DETAIL DU VERSEMENT'));
+  let y = 570;
+  for (const [label, value] of opts.lines) {
+    ops.push('0.35 0.38 0.37 rg', T(48, y, 10, label));
+    ops.push('0.102 0.161 0.122 rg', T(330, y, 10, value, true));
+    y -= 22;
+  }
+
+  // Montant net mis en avant.
+  y -= 8;
+  ops.push(`0.118 0.478 0.227 rg 42 ${y - 20} 511 44 re f`);
+  ops.push('1 1 1 rg', T(58, y + 2, 10, opts.highlight.label, true), T(330, y - 2, 17, opts.highlight.value, true));
+  y -= 50;
+
+  // Paiement.
+  ops.push('0.55 0.57 0.56 rg', T(42, y, 9, 'PAIEMENT'));
+  y -= 22;
+  for (const [label, value] of opts.payment) {
+    ops.push('0.35 0.38 0.37 rg', T(48, y, 10, label));
+    ops.push('0.102 0.161 0.122 rg', T(330, y, 10, value, true));
+    y -= 22;
+  }
+
+  // Signature + pied de page.
+  ops.push('0.90 0.92 0.91 rg 355 140 198 1 re f');
+  ops.push('0.55 0.57 0.56 rg', T(355, 124, 9, 'Signature / cachet'));
+  ops.push('0.55 0.55 0.55 rg', T(42, 96, 9, opts.footerNote ?? 'Document genere automatiquement par GBONHI FOOT.'));
+  ops.push('0.55 0.55 0.55 rg', T(42, 80, 9, `Edite le ${new Date().toLocaleDateString('fr-FR')} a ${new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`));
+
+  const contentBytes = latin1(ops.join('\n'));
+  const objects: Array<{ head: string; stream?: Uint8Array }> = [
+    { head: '<< /Type /Catalog /Pages 2 0 R >>' },
+    { head: '<< /Type /Pages /Kids [3 0 R] /Count 1 >>' },
+    { head: '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 4 0 R /F2 5 0 R >> >> /Contents 6 0 R >>' },
+    { head: '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>' },
+    { head: '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>' },
+    { head: `<< /Length ${contentBytes.length} >>`, stream: contentBytes },
+  ];
+
+  const parts: Uint8Array[] = [];
+  let length = 0;
+  const push = (u: Uint8Array) => { parts.push(u); length += u.length; };
+  push(latin1('%PDF-1.4\n'));
+  const offsets: number[] = [];
+  objects.forEach((obj, index) => {
+    offsets.push(length);
+    push(latin1(`${index + 1} 0 obj\n`));
+    if (obj.stream) {
+      push(latin1(`${obj.head}\nstream\n`));
+      push(obj.stream);
+      push(latin1('\nendstream\nendobj\n'));
+    } else {
+      push(latin1(`${obj.head}\nendobj\n`));
+    }
+  });
+  const xrefOffset = length;
+  let xref = `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  offsets.forEach((offset) => { xref += `${String(offset).padStart(10, '0')} 00000 n \n`; });
+  xref += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`;
+  push(latin1(xref));
+
+  const out = new Uint8Array(length);
+  let off = 0;
+  for (const p of parts) { out.set(p, off); off += p.length; }
+  return new Blob([out.buffer], { type: 'application/pdf' });
+}
+
 export function downloadBlob(blob: Blob, filename: string): void {
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
