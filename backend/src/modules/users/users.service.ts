@@ -11,7 +11,6 @@ import type { UserPayload } from '../../common/types/user-payload.type';
 import { normalizeProfileRole, type AdminRole } from '../../common/access/roles';
 import { AnalyticsService } from '../analytics/analytics.service';
 import type { CreateAdminInvitationDto } from './dto/create-admin-invitation.dto';
-import type { User } from '@supabase/supabase-js';
 
 @Injectable()
 export class UsersService {
@@ -149,20 +148,24 @@ export class UsersService {
     const adminUrl = (process.env.ADMIN_URL ?? 'http://localhost:3000').replace(/\/+$/, '');
     const redirectTo = `${adminUrl}/reset-password`;
 
-    let authUser = await this.findAuthUserByEmail(email);
+    let authUserId = await this.findAuthUserIdByEmail(email);
     // 'invited' = nouveau compte créé ; 'password_setup' = compte déjà existant
     // (ex. utilisateur mobile) à qui on envoie un lien pour définir un mot de passe BO.
     let mode: 'invited' | 'password_setup' = 'invited';
 
-    if (!authUser) {
+    if (!authUserId) {
       const { data, error } = await this.supabase.client.auth.admin.inviteUserByEmail(email, {
         data: { full_name: dto.fullName.trim() },
         redirectTo,
       });
       if (error || !data.user) {
-        throw new ServiceUnavailableException('Impossible d’envoyer l’invitation administrateur. Réessaie dans quelques instants.');
+        // Cet appel exige la clé service_role. Un échec ici pointe presque
+        // toujours vers SUPABASE_SERVICE_ROLE_KEY (mauvaise clé/projet).
+        throw new ServiceUnavailableException(
+          `Impossible d’envoyer l’invitation administrateur${error?.message ? ` (${error.message})` : ''}. Vérifie la clé service_role du backend.`,
+        );
       }
-      authUser = data.user;
+      authUserId = data.user.id;
       mode = 'invited';
     } else {
       // Le compte existe (souvent un utilisateur mobile créé par OTP, sans mot de
@@ -172,14 +175,16 @@ export class UsersService {
         redirectTo,
       });
       if (error) {
-        throw new ServiceUnavailableException('Impossible d’envoyer le lien d’accès. Réessaie dans quelques instants.');
+        throw new ServiceUnavailableException(
+          `Impossible d’envoyer le lien d’accès${error?.message ? ` (${error.message})` : ''}. Vérifie la clé service_role du backend.`,
+        );
       }
       mode = 'password_setup';
     }
 
     const profile = await this.prisma.profile.upsert({
-      where: { id: authUser.id },
-      create: { id: authUser.id, full_name: dto.fullName.trim(), username: dto.username?.trim() || null, role: dto.role },
+      where: { id: authUserId },
+      create: { id: authUserId, full_name: dto.fullName.trim(), username: dto.username?.trim() || null, role: dto.role },
       update: {
         full_name: dto.fullName.trim(),
         ...(dto.username?.trim() ? { username: dto.username.trim() } : {}),
@@ -584,15 +589,15 @@ export class UsersService {
     }
   }
 
-  private async findAuthUserByEmail(email: string): Promise<User | null> {
-    for (let page = 1; page <= 20; page += 1) {
-      const { data, error } = await this.supabase.client.auth.admin.listUsers({ page, perPage: 1000 });
-      if (error) throw new ServiceUnavailableException('La recherche du compte est temporairement indisponible.');
-      const found = data.users.find((candidate) => candidate.email?.toLowerCase() === email);
-      if (found) return found;
-      if (data.users.length < 1000) break;
-    }
-    return null;
+  // Recherche d'un compte d'authentification par e-mail. On lit directement la
+  // table `auth.users` (même base Postgres) plutôt que de scanner l'API admin
+  // `listUsers` : c'est déterministe, rapide, et ça ne dépend pas de l'API Auth
+  // pour cette étape de lecture.
+  private async findAuthUserIdByEmail(email: string): Promise<string | null> {
+    const rows = await this.prisma.$queryRaw<{ id: string }[]>`
+      SELECT id::text AS id FROM auth.users WHERE lower(email) = ${email} LIMIT 1
+    `;
+    return rows[0]?.id ?? null;
   }
 
   async updateRole(id: string, role: AdminRole, actor: UserPayload) {
