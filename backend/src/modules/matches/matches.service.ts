@@ -629,12 +629,54 @@ export class MatchesService {
      Les colonnes `controller_name` et `phase` sont accédées en SQL brut pour
      éviter une régénération du client Prisma. */
 
-  async getControl(id: string, user: UserPayload): Promise<{ controller_name: string | null; phase: string | null; status: string }> {
+  async getControl(id: string, user: UserPayload): Promise<{
+    controller_name: string | null;
+    phase: string | null;
+    status: string;
+    is_paused: boolean;
+    added_time_first: number | null;
+    added_time_second: number | null;
+  }> {
     await this.assertControlAuthority(id, user);
     const rows = await this.prisma.$queryRaw<
-      { controller_name: string | null; phase: string | null; status: string }[]
-    >`SELECT controller_name, phase, status FROM matches WHERE id = ${id}::uuid`;
+      {
+        controller_name: string | null;
+        phase: string | null;
+        status: string;
+        is_paused: boolean;
+        added_time_first: number | null;
+        added_time_second: number | null;
+      }[]
+    >`SELECT controller_name, phase, status, is_paused, added_time_first, added_time_second FROM matches WHERE id = ${id}::uuid`;
     return rows[0];
+  }
+
+  /** Bascule « arrêt de jeu » ↔ « reprise ». La phase (mi-temps en cours) est
+   *  conservée : on stocke seulement l'état pause à part. */
+  async setPaused(id: string, paused: boolean, user: UserPayload) {
+    await this.assertControlAuthority(id, user);
+    await this.prisma.$executeRaw`
+      UPDATE matches SET is_paused = ${paused}, updated_at = now() WHERE id = ${id}::uuid
+    `;
+    return this.getControl(id, user);
+  }
+
+  /** Minutes de temps additionnel pour une mi-temps (half = 1 ou 2). */
+  async setAddedTime(id: string, half: number, minutes: number | null, user: UserPayload) {
+    await this.assertControlAuthority(id, user);
+    const value = minutes == null ? null : Math.max(0, Math.min(30, Math.trunc(minutes)));
+    if (half === 1) {
+      await this.prisma.$executeRaw`
+        UPDATE matches SET added_time_first = ${value}, updated_at = now() WHERE id = ${id}::uuid
+      `;
+    } else if (half === 2) {
+      await this.prisma.$executeRaw`
+        UPDATE matches SET added_time_second = ${value}, updated_at = now() WHERE id = ${id}::uuid
+      `;
+    } else {
+      throw new BadRequestException('Mi-temps invalide (attendu 1 ou 2).');
+    }
+    return this.getControl(id, user);
   }
 
   /**

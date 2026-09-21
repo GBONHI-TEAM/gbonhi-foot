@@ -15,7 +15,7 @@ import { UpdateMatchDto } from './dto/update-match.dto';
 import { ChangeMatchStatusDto } from './dto/change-status.dto';
 import { CreateEventDto } from './dto/create-event.dto';
 import { SupabaseAuthGuard } from '../auth/supabase-auth.guard';
-import { IsString, IsInt, IsOptional, IsBoolean, IsUUID } from 'class-validator';
+import { IsString, IsInt, IsOptional, IsBoolean, IsUUID, Min, Max } from 'class-validator';
 import { Type } from 'class-transformer';
 import { RolesGuard } from '../../common/access/roles.guard';
 import { Roles } from '../../common/access/roles.decorator';
@@ -25,6 +25,24 @@ import { UserPayload } from '../../common/types/user-payload.type';
 class SetPhaseDto {
   @IsString()
   phase: string;
+}
+
+class SetPausedDto {
+  @IsBoolean()
+  paused: boolean;
+}
+
+class SetAddedTimeDto {
+  @Type(() => Number)
+  @IsInt()
+  half: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(30)
+  minutes?: number;
 }
 
 class AutoAssignControllersDto {
@@ -133,6 +151,20 @@ export class MatchesController {
   @Roles('SUPER_ADMIN', 'CONTROLEUR')
   setPhase(@Param('id') id: string, @Body() dto: SetPhaseDto, @CurrentUser() user: UserPayload) {
     return this.matchesService.setPhase(id, dto.phase, user);
+  }
+
+  // Arrêt de jeu / reprise (bascule). Conserve la mi-temps en cours.
+  @Patch(':id/pause')
+  @Roles('SUPER_ADMIN', 'CONTROLEUR')
+  setPaused(@Param('id') id: string, @Body() dto: SetPausedDto, @CurrentUser() user: UserPayload) {
+    return this.matchesService.setPaused(id, dto.paused, user);
+  }
+
+  // Minutes de temps additionnel d'une mi-temps (half = 1 ou 2).
+  @Patch(':id/added-time')
+  @Roles('SUPER_ADMIN', 'CONTROLEUR')
+  setAddedTime(@Param('id') id: string, @Body() dto: SetAddedTimeDto, @CurrentUser() user: UserPayload) {
+    return this.matchesService.setAddedTime(id, dto.half, dto.minutes ?? null, user);
   }
 
   @Delete(':id')

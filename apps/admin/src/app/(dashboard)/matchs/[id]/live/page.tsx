@@ -71,16 +71,17 @@ interface Control {
   controller_name: string | null;
   phase: string | null;
   status: string;
+  is_paused: boolean;
+  added_time_first: number | null;
+  added_time_second: number | null;
 }
 
-// Commandes de déroulement du match (Section 7).
+// Progression LINÉAIRE du match (une seule active à la fois). L'arrêt de jeu et
+// le temps additionnel ne sont plus des « phases » mais des actions dédiées.
 const PHASES: { key: string; label: string }[] = [
-  { key: 'PREMIERE_MP', label: 'Début du match' },
-  { key: 'ARRET_JEU', label: 'Arrêt de jeu' },
-  { key: 'ADDITIONNEL_1', label: 'Temps add. 1re MT' },
+  { key: 'PREMIERE_MP', label: 'Coup d’envoi (1re MT)' },
   { key: 'MI_TEMPS', label: 'Mi-temps' },
-  { key: 'DEUXIEME_MP', label: 'Début 2e MT' },
-  { key: 'ADDITIONNEL_2', label: 'Temps add. 2e MT' },
+  { key: 'DEUXIEME_MP', label: '2e mi-temps' },
   { key: 'TERMINE', label: 'Fin du match' },
 ];
 const PHASE_LABEL: Record<string, string> = Object.fromEntries(PHASES.map((p) => [p.key, p.label]));
@@ -327,6 +328,51 @@ function StatusButton({
   );
 }
 
+/** Sélecteur de minutes de temps additionnel : − / valeur / +, borné 0–30. */
+function AddedTimeStepper({
+  label,
+  value,
+  disabled,
+  onChange,
+}: {
+  label: string;
+  value: number;
+  disabled?: boolean;
+  onChange: (minutes: number) => void;
+}) {
+  return (
+    <div className="h-12 rounded-lg border flex items-center justify-between px-2 gap-1" style={{ borderColor: '#E5E7EB' }}>
+      <div className="flex flex-col leading-tight pl-1">
+        <span className="text-[11px] font-semibold text-gray-500">{label}</span>
+        <span className="text-[11px] text-gray-400">{value > 0 ? `+${value} min` : 'aucun'}</span>
+      </div>
+      <div className="flex items-center gap-1">
+        <button
+          type="button"
+          onClick={() => onChange(Math.max(0, value - 1))}
+          disabled={disabled || value <= 0}
+          className="w-8 h-8 rounded-md border text-lg font-bold text-gray-600 disabled:opacity-30"
+          style={{ borderColor: '#E5E7EB' }}
+          aria-label="Diminuer"
+        >
+          −
+        </button>
+        <span className="w-7 text-center text-base font-bold tabular-nums text-gray-900">{value}</span>
+        <button
+          type="button"
+          onClick={() => onChange(Math.min(30, value + 1))}
+          disabled={disabled || value >= 30}
+          className="w-8 h-8 rounded-md text-lg font-bold text-white disabled:opacity-30"
+          style={{ backgroundColor: '#1E7A3A' }}
+          aria-label="Augmenter"
+        >
+          +
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function MatchLivePage() {
   const params = useParams<{ id: string }>();
   const matchId = params?.id;
@@ -374,6 +420,41 @@ export default function MatchLivePage() {
       await apiFetch(`/matches/${matchId}/phase`, {
         method: 'PATCH',
         body: JSON.stringify({ phase }),
+      });
+      await load();
+    } catch {
+      /* ignore */
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // Bascule arrêt de jeu ↔ reprise (la mi-temps en cours est conservée).
+  async function togglePause(paused: boolean) {
+    if (!matchId) return;
+    setBusy(true);
+    try {
+      await apiFetch(`/matches/${matchId}/pause`, {
+        method: 'PATCH',
+        body: JSON.stringify({ paused }),
+      });
+      await load();
+    } catch {
+      /* ignore */
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // Définit les minutes de temps additionnel d'une mi-temps (1 ou 2).
+  async function setAddedTime(half: 1 | 2, minutes: number) {
+    if (!matchId) return;
+    const clamped = Math.max(0, Math.min(30, minutes));
+    setBusy(true);
+    try {
+      await apiFetch(`/matches/${matchId}/added-time`, {
+        method: 'PATCH',
+        body: JSON.stringify({ half, minutes: clamped }),
       });
       await load();
     } catch {
@@ -562,12 +643,20 @@ export default function MatchLivePage() {
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 mb-5">
         <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
           <p className="text-[13px] font-semibold text-gray-500">Déroulement du match</p>
-          <span className="text-xs text-gray-500">
-            {control?.controller_name ? `Contrôleur : ${control.controller_name}` : ''}
-            {control?.phase ? ` · Phase : ${PHASE_LABEL[control.phase] ?? control.phase}` : ''}
+          <span className="text-xs text-gray-500 flex items-center gap-2">
+            {control?.controller_name ? <span>Contrôleur : {control.controller_name}</span> : null}
+            {control?.phase ? <span>· Phase : {PHASE_LABEL[control.phase] ?? control.phase}</span> : null}
+            {control?.is_paused ? (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full font-bold" style={{ backgroundColor: '#FEF3C7', color: '#B45309' }}>
+                ⏸ Jeu arrêté
+              </span>
+            ) : null}
           </span>
         </div>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+
+        {/* Progression linéaire */}
+        <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400 mb-2">Progression</p>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
           {PHASES.map((p) => {
             const active = control?.phase === p.key;
             const isEnd = p.key === 'TERMINE';
@@ -587,6 +676,46 @@ export default function MatchLivePage() {
               </button>
             );
           })}
+        </div>
+
+        {/* Pendant le jeu : arrêt/reprise + temps additionnel */}
+        <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400 mb-2">Pendant le jeu</p>
+        <div className="grid gap-3 sm:grid-cols-3">
+          {/* Bascule arrêt de jeu ↔ reprise */}
+          {control?.is_paused ? (
+            <button
+              onClick={() => togglePause(false)}
+              disabled={busy || !isLive}
+              className="h-12 rounded-lg text-sm font-bold text-white transition disabled:opacity-40 inline-flex items-center justify-center gap-2"
+              style={{ backgroundColor: '#1E7A3A' }}
+            >
+              ▶ Reprendre le jeu
+            </button>
+          ) : (
+            <button
+              onClick={() => togglePause(true)}
+              disabled={busy || !isLive}
+              className="h-12 rounded-lg text-sm font-bold border transition disabled:opacity-40 inline-flex items-center justify-center gap-2"
+              style={{ borderColor: '#F7921E', color: '#B45309', backgroundColor: 'white' }}
+            >
+              ⏸ Arrêt de jeu
+            </button>
+          )}
+
+          {/* Temps additionnel 1re MT */}
+          <AddedTimeStepper
+            label="Temps add. 1re MT"
+            value={control?.added_time_first ?? 0}
+            disabled={busy || isValidated}
+            onChange={(m) => setAddedTime(1, m)}
+          />
+          {/* Temps additionnel 2e MT */}
+          <AddedTimeStepper
+            label="Temps add. 2e MT"
+            value={control?.added_time_second ?? 0}
+            disabled={busy || isValidated}
+            onChange={(m) => setAddedTime(2, m)}
+          />
         </div>
       </div>
 
