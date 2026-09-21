@@ -89,51 +89,6 @@ function teamColor(t: TeamRef | null, fallback: string) {
   return t?.primary_color?.trim() ? t.primary_color! : fallback;
 }
 
-/** Popup obligatoire : identité du contrôleur avant toute saisie. */
-function ControllerModal({ onSubmit }: { onSubmit: (first: string, last: string) => Promise<void> }) {
-  const [first, setFirst] = useState('');
-  const [last, setLast] = useState('');
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
-
-  async function submit() {
-    if (!first.trim() || !last.trim()) {
-      setError('Renseigne le nom et le prénom du contrôleur.');
-      return;
-    }
-    setSaving(true);
-    setError('');
-    try {
-      await onSubmit(first.trim(), last.trim());
-    } catch {
-      setError('Échec de l\'enregistrement. Réessaie.');
-      setSaving(false);
-    }
-  }
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-6">
-      <div className="absolute inset-0 bg-black/60" />
-      <div className="relative w-full max-w-md bg-white rounded-2xl shadow-2xl p-8">
-        <h2 className="text-xl font-black text-gray-900 mb-1">Contrôleur du match</h2>
-        <p className="text-sm text-gray-500 mb-6">
-          Identifie-toi avant de commencer la saisie du score.
-        </p>
-        <label className="block text-sm text-gray-600 mb-1">Prénom</label>
-        <input value={first} onChange={(e) => setFirst(e.target.value)} className={`${INPUT_CLS} mb-3`} placeholder="Prénom" />
-        <label className="block text-sm text-gray-600 mb-1">Nom</label>
-        <input value={last} onChange={(e) => setLast(e.target.value)} className={`${INPUT_CLS} mb-4`} placeholder="Nom" />
-        {error ? <p className="text-red-600 text-sm mb-3">{error}</p> : null}
-        <button onClick={submit} disabled={saving}
-          className="w-full h-12 rounded-lg font-bold text-white transition disabled:opacity-60"
-          style={{ backgroundColor: '#1E7A3A' }}>
-          {saving ? 'Validation…' : 'Valider et commencer'}
-        </button>
-      </div>
-    </div>
-  );
-}
-
 const INPUT_CLS =
   'w-full h-11 px-4 rounded-lg border border-gray-200 text-sm text-gray-900 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition';
 
@@ -404,14 +359,13 @@ export default function MatchLivePage() {
     }
   }, [matchId]);
 
-  async function saveController(first: string, last: string) {
+  // Le contrôleur s'auto-enregistre : l'identité est celle du COMPTE connecté
+  // (le backend dérive le nom du profil), plus de saisie libre falsifiable.
+  const saveController = useCallback(async () => {
     if (!matchId) return;
-    await apiFetch(`/matches/${matchId}/controller`, {
-      method: 'PATCH',
-      body: JSON.stringify({ first_name: first, last_name: last }),
-    });
+    await apiFetch(`/matches/${matchId}/controller`, { method: 'PATCH' });
     await load();
-  }
+  }, [matchId, load]);
 
   async function setPhase(phase: string) {
     if (!matchId) return;
@@ -432,6 +386,15 @@ export default function MatchLivePage() {
   useEffect(() => {
     load();
   }, [load]);
+
+  // Enregistrement automatique du contrôleur désigné (identité = compte connecté)
+  // dès qu'il ouvre le match, si aucun contrôleur n'est encore inscrit.
+  useEffect(() => {
+    const designated = !!user && !!match && match.referee?.id === user.id;
+    if (designated && control && !control.controller_name) {
+      void saveController();
+    }
+  }, [user, match, control, saveController]);
 
   async function changeStatus(status: MatchStatus) {
     if (!matchId) return;
@@ -518,6 +481,9 @@ export default function MatchLivePage() {
   const isLive = match.status === 'EN_COURS';
   const isFinished = match.status === 'TERMINÉ';
   const isValidated = match.status === 'VALIDÉ';
+  // Saisie du score (événements) : réservée au contrôleur DÉSIGNÉ de ce match.
+  // Le SUPER_ADMIN supervise (statut/phase) mais ne peut PAS saisir le score.
+  const canEnterScore = !!user && match.referee?.id === user.id;
 
   return (
     <>
@@ -621,57 +587,35 @@ export default function MatchLivePage() {
         </div>
       </div>
 
+      {/* Bandeau : saisie du score réservée au contrôleur désigné (ex. super-admin) */}
+      {!canEnterScore && (
+        <div className="rounded-xl p-3.5 mb-3 text-sm flex items-center gap-2" style={{ backgroundColor: 'rgba(247,146,30,0.10)', border: '1px solid rgba(247,146,30,0.4)', color: '#B45309' }}>
+          <span>🔒</span>
+          <span>Supervision seule : la <strong>saisie du score</strong> est réservée au contrôleur désigné{match.referee?.full_name ? ` (${match.referee.full_name})` : ''} de ce match.</span>
+        </div>
+      )}
+
       {/* Boutons d'ajout d'événement */}
-      <div className="rounded-2xl p-4 mb-5 grid grid-cols-2 sm:grid-cols-4 gap-3" style={{ backgroundColor: '#0F3D1E' }}>
-        <button
-          onClick={() => setModalType('BUT')}
-          className="h-16 rounded-xl flex flex-col items-center justify-center gap-1 text-sm font-bold text-white transition hover:opacity-90"
-          style={{ backgroundColor: '#1E7A3A' }}
-        >
-          <span className="text-lg">⚽</span> But
-        </button>
-        <button
-          onClick={() => setModalType('PENALTY')}
-          className="h-16 rounded-xl flex flex-col items-center justify-center gap-1 text-sm font-bold text-white transition hover:opacity-90"
-          style={{ backgroundColor: '#1E7A3A' }}
-        >
-          <span className="text-lg">🎯</span> Penalty
-        </button>
-        <button
-          onClick={() => setModalType('CSC')}
-          className="h-16 rounded-xl flex flex-col items-center justify-center gap-1 text-sm font-bold text-white transition hover:opacity-90"
-          style={{ backgroundColor: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)' }}
-        >
-          <span className="text-lg">🥅</span> But c.s.c
-        </button>
-        <button
-          onClick={() => setModalType('REMPLACEMENT')}
-          className="h-16 rounded-xl flex flex-col items-center justify-center gap-1 text-sm font-bold text-white transition hover:opacity-90"
-          style={{ backgroundColor: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)' }}
-        >
-          <span className="text-lg">🔁</span> Remplacement
-        </button>
-        <button
-          onClick={() => setModalType('CARTON_JAUNE')}
-          className="h-16 rounded-xl flex flex-col items-center justify-center gap-1 text-sm font-bold text-white transition hover:opacity-90"
-          style={{ backgroundColor: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)' }}
-        >
-          <span className="text-lg">🟨</span> Carton jaune
-        </button>
-        <button
-          onClick={() => setModalType('CARTON_ROUGE')}
-          className="h-16 rounded-xl flex flex-col items-center justify-center gap-1 text-sm font-bold text-white transition hover:opacity-90"
-          style={{ backgroundColor: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)' }}
-        >
-          <span className="text-lg">🟥</span> Carton rouge
-        </button>
-        <button
-          onClick={() => setModalType('BLESSURE')}
-          className="h-16 rounded-xl flex flex-col items-center justify-center gap-1 text-sm font-bold text-white transition hover:opacity-90"
-          style={{ backgroundColor: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)' }}
-        >
-          <span className="text-lg">➕</span> Blessure
-        </button>
+      <div className="rounded-2xl p-4 mb-5 grid grid-cols-2 sm:grid-cols-4 gap-3" style={{ backgroundColor: '#0F3D1E', opacity: canEnterScore ? 1 : 0.55 }}>
+        {([
+          { type: 'BUT', icon: '⚽', label: 'But', primary: true },
+          { type: 'PENALTY', icon: '🎯', label: 'Penalty', primary: true },
+          { type: 'CSC', icon: '🥅', label: 'But c.s.c' },
+          { type: 'REMPLACEMENT', icon: '🔁', label: 'Remplacement' },
+          { type: 'CARTON_JAUNE', icon: '🟨', label: 'Carton jaune' },
+          { type: 'CARTON_ROUGE', icon: '🟥', label: 'Carton rouge' },
+          { type: 'BLESSURE', icon: '➕', label: 'Blessure' },
+        ] as { type: EventType; icon: string; label: string; primary?: boolean }[]).map((b) => (
+          <button
+            key={b.type}
+            onClick={() => setModalType(b.type)}
+            disabled={!canEnterScore}
+            className="h-16 rounded-xl flex flex-col items-center justify-center gap-1 text-sm font-bold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:hover:opacity-100"
+            style={{ backgroundColor: b.primary ? '#1E7A3A' : 'rgba(255,255,255,0.06)', border: b.primary ? undefined : '1px solid rgba(255,255,255,0.12)' }}
+          >
+            <span className="text-lg">{b.icon}</span> {b.label}
+          </button>
+        ))}
       </div>
 
       {/* Timeline des événements */}
@@ -689,13 +633,15 @@ export default function MatchLivePage() {
                   <span className="font-bold text-gray-900 w-12 flex-shrink-0 tabular-nums">{ev.minute}&apos;</span>
                   <span className="font-semibold text-gray-800 flex-shrink-0">{ev.player?.full_name ?? meta.label}</span>
                   <span className="text-sm text-gray-400 truncate flex-1">· {ev.team?.name ?? ''}{ev.note ? ` · ${ev.note}` : ''}</span>
-                  <button
-                    onClick={() => deleteEvent(ev.id)}
-                    className="p-1.5 rounded-lg text-gray-300 hover:text-red-600 hover:bg-red-50 opacity-0 group-hover:opacity-100 transition flex-shrink-0"
-                    title="Supprimer l'événement"
-                  >
-                    <Trash2 size={15} />
-                  </button>
+                  {canEnterScore && (
+                    <button
+                      onClick={() => deleteEvent(ev.id)}
+                      className="p-1.5 rounded-lg text-gray-300 hover:text-red-600 hover:bg-red-50 opacity-0 group-hover:opacity-100 transition flex-shrink-0"
+                      title="Supprimer l'événement"
+                    >
+                      <Trash2 size={15} />
+                    </button>
+                  )}
                 </li>
               );
             })}
@@ -703,7 +649,7 @@ export default function MatchLivePage() {
         )}
       </div>
 
-      {modalType && (
+      {modalType && canEnterScore && (
         <EventModal
           match={match}
           eventType={modalType}
@@ -711,10 +657,6 @@ export default function MatchLivePage() {
           onSaved={load}
         />
       )}
-
-      {/* Popup obligatoire : la saisie est bloquée tant que le contrôleur
-          n'est pas identifié (Section 7). */}
-      {!control?.controller_name && <ControllerModal onSubmit={saveController} />}
     </>
   );
 }

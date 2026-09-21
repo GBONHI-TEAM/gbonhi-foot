@@ -353,7 +353,7 @@ export class MatchesService {
 
   /** Ajoute un événement. Un but incrémente le score (et crée la passe décisive). */
   async addEvent(matchId: string, dto: CreateEventDto, user: UserPayload) {
-    await this.assertControlAuthority(matchId, user);
+    await this.assertScoreAuthority(matchId, user);
     const match = await this.prisma.match.findUnique({ where: { id: matchId } });
     if (!match) throw new NotFoundException('Match introuvable');
 
@@ -405,7 +405,7 @@ export class MatchesService {
 
   /** Supprime un événement (et décrémente le score si c'était un but). */
   async removeEvent(matchId: string, eventId: string, user: UserPayload) {
-    await this.assertControlAuthority(matchId, user);
+    await this.assertScoreAuthority(matchId, user);
     const event = await this.prisma.matchEvent.findFirst({
       where: { id: eventId, match_id: matchId },
     });
@@ -493,6 +493,25 @@ export class MatchesService {
     );
   }
 
+  /**
+   * Saisie du SCORE (événements : buts, cartons…) et identification du
+   * contrôleur : réservée STRICTEMENT au contrôleur DÉSIGNÉ du match. Le
+   * SUPER_ADMIN supervise (statut, phase) mais NE PEUT PAS saisir le score.
+   */
+  private async assertScoreAuthority(matchId: string, user: UserPayload) {
+    const match = await this.prisma.match.findUnique({
+      where: { id: matchId },
+      select: { id: true, referee_id: true },
+    });
+    if (!match) throw new NotFoundException('Match introuvable');
+    if (match.referee_id && match.referee_id === user.id) return match;
+    throw new ForbiddenException(
+      match.referee_id
+        ? 'La saisie du score est réservée au contrôleur désigné de ce match.'
+        : 'Aucun contrôleur n’a été désigné pour ce match. Contacte un administrateur.',
+    );
+  }
+
   /* ─── Contrôle du match (contrôleur + phase de déroulement) ─────────────
      Les colonnes `controller_name` et `phase` sont accédées en SQL brut pour
      éviter une régénération du client Prisma. */
@@ -505,9 +524,17 @@ export class MatchesService {
     return rows[0];
   }
 
-  async setController(id: string, firstName: string, lastName: string, user: UserPayload) {
-    await this.assertControlAuthority(id, user);
-    const name = `${firstName.trim()} ${lastName.trim()}`.trim();
+  /**
+   * Enregistre le contrôleur DÉSIGNÉ comme contrôleur du match. Le nom n'est plus
+   * saisi librement : il est dérivé du COMPTE connecté (non falsifiable).
+   */
+  async setController(id: string, user: UserPayload) {
+    await this.assertScoreAuthority(id, user);
+    const profile = await this.prisma.profile.findUnique({
+      where: { id: user.id },
+      select: { full_name: true, username: true },
+    });
+    const name = (profile?.full_name?.trim() || profile?.username?.trim() || 'Contrôleur');
     await this.prisma.$executeRaw`
       UPDATE matches SET controller_name = ${name}, updated_at = now() WHERE id = ${id}::uuid
     `;

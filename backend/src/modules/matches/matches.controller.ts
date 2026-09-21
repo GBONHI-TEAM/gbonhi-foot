@@ -15,21 +15,11 @@ import { UpdateMatchDto } from './dto/update-match.dto';
 import { ChangeMatchStatusDto } from './dto/change-status.dto';
 import { CreateEventDto } from './dto/create-event.dto';
 import { SupabaseAuthGuard } from '../auth/supabase-auth.guard';
-import { IsString, MaxLength } from 'class-validator';
+import { IsString } from 'class-validator';
 import { RolesGuard } from '../../common/access/roles.guard';
 import { Roles } from '../../common/access/roles.decorator';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { UserPayload } from '../../common/types/user-payload.type';
-
-class SetControllerDto {
-  @IsString()
-  @MaxLength(60)
-  first_name: string;
-
-  @IsString()
-  @MaxLength(60)
-  last_name: string;
-}
 
 class SetPhaseDto {
   @IsString()
@@ -103,10 +93,12 @@ export class MatchesController {
     return this.matchesService.getControl(id, user);
   }
 
+  // Le contrôleur s'enregistre lui-même : identité dérivée du compte connecté
+  // (plus de nom libre falsifiable). Réservé au contrôleur désigné.
   @Patch(':id/controller')
   @Roles('SUPER_ADMIN', 'CONTROLEUR')
-  setController(@Param('id') id: string, @Body() dto: SetControllerDto, @CurrentUser() user: UserPayload) {
-    return this.matchesService.setController(id, dto.first_name, dto.last_name, user);
+  setController(@Param('id') id: string, @CurrentUser() user: UserPayload) {
+    return this.matchesService.setController(id, user);
   }
 
   @Patch(':id/phase')
