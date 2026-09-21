@@ -308,11 +308,11 @@ export function createPartnerRevenueStatementPdf(input: PartnerRevenueStatementP
     text(360, highlightY - 2, 17, input.totalNet, 'F2'),
     // Pied de page
     '0.72 0.85 0.76 rg',
-    text(42, 110, 9, 'Le montant indiqué est net de la commission GBONHI FOOT (10%).'),
-    text(42, 92, 9, truncated
+    text(42, 100, 9, truncated
       ? `Aperçu des ${lines.length} réservations les plus récentes sur ${input.reservationCount} — détail complet dans l’export XLSX / CSV.`
       : `Détail complet : ${lines.length} réservation${lines.length > 1 ? 's' : ''} de la période.`),
-    text(42, 66, 9, 'Document généré automatiquement depuis le portail partenaire GBONHI FOOT.'),
+    text(42, 82, 9, 'Document généré automatiquement depuis le portail partenaire GBONHI FOOT.'),
+    text(42, 62, 9, 'Le football amateur commence ici !'),
   ].join('\n');
   return buildPdf(statementObjects(content));
 }
