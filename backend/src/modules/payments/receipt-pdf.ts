@@ -251,9 +251,11 @@ function statementObjects(content: string): PdfObject[] {
 
 /** Relevé financier partenaire — style unifié (identique aux PDF admin). */
 export function createPartnerRevenueStatementPdf(input: PartnerRevenueStatementPdfInput): Buffer {
-  const lines = input.lines.slice(0, 10);
+  const MAX_LINES = 20;
+  const lines = input.lines.slice(0, MAX_LINES);
+  const truncated = input.lines.length > lines.length;
   const tableLines = lines.flatMap((line, index) => {
-    const y = 560 - index * 22;
+    const y = 566 - index * 18;
     return [
       '0.82 0.90 0.84 rg',
       text(48, y, 10, line.date),
@@ -262,7 +264,7 @@ export function createPartnerRevenueStatementPdf(input: PartnerRevenueStatementP
       text(430, y, 10, line.amount, 'F2'),
     ];
   });
-  const highlightY = Math.max(150, 560 - lines.length * 22 - 20);
+  const highlightY = Math.max(150, 566 - lines.length * 18 - 16);
   const content = [
     // Fond vert plein + bandeau motif + écusson détouré (pas de carré).
     '0.102 0.371 0.175 rg 0 0 595 842 re f',
@@ -300,7 +302,9 @@ export function createPartnerRevenueStatementPdf(input: PartnerRevenueStatementP
     // Pied de page
     '0.72 0.85 0.76 rg',
     text(42, 110, 9, 'Le montant indiqué est net de la commission GBONHI FOOT (10%).'),
-    text(42, 92, 9, lines.length < input.reservationCount ? 'Le détail présente les 10 dernières réservations de la période.' : 'Détail des réservations de la période.'),
+    text(42, 92, 9, truncated
+      ? `Aperçu des ${lines.length} réservations les plus récentes sur ${input.reservationCount} — détail complet dans l’export XLSX / CSV.`
+      : `Détail complet : ${lines.length} réservation${lines.length > 1 ? 's' : ''} de la période.`),
     text(42, 66, 9, 'Document généré automatiquement depuis le portail partenaire GBONHI FOOT.'),
   ].join('\n');
   return buildPdf(statementObjects(content));

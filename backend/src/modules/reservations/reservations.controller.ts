@@ -106,6 +106,12 @@ export class ReservationsController {
     return this.reservationsService.findMineOne(id, user);
   }
 
+  /** Détail d'une réservation d'un terrain du partenaire (portée sécurisée). */
+  @Get('terrain/:id')
+  findOneForPartner(@Param('id') id: string, @CurrentUser() user: UserPayload) {
+    return this.reservationsService.findOneForPartner(id, user);
+  }
+
   @Get(':id')
   @Roles('SUPER_ADMIN', 'ADMIN', 'OPERATEUR')
   findOne(@Param('id') id: string) {

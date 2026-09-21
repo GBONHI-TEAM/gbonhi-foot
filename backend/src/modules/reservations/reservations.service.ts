@@ -237,6 +237,16 @@ export class ReservationsService {
     return reservation;
   }
 
+  /** Détail partenaire : le propriétaire/gestionnaire d'un terrain peut consulter
+   *  toute réservation de SES terrains (portée vérifiée par assertPartnerOwns). */
+  async findOneForPartner(id: string, user: UserPayload) {
+    await this.assertPartnerOwns(id, user);
+    return this.prisma.reservation.findUnique({
+      where: { id },
+      include: { terrain: true, user: true, payment: true },
+    });
+  }
+
   /** Détail mobile : le joueur connecté ne peut consulter que sa réservation. */
   async findMineOne(id: string, user: UserPayload) {
     const reservation = await this.prisma.reservation.findFirst({

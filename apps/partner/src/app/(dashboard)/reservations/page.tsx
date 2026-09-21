@@ -1,7 +1,8 @@
 'use client';
 import { useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { Header } from '../../../components/layout/header';
-import { Info, Search, Check, Clock, X } from 'lucide-react';
+import { Info, Search, Check, Clock, X, ChevronRight } from 'lucide-react';
 import { apiFetch } from '../../../lib/api';
 import { usePartnerAccess } from '../../../components/auth/partner-access-provider';
 import {
@@ -65,8 +66,7 @@ export default function ReservationsPage() {
   const [query, setQuery] = useState('');
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
-  const [actingId, setActingId] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const router = useRouter();
 
   async function load(signal?: { cancelled: boolean }) {
     try {
@@ -87,26 +87,6 @@ export default function ReservationsPage() {
       signal.cancelled = true;
     };
   }, [isOwner, accessLoading]);
-
-  async function changeStatus(
-    id: string,
-    status: ReservationStatus,
-    cancel_reason?: string,
-  ) {
-    setActingId(id);
-    setError(null);
-    try {
-      await apiFetch(`/reservations/${id}/status`, {
-        method: 'PATCH',
-        body: JSON.stringify({ status, ...(cancel_reason ? { cancel_reason } : {}) }),
-      });
-      await load();
-    } catch {
-      setError('Action impossible. Veuillez réessayer.');
-    } finally {
-      setActingId(null);
-    }
-  }
 
   const filtered = useMemo(
     () =>
@@ -164,12 +144,6 @@ export default function ReservationsPage() {
         </div>
       </div>
 
-      {error && (
-        <div className="flex items-center gap-2 rounded-lg p-3 mb-4 border text-[13px]" style={{ backgroundColor: '#FEE2E2', borderColor: '#FCA5A5', color: '#B91C1C' }}>
-          <X size={15} /> {error}
-        </div>
-      )}
-
       {/* Table */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
         <div className="overflow-x-auto">
@@ -185,7 +159,7 @@ export default function ReservationsPage() {
               {filtered.map((r) => {
                 const badge = STATUT_BADGE[r.statut] ?? { bg: '#F3F4F6', color: '#6B7280', icon: null };
                 return (
-                  <tr key={r.ref} className="hover:bg-gray-50">
+                  <tr key={r.ref} onClick={() => router.push(`/reservations/${r.id}`)} className="hover:bg-gray-50 cursor-pointer">
                     <td className="px-4 py-3 text-[12px] text-gray-400 font-mono whitespace-nowrap">#{r.ref}</td>
                     <td className="px-4 py-3 text-[13px] font-semibold text-gray-900 whitespace-nowrap">{r.client}</td>
                     <td className="px-4 py-3 text-[13px] text-gray-600 whitespace-nowrap">{r.date}</td>
@@ -198,30 +172,9 @@ export default function ReservationsPage() {
                       </span>
                     </td>
                     <td className="px-4 py-3 whitespace-nowrap">
-                      {r.status === 'pending' || r.status === 'confirmed' ? (
-                        <div className="flex items-center gap-2">
-                          {r.status === 'pending' && (
-                            <button
-                              onClick={() => changeStatus(r.id, 'confirmed')}
-                              disabled={actingId === r.id}
-                              className="inline-flex items-center gap-1 text-[12px] font-semibold px-2.5 py-1.5 rounded-lg text-white transition-colors disabled:opacity-50"
-                              style={{ backgroundColor: '#1E7A3A' }}
-                            >
-                              <Check size={13} /> Confirmer
-                            </button>
-                          )}
-                          <button
-                            onClick={() => changeStatus(r.id, 'cancelled')}
-                            disabled={actingId === r.id}
-                            className="inline-flex items-center gap-1 text-[12px] font-semibold px-2.5 py-1.5 rounded-lg border transition-colors disabled:opacity-50"
-                            style={{ borderColor: '#FCA5A5', color: '#B91C1C', backgroundColor: 'white' }}
-                          >
-                            <X size={13} /> Annuler
-                          </button>
-                        </div>
-                      ) : (
-                        <span className="text-[12px] text-gray-300">—</span>
-                      )}
+                      <span className="inline-flex items-center gap-1 text-[12px] font-semibold" style={{ color: '#1E7A3A' }}>
+                        Détails <ChevronRight size={14} />
+                      </span>
                     </td>
                   </tr>
                 );
