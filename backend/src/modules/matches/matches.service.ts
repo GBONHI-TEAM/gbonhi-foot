@@ -298,6 +298,137 @@ export class MatchesService {
     });
   }
 
+  /**
+   * Assignation AUTOMATIQUE des contrôleurs pour une journée (round) d'un
+   * tournoi. Répartit les matchs entre TOUS les comptes contrôleur de façon
+   * équilibrée (le moins chargé d'abord) et en évitant qu'un même contrôleur
+   * soit sur deux matchs à la MÊME heure (en fonction du programme).
+   *
+   * - `reassign = false` (défaut) : ne touche qu'aux matchs SANS contrôleur —
+   *   les assignations manuelles déjà faites sont conservées.
+   * - `reassign = true` : réinitialise et réassigne TOUTE la journée.
+   *
+   * Retourne un résumé explicite (assignés, non couverts, avertissements).
+   */
+  async autoAssignControllers(
+    tournamentId: string,
+    round: number,
+    reassign = false,
+  ): Promise<{
+    round: number;
+    total: number;
+    controllers: number;
+    assigned: number;
+    skipped: number;
+    assignments: { match_id: string; label: string; time: string | null; controller: string }[];
+    warnings: string[];
+  }> {
+    if (!tournamentId) throw new BadRequestException('Tournoi manquant.');
+    if (round === undefined || round === null || Number.isNaN(Number(round)))
+      throw new BadRequestException('Journée manquante.');
+
+    const matches = await this.prisma.match.findMany({
+      where: { tournament_id: tournamentId, round: Number(round) },
+      select: {
+        id: true,
+        scheduled_at: true,
+        referee_id: true,
+        home_team: { select: { name: true } },
+        away_team: { select: { name: true } },
+      },
+      orderBy: { scheduled_at: 'asc' },
+    });
+
+    if (matches.length === 0)
+      throw new BadRequestException(`Aucun match sur la journée ${round}.`);
+
+    const controllers = await this.prisma.profile.findMany({
+      where: { role: 'CONTROLEUR' },
+      select: { id: true, full_name: true, username: true },
+      orderBy: { full_name: 'asc' },
+    });
+
+    const warnings: string[] = [];
+    if (controllers.length === 0) {
+      return {
+        round: Number(round),
+        total: matches.length,
+        controllers: 0,
+        assigned: 0,
+        skipped: matches.length,
+        assignments: [],
+        warnings: [
+          'Aucun compte contrôleur disponible. Crée d’abord des comptes contrôleur pour pouvoir les assigner.',
+        ],
+      };
+    }
+
+    const nameOf = (c: { full_name: string | null; username: string | null }) =>
+      c.full_name?.trim() || c.username?.trim() || 'Contrôleur';
+
+    // Charge courante par contrôleur (matchs de CETTE journée déjà à sa charge)
+    // et occupation par créneau horaire, pour éviter les doublons d'horaire.
+    const load = new Map<string, number>(controllers.map((c) => [c.id, 0]));
+    const usedBySlot = new Map<string, Set<string>>();
+    const slotKey = (d: Date | null) => (d ? new Date(d).toISOString() : 'sans-heure');
+
+    for (const m of matches) {
+      if (m.referee_id && load.has(m.referee_id)) {
+        load.set(m.referee_id, (load.get(m.referee_id) ?? 0) + 1);
+        const k = slotKey(m.scheduled_at);
+        if (!usedBySlot.has(k)) usedBySlot.set(k, new Set());
+        usedBySlot.get(k)!.add(m.referee_id);
+      }
+    }
+
+    const targets = reassign ? matches : matches.filter((m) => !m.referee_id);
+    const assignments: { match_id: string; label: string; time: string | null; controller: string }[] = [];
+    let assigned = 0;
+
+    for (const m of targets) {
+      const k = slotKey(m.scheduled_at);
+      const used = usedBySlot.get(k) ?? new Set<string>();
+      // Contrôleur le MOINS chargé et non déjà occupé sur ce créneau.
+      const candidate = [...controllers]
+        .filter((c) => !used.has(c.id))
+        .sort((a, b) => (load.get(a.id) ?? 0) - (load.get(b.id) ?? 0))[0];
+
+      const label = `${m.home_team?.name ?? '—'} vs ${m.away_team?.name ?? '—'}`;
+      const time = m.scheduled_at
+        ? new Date(m.scheduled_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })
+        : null;
+
+      if (!candidate) {
+        warnings.push(
+          `${label}${time ? ` (${time})` : ''} : pas assez de contrôleurs libres sur ce créneau — laissé sans contrôleur.`,
+        );
+        continue;
+      }
+
+      await this.prisma.match.update({
+        where: { id: m.id },
+        data: { referee_id: candidate.id, updated_at: new Date() },
+      });
+
+      load.set(candidate.id, (load.get(candidate.id) ?? 0) + 1);
+      used.add(candidate.id);
+      usedBySlot.set(k, used);
+      assigned += 1;
+      assignments.push({ match_id: m.id, label, time, controller: nameOf(candidate) });
+    }
+
+    const skipped = matches.length - matches.filter((m) => m.referee_id).length - assigned;
+    return {
+      round: Number(round),
+      total: matches.length,
+      controllers: controllers.length,
+      assigned,
+      skipped: Math.max(0, skipped),
+      assignments,
+      warnings,
+    };
+  }
+
   /** Changement de statut avec horodatage automatique (coup d'envoi / fin). */
   async changeStatus(id: string, dto: ChangeMatchStatusDto, user: UserPayload) {
     await this.assertControlAuthority(id, user);
@@ -353,7 +484,7 @@ export class MatchesService {
 
   /** Ajoute un événement. Un but incrémente le score (et crée la passe décisive). */
   async addEvent(matchId: string, dto: CreateEventDto, user: UserPayload) {
-    await this.assertScoreAuthority(matchId, user);
+    await this.assertControlAuthority(matchId, user);
     const match = await this.prisma.match.findUnique({ where: { id: matchId } });
     if (!match) throw new NotFoundException('Match introuvable');
 
@@ -405,7 +536,7 @@ export class MatchesService {
 
   /** Supprime un événement (et décrémente le score si c'était un but). */
   async removeEvent(matchId: string, eventId: string, user: UserPayload) {
-    await this.assertScoreAuthority(matchId, user);
+    await this.assertControlAuthority(matchId, user);
     const event = await this.prisma.matchEvent.findFirst({
       where: { id: eventId, match_id: matchId },
     });
@@ -493,24 +624,6 @@ export class MatchesService {
     );
   }
 
-  /**
-   * Saisie du SCORE (événements : buts, cartons…) et identification du
-   * contrôleur : réservée STRICTEMENT au contrôleur DÉSIGNÉ du match. Le
-   * SUPER_ADMIN supervise (statut, phase) mais NE PEUT PAS saisir le score.
-   */
-  private async assertScoreAuthority(matchId: string, user: UserPayload) {
-    const match = await this.prisma.match.findUnique({
-      where: { id: matchId },
-      select: { id: true, referee_id: true },
-    });
-    if (!match) throw new NotFoundException('Match introuvable');
-    if (match.referee_id && match.referee_id === user.id) return match;
-    throw new ForbiddenException(
-      match.referee_id
-        ? 'La saisie du score est réservée au contrôleur désigné de ce match.'
-        : 'Aucun contrôleur n’a été désigné pour ce match. Contacte un administrateur.',
-    );
-  }
 
   /* ─── Contrôle du match (contrôleur + phase de déroulement) ─────────────
      Les colonnes `controller_name` et `phase` sont accédées en SQL brut pour
@@ -529,7 +642,7 @@ export class MatchesService {
    * saisi librement : il est dérivé du COMPTE connecté (non falsifiable).
    */
   async setController(id: string, user: UserPayload) {
-    await this.assertScoreAuthority(id, user);
+    await this.assertControlAuthority(id, user);
     const profile = await this.prisma.profile.findUnique({
       where: { id: user.id },
       select: { full_name: true, username: true },

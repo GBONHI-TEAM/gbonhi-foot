@@ -15,7 +15,8 @@ import { UpdateMatchDto } from './dto/update-match.dto';
 import { ChangeMatchStatusDto } from './dto/change-status.dto';
 import { CreateEventDto } from './dto/create-event.dto';
 import { SupabaseAuthGuard } from '../auth/supabase-auth.guard';
-import { IsString } from 'class-validator';
+import { IsString, IsInt, IsOptional, IsBoolean, IsUUID } from 'class-validator';
+import { Type } from 'class-transformer';
 import { RolesGuard } from '../../common/access/roles.guard';
 import { Roles } from '../../common/access/roles.decorator';
 import { CurrentUser } from '../auth/current-user.decorator';
@@ -24,6 +25,19 @@ import { UserPayload } from '../../common/types/user-payload.type';
 class SetPhaseDto {
   @IsString()
   phase: string;
+}
+
+class AutoAssignControllersDto {
+  @IsUUID()
+  tournament_id: string;
+
+  @Type(() => Number)
+  @IsInt()
+  round: number;
+
+  @IsOptional()
+  @IsBoolean()
+  reassign?: boolean;
 }
 
 @UseGuards(SupabaseAuthGuard, RolesGuard)
@@ -76,6 +90,20 @@ export class MatchesController {
   @Roles('SUPER_ADMIN', 'ADMIN', 'OPERATEUR')
   update(@Param('id') id: string, @Body() dto: UpdateMatchDto) {
     return this.matchesService.update(id, dto);
+  }
+
+  // Assignation AUTOMATIQUE des contrôleurs pour une journée entière.
+  // Tâche d'organisation (comme l'assignation manuelle) → réservée aux rôles
+  // qui gèrent le calendrier. La répartition ne concerne que les comptes
+  // contrôleur.
+  @Post('auto-assign-controllers')
+  @Roles('SUPER_ADMIN', 'ADMIN', 'OPERATEUR')
+  autoAssignControllers(@Body() dto: AutoAssignControllersDto) {
+    return this.matchesService.autoAssignControllers(
+      dto.tournament_id,
+      dto.round,
+      dto.reassign ?? false,
+    );
   }
 
   // ── Contrôle du match (score en direct) : RÉSERVÉ aux comptes contrôleurs.

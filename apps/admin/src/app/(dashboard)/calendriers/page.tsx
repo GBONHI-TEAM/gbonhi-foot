@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useMemo, useState } from 'react';
-import { ChevronDown, ChevronLeft, ChevronRight, MapPin, User, Check } from 'lucide-react';
+import { ChevronDown, ChevronLeft, ChevronRight, MapPin, User, Check, Zap, X, AlertTriangle } from 'lucide-react';
 import { Header } from '../../../components/layout/header';
 import { apiFetch } from '../../../lib/api';
 
@@ -33,6 +33,16 @@ interface Round {
 interface LeagueOption {
   id: string;
   name: string;
+}
+
+interface AutoAssignResult {
+  round: number;
+  total: number;
+  controllers: number;
+  assigned: number;
+  skipped: number;
+  assignments: { match_id: string; label: string; time: string | null; controller: string }[];
+  warnings: string[];
 }
 
 interface ApiTeamRef {
@@ -128,6 +138,7 @@ export default function CalendriersPage() {
   const [activeRound, setActiveRound] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [assignResult, setAssignResult] = useState<AutoAssignResult | null>(null);
 
   async function loadMatches(id: string) {
     if (!id) return;
@@ -181,6 +192,31 @@ export default function CalendriersPage() {
       await loadMatches(leagueId);
     } catch (e) {
       alert('Action impossible. ' + (e instanceof Error ? e.message : ''));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // Assignation AUTOMATIQUE des contrôleurs pour la journée affichée.
+  // `reassign=false` : ne remplit que les matchs sans contrôleur (conserve le
+  // manuel). `reassign=true` : réinitialise et répartit toute la journée.
+  async function autoAssign(reassign: boolean) {
+    if (!leagueId || activeRound == null || busy) return;
+    const label = activeRoundMeta?.label ?? `J${activeRound}`;
+    const confirmMsg = reassign
+      ? `Réassigner TOUTE la journée ${label} ?\n\nLes contrôleurs actuels de cette journée seront remplacés et les matchs seront répartis équitablement entre tous les comptes contrôleur.`
+      : `Assigner automatiquement les contrôleurs de la journée ${label} ?\n\nSeuls les matchs SANS contrôleur seront complétés. Les assignations déjà faites à la main sont conservées.`;
+    if (!window.confirm(confirmMsg)) return;
+    setBusy(true);
+    try {
+      const res = await apiFetch<AutoAssignResult>('/matches/auto-assign-controllers', {
+        method: 'POST',
+        body: JSON.stringify({ tournament_id: leagueId, round: activeRound, reassign }),
+      });
+      await loadMatches(leagueId);
+      setAssignResult(res);
+    } catch (e) {
+      alert('Assignation automatique impossible. ' + (e instanceof Error ? e.message : ''));
     } finally {
       setBusy(false);
     }
@@ -352,6 +388,15 @@ export default function CalendriersPage() {
             {busy ? '…' : 'Générer le calendrier'}
           </button>
           <button
+            onClick={() => autoAssign(false)}
+            disabled={busy || activeRound == null}
+            title="Répartit automatiquement les contrôleurs sur les matchs de la journée affichée"
+            className="h-11 px-5 rounded-lg text-sm font-semibold border transition hover:bg-orange-50 disabled:opacity-40 inline-flex items-center gap-2"
+            style={{ borderColor: '#F7921E', color: '#B45309' }}
+          >
+            <Zap size={15} /> Assigner {activeRoundMeta?.label ?? ''}
+          </button>
+          <button
             onClick={() => publish(false)}
             disabled={busy || activeRound == null}
             className="h-11 px-5 rounded-lg text-sm font-semibold text-white transition hover:opacity-90 disabled:opacity-40"
@@ -476,9 +521,120 @@ export default function CalendriersPage() {
         </div>
       </div>
 
+      {assignResult && <AutoAssignResultModal result={assignResult} onClose={() => setAssignResult(null)} onReassign={() => { setAssignResult(null); autoAssign(true); }} />}
+
       <PoolsPanel leagueId={leagueId} />
       <BracketPanel leagueId={leagueId} />
     </>
+  );
+}
+
+// ─── Résultat de l'assignation automatique ──────────────────────────────────
+
+/**
+ * Récapitulatif clair et explicite de l'assignation automatique : combien de
+ * matchs ont été assignés, à qui, et ce qui reste à couvrir. Pensé pour être
+ * compréhensible sans connaissance technique.
+ */
+function AutoAssignResultModal({
+  result,
+  onClose,
+  onReassign,
+}: {
+  result: AutoAssignResult;
+  onClose: () => void;
+  onReassign: () => void;
+}) {
+  const nothingDone = result.assigned === 0 && result.warnings.length > 0;
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+      <div
+        className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[85vh] overflow-hidden flex flex-col"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+          <h3 className="font-bold text-gray-900 flex items-center gap-2">
+            <Zap size={18} style={{ color: '#F7921E' }} /> Assignation automatique — Journée {result.round}
+          </h3>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-700">
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="px-5 py-4 overflow-y-auto">
+          {/* Résumé chiffré */}
+          <div className="grid grid-cols-3 gap-3 mb-4">
+            <div className="rounded-xl border border-gray-100 p-3 text-center">
+              <p className="text-2xl font-bold" style={{ color: '#1E7A3A' }}>{result.assigned}</p>
+              <p className="text-xs text-gray-500 mt-0.5">assigné(s)</p>
+            </div>
+            <div className="rounded-xl border border-gray-100 p-3 text-center">
+              <p className="text-2xl font-bold text-gray-800">{result.total}</p>
+              <p className="text-xs text-gray-500 mt-0.5">matchs</p>
+            </div>
+            <div className="rounded-xl border border-gray-100 p-3 text-center">
+              <p className="text-2xl font-bold text-gray-800">{result.controllers}</p>
+              <p className="text-xs text-gray-500 mt-0.5">contrôleurs</p>
+            </div>
+          </div>
+
+          {nothingDone ? (
+            <p className="text-sm text-gray-600 mb-3">
+              Aucun match n’a pu être assigné automatiquement. Vérifie les avertissements ci-dessous.
+            </p>
+          ) : result.assigned === 0 ? (
+            <p className="text-sm text-gray-600 mb-3">
+              Tous les matchs de cette journée avaient déjà un contrôleur. Rien à assigner.
+            </p>
+          ) : (
+            <>
+              <p className="text-xs font-semibold uppercase tracking-wide text-gray-400 mb-2">Contrôleurs assignés</p>
+              <div className="space-y-1.5 mb-3">
+                {result.assignments.map((a) => (
+                  <div key={a.match_id} className="flex items-center gap-2 text-sm">
+                    {a.time && <span className="text-xs font-semibold text-gray-500 w-11">{a.time}</span>}
+                    <span className="flex-1 text-gray-800 truncate">{a.label}</span>
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-semibold" style={{ backgroundColor: '#F0FDF4', color: '#1E7A3A' }}>
+                      <User size={11} /> {a.controller}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+
+          {result.warnings.length > 0 && (
+            <div className="rounded-xl p-3 mb-1" style={{ backgroundColor: '#FEF3C7' }}>
+              <p className="text-xs font-bold flex items-center gap-1.5 mb-1.5" style={{ color: '#B45309' }}>
+                <AlertTriangle size={13} /> À vérifier
+              </p>
+              <ul className="space-y-1">
+                {result.warnings.map((w, i) => (
+                  <li key={i} className="text-xs" style={{ color: '#92400E' }}>• {w}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+
+        <div className="px-5 py-3 border-t border-gray-100 flex justify-between items-center gap-3">
+          <button
+            onClick={onReassign}
+            className="text-sm font-semibold text-gray-500 hover:text-gray-800"
+            title="Repartir de zéro : remplace tous les contrôleurs de la journée"
+          >
+            Tout réassigner
+          </button>
+          <button
+            onClick={onClose}
+            className="h-10 px-5 rounded-lg text-sm font-semibold text-white"
+            style={{ backgroundColor: '#1E7A3A' }}
+          >
+            Terminé
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 

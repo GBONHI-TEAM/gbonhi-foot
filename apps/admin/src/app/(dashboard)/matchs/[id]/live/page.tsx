@@ -483,7 +483,10 @@ export default function MatchLivePage() {
   const isValidated = match.status === 'VALIDÉ';
   // Saisie du score (événements) : réservée au contrôleur DÉSIGNÉ de ce match.
   // Le SUPER_ADMIN supervise (statut/phase) mais ne peut PAS saisir le score.
-  const canEnterScore = !!user && match.referee?.id === user.id;
+  // Peut saisir le score : le SUPER_ADMIN (superviseur, tous les droits) OU le
+  // contrôleur désigné de ce match. C'est exactement la condition d'accès à la
+  // page — donc tout compte qui parvient ici peut aussi saisir le score.
+  const canEnterScore = isDesignated;
 
   return (
     <>
@@ -586,14 +589,6 @@ export default function MatchLivePage() {
           })}
         </div>
       </div>
-
-      {/* Bandeau : saisie du score réservée au contrôleur désigné (ex. super-admin) */}
-      {!canEnterScore && (
-        <div className="rounded-xl p-3.5 mb-3 text-sm flex items-center gap-2" style={{ backgroundColor: 'rgba(247,146,30,0.10)', border: '1px solid rgba(247,146,30,0.4)', color: '#B45309' }}>
-          <span>🔒</span>
-          <span>Supervision seule : la <strong>saisie du score</strong> est réservée au contrôleur désigné{match.referee?.full_name ? ` (${match.referee.full_name})` : ''} de ce match.</span>
-        </div>
-      )}
 
       {/* Boutons d'ajout d'événement */}
       <div className="rounded-2xl p-4 mb-5 grid grid-cols-2 sm:grid-cols-4 gap-3" style={{ backgroundColor: '#0F3D1E', opacity: canEnterScore ? 1 : 0.55 }}>
