@@ -1,4 +1,3 @@
-import { RECEIPT_LOGO_JPEG_BASE64 } from './receipt-logo';
 import { RECEIPT_HEADER_MOTIF_JPEG_BASE64 } from './receipt-header-motif';
 import { RECEIPT_LOGO_RGB_JPEG_BASE64, RECEIPT_LOGO_MASK_JPEG_BASE64 } from './receipt-logo-transparent';
 
@@ -32,7 +31,6 @@ interface PartnerRevenueStatementPdfInput {
   lines: Array<{ date: string; terrain: string; amount: string }>;
 }
 
-const LOGO = { data: Buffer.from(RECEIPT_LOGO_JPEG_BASE64, 'base64'), width: 320, height: 320 };
 const HEADER_MOTIF = { data: Buffer.from(RECEIPT_HEADER_MOTIF_JPEG_BASE64, 'base64'), width: 1190, height: 194 };
 // Bandeau vert de l'en-tête (haut de page A4) : y 745, hauteur 97, largeur 595.
 const HEADER_BAND = 'q 595 0 0 97 0 745 cm /Im1 Do Q';
@@ -124,9 +122,13 @@ function buildPdf(objects: PdfObject[]): Buffer {
   return Buffer.concat(chunks);
 }
 
-/** Objets communs d'un reçu A4 avec le logo GBONHI FOOT embarqué. */
+/** Objets communs d'un reçu A4 avec le logo GBONHI FOOT embarqué.
+ *  Le logo (Im0) est l'écusson DÉTOURÉ (fond transparent via /SMask, objet 10) :
+ *  seul le halo/carré sombre disparaît — position, taille et mise en page
+ *  inchangées (le tracé /Im0 reste identique dans le contenu). */
 function receiptObjects(content: string): PdfObject[] {
   const contentBuf = Buffer.from(content, 'latin1');
+  const S = LOGO_T.size;
   return [
     '<< /Type /Catalog /Pages 2 0 R >>',
     '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
@@ -135,8 +137,8 @@ function receiptObjects(content: string): PdfObject[] {
     '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>',
     { head: `<< /Length ${contentBuf.length} >>`, stream: contentBuf },
     {
-      head: `<< /Type /XObject /Subtype /Image /Width ${LOGO.width} /Height ${LOGO.height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${LOGO.data.length} >>`,
-      stream: LOGO.data,
+      head: `<< /Type /XObject /Subtype /Image /Width ${S} /Height ${S} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /SMask 10 0 R /Length ${LOGO_T.rgb.length} >>`,
+      stream: LOGO_T.rgb,
     },
     {
       head: `<< /Type /XObject /Subtype /Image /Width ${HEADER_MOTIF.width} /Height ${HEADER_MOTIF.height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${HEADER_MOTIF.data.length} >>`,
@@ -144,6 +146,11 @@ function receiptObjects(content: string): PdfObject[] {
     },
     // Transparence pour le filigrane du fond (objet 9, référencé /GS1).
     '<< /Type /ExtGState /ca 0.06 /CA 0.06 >>',
+    // Masque alpha de l'écusson détouré (objet 10, référencé par /SMask de Im0).
+    {
+      head: `<< /Type /XObject /Subtype /Image /Width ${S} /Height ${S} /ColorSpace /DeviceGray /BitsPerComponent 8 /Filter /DCTDecode /Length ${LOGO_T.mask.length} >>`,
+      stream: LOGO_T.mask,
+    },
   ];
 }
 
