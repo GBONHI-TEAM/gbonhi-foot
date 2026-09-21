@@ -70,7 +70,12 @@ export class LeaguesController {
   }
 
   @Get(':id/standings')
-  getStandings(@Param('id') id: string) {
-    return this.leaguesService.getStandings(id);
+  getStandings(
+    @Param('id') id: string,
+    @Query('period') period?: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ) {
+    return this.leaguesService.getStandings(id, { period, from, to });
   }
 }

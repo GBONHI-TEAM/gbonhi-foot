@@ -377,7 +377,10 @@ export class LeaguesService {
     );
   }
 
-  async getStandings(leagueId: string) {
+  async getStandings(
+    leagueId: string,
+    opts?: { period?: string; from?: string; to?: string },
+  ) {
     const league = await this.prisma.tournament.findUnique({
       where: { id: leagueId },
       include: {
@@ -387,10 +390,47 @@ export class LeaguesService {
     });
     if (!league) throw new NotFoundException('Ligue introuvable');
 
+    // Date de référence d'un match joué (fin réelle, sinon horaire programmé).
+    const matchDate = (m: { finished_at: Date | null; scheduled_at: Date | null }) =>
+      m.finished_at ?? m.scheduled_at ?? new Date(0);
+
+    const period = (opts?.period ?? 'season').toLowerCase();
+    const parseDay = (v?: string) => (v && /^\d{4}-\d{2}-\d{2}$/.test(v) ? new Date(`${v}T00:00:00.000Z`) : null);
+
+    // Fenêtre temporelle (mois en cours / période personnalisée). `last5` est géré
+    // par équipe plus bas (5 derniers matchs de CHAQUE équipe).
+    let start: Date | null = null;
+    let end: Date | null = null;
+    if (period === 'month') {
+      const now = new Date();
+      start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+      end = now;
+    } else if (period === 'custom' || period === 'period') {
+      start = parseDay(opts?.from);
+      end = parseDay(opts?.to);
+      if (end) end.setUTCHours(23, 59, 59, 999);
+    }
+
+    const inWindow = (m: { finished_at: Date | null; scheduled_at: Date | null }) => {
+      if (!start && !end) return true;
+      const d = matchDate(m).getTime();
+      if (start && d < start.getTime()) return false;
+      if (end && d > end.getTime()) return false;
+      return true;
+    };
+
     const standings = league.teams.map(({ team }) => {
-      const teamMatches = league.matches.filter(
-        (m) => m.home_team_id === team.id || m.away_team_id === team.id,
+      let teamMatches = league.matches.filter(
+        (m) => (m.home_team_id === team.id || m.away_team_id === team.id) && inWindow(m),
       );
+
+      // « 5 derniers matchs » : on ne garde que les 5 rencontres les plus
+      // récentes de cette équipe (forme récente).
+      if (period === 'last5') {
+        teamMatches = [...teamMatches]
+          .sort((a, b) => matchDate(b).getTime() - matchDate(a).getTime())
+          .slice(0, 5);
+      }
 
       let played = 0, won = 0, drawn = 0, lost = 0, gf = 0, ga = 0;
 

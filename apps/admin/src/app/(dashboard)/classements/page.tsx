@@ -45,7 +45,16 @@ interface ScorersResponse {
   assisters: ScorerRow[];
 }
 
-const PERIOD_FILTERS = ['Saison', 'Ce mois', '5 derniers matchs', 'Période'];
+const PERIOD_FILTERS = ['Saison', 'Ce mois', '5 derniers matchs', 'Période'] as const;
+type PeriodFilter = (typeof PERIOD_FILTERS)[number];
+
+// Libellé d'onglet → valeur `period` de l'API.
+const PERIOD_PARAM: Record<PeriodFilter, string> = {
+  'Saison': 'season',
+  'Ce mois': 'month',
+  '5 derniers matchs': 'last5',
+  'Période': 'custom',
+};
 
 function mapStanding(s: ApiStanding): Standing {
   return {
@@ -67,7 +76,11 @@ export default function ClassementsPage() {
   const [standingsByLeague, setStandingsByLeague] = useState<Record<string, Standing[]>>({});
   const [overviewLoading, setOverviewLoading] = useState(true);
   const [selectedLeagueId, setSelectedLeagueId] = useState<string | null>(null);
-  const [activePeriod, setActivePeriod] = useState('Saison');
+  const [activePeriod, setActivePeriod] = useState<PeriodFilter>('Saison');
+  const [customFrom, setCustomFrom] = useState('');
+  const [customTo, setCustomTo] = useState('');
+  const [detailStandings, setDetailStandings] = useState<Standing[]>([]);
+  const [detailLoading, setDetailLoading] = useState(false);
   const [scorers, setScorers] = useState<ScorerRow[]>([]);
   const [assisters, setAssisters] = useState<ScorerRow[]>([]);
   const [statsLoading, setStatsLoading] = useState(false);
@@ -121,8 +134,33 @@ export default function ClassementsPage() {
     if (selectedLeagueId) void loadStats(selectedLeagueId);
   }, [selectedLeagueId, loadStats]);
 
-  const selectedLeague = leagues.find((l) => l.id === selectedLeagueId) ?? null;
-  const standings = selectedLeagueId ? standingsByLeague[selectedLeagueId] ?? [] : [];
+  // Recharge le classement détaillé selon la période choisie.
+  useEffect(() => {
+    if (!selectedLeagueId) return;
+    const period = PERIOD_PARAM[activePeriod];
+    // « Période » : on attend les deux dates avant d'interroger.
+    if (period === 'custom' && (!customFrom || !customTo)) {
+      setDetailStandings(standingsByLeague[selectedLeagueId] ?? []);
+      return;
+    }
+    let cancelled = false;
+    setDetailLoading(true);
+    const params = new URLSearchParams({ period });
+    if (period === 'custom') { params.set('from', customFrom); params.set('to', customTo); }
+    (async () => {
+      try {
+        const data = await apiFetch<ApiStanding[]>(`/leagues/${selectedLeagueId}/standings?${params.toString()}`);
+        if (!cancelled) setDetailStandings(Array.isArray(data) ? data.map(mapStanding) : []);
+      } catch {
+        if (!cancelled) setDetailStandings([]);
+      } finally {
+        if (!cancelled) setDetailLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [selectedLeagueId, activePeriod, customFrom, customTo, standingsByLeague]);
+
+  const standings = detailStandings;
 
   // ─── Vue détaillée d'une ligue ────────────────────────────────────────────
   if (selectedLeagueId) {
@@ -154,7 +192,7 @@ export default function ClassementsPage() {
             </div>
           </div>
 
-          <div className="flex gap-2.5">
+          <div className="flex items-center gap-2.5 flex-wrap">
             {PERIOD_FILTERS.map((f) => {
               const active = activePeriod === f;
               return (
@@ -164,6 +202,13 @@ export default function ClassementsPage() {
                 </button>
               );
             })}
+            {activePeriod === 'Période' && (
+              <div className="flex items-center gap-2">
+                <input type="date" value={customFrom} onChange={(e) => setCustomFrom(e.target.value)} className="h-10 px-3 rounded-lg border border-gray-200 text-sm" />
+                <span className="text-gray-400 text-sm">au</span>
+                <input type="date" value={customTo} onChange={(e) => setCustomTo(e.target.value)} className="h-10 px-3 rounded-lg border border-gray-200 text-sm" />
+              </div>
+            )}
           </div>
         </div>
 
@@ -191,7 +236,9 @@ export default function ClassementsPage() {
                 </tr>
               ))}
               {standings.length === 0 && (
-                <tr><td colSpan={10} className="px-4 py-16 text-center text-gray-400 text-sm">Aucun classement disponible pour cette ligue.</td></tr>
+                <tr><td colSpan={10} className="px-4 py-16 text-center text-gray-400 text-sm">
+                  {detailLoading ? 'Chargement…' : activePeriod === 'Période' && (!customFrom || !customTo) ? 'Choisis une date de début et de fin.' : 'Aucun match sur cette période.'}
+                </td></tr>
               )}
             </tbody>
           </table>
