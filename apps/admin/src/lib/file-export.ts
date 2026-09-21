@@ -1,10 +1,11 @@
 'use client';
 
-import { RECEIPT_LOGO_JPEG_BASE64, RECEIPT_HEADER_MOTIF_JPEG_BASE64 } from './receipt-brand';
+import { RECEIPT_LOGO_JPEG_BASE64, RECEIPT_HEADER_MOTIF_JPEG_BASE64, RECEIPT_LOGO_RGB_JPEG_BASE64, RECEIPT_LOGO_MASK_JPEG_BASE64 } from './receipt-brand';
 
 export type ExportCell = string | number | null | undefined;
 
 const LOGO_W = 320, LOGO_H = 320, MOTIF_W = 1190, MOTIF_H = 194;
+const LOGO_T = 220; // écusson détouré (RGB + masque) pour le reçu
 
 /** base64 → octets (images JPEG binaires du PDF). */
 function b64ToBytes(b64: string): Uint8Array {
@@ -209,64 +210,75 @@ export function createReceiptPdfBlob(opts: {
   const T = (x: number, y: number, size: number, value: string, bold = false) => `BT /${bold ? 'F2' : 'F1'} ${size} Tf ${x} ${y} Td (${ascii(value)}) Tj ET`;
   const ops: string[] = [];
 
-  // Fond blanc + bandeau vert.
-  ops.push('1 1 1 rg 0 0 595 842 re f');
-  ops.push('0.118 0.478 0.227 rg 0 752 595 90 re f');
-  ops.push('1 1 1 rg', T(42, 802, 22, 'GBONHI FOOT', true), T(42, 782, 9, 'Recu officiel de paiement'));
-  if (opts.statusLabel) {
-    ops.push('0.969 0.573 0.118 rg 430 792 123 26 re f');
-    ops.push('1 1 1 rg', T(446, 800, 12, opts.statusLabel, true));
-  }
-  ops.push('0.969 0.573 0.118 rg 0 748 595 4 re f');
+  // Corps en VERT PLEIN = fond du logo/motif (rgb ~26,95,44) : le motif d'en-tête
+  // ET le logo s'y posent sans démarcation (même vert), donc pas de carré/ombre.
+  ops.push('0.102 0.371 0.175 rg 0 0 595 842 re f');
+  ops.push('q 595 0 0 95 0 747 cm /Im1 Do Q'); // bandeau motif GBONHI
+  ops.push('q 56 0 0 56 484 765 cm /Im0 Do Q'); // écusson détouré (transparent) -> aucun carré
+  ops.push('1 1 1 rg', T(42, 804, 22, 'GBONHI FOOT', true));
+  ops.push('0.82 0.90 0.84 rg', T(42, 784, 9, 'Recu officiel de paiement'));
+  ops.push('0.969 0.573 0.118 rg 0 744 595 4 re f');
 
-  // Titre + référence/date.
-  ops.push('0.102 0.161 0.122 rg', T(42, 712, 20, opts.docTitle, true));
-  ops.push('0.42 0.45 0.44 rg', T(42, 692, 10, `${opts.reference}   -   ${opts.dateLabel}`));
+  // Titre + statut + référence/date.
+  ops.push('1 1 1 rg', T(42, 712, 20, opts.docTitle, true));
+  if (opts.statusLabel) {
+    ops.push('0.969 0.573 0.118 rg 448 706 105 24 re f');
+    ops.push('0.086 0.157 0.086 rg', T(468, 713, 12, opts.statusLabel, true));
+  }
+  ops.push('0.78 0.87 0.80 rg', T(42, 690, 10, `${opts.reference}   -   ${opts.dateLabel}`));
 
   // Bénéficiaire.
-  ops.push('0.55 0.57 0.56 rg', T(42, 662, 9, 'BENEFICIAIRE'));
-  ops.push('0.102 0.161 0.122 rg', T(42, 644, 13, opts.beneficiary.name, true));
-  if (opts.beneficiary.sub) ops.push('0.42 0.45 0.44 rg', T(42, 628, 9, opts.beneficiary.sub));
-  ops.push('0.90 0.92 0.91 rg 42 614 511 1 re f');
+  ops.push('0.72 0.85 0.76 rg', T(42, 662, 9, 'BENEFICIAIRE'));
+  ops.push('1 1 1 rg', T(42, 644, 13, opts.beneficiary.name, true));
+  if (opts.beneficiary.sub) ops.push('0.78 0.87 0.80 rg', T(42, 628, 9, opts.beneficiary.sub));
+  ops.push('0.29 0.49 0.35 rg 42 614 511 1 re f');
 
   // Détail.
-  ops.push('0.55 0.57 0.56 rg', T(42, 594, 9, 'DETAIL DU VERSEMENT'));
+  ops.push('0.72 0.85 0.76 rg', T(42, 594, 9, 'DETAIL DU VERSEMENT'));
   let y = 570;
   for (const [label, value] of opts.lines) {
-    ops.push('0.35 0.38 0.37 rg', T(48, y, 10, label));
-    ops.push('0.102 0.161 0.122 rg', T(330, y, 10, value, true));
+    ops.push('0.82 0.90 0.84 rg', T(48, y, 10, label));
+    ops.push('1 1 1 rg', T(330, y, 10, value, true));
     y -= 22;
   }
 
-  // Montant net mis en avant.
+  // Montant net mis en avant (bandeau orange, texte foncé).
   y -= 8;
-  ops.push(`0.118 0.478 0.227 rg 42 ${y - 20} 511 44 re f`);
-  ops.push('1 1 1 rg', T(58, y + 2, 10, opts.highlight.label, true), T(330, y - 2, 17, opts.highlight.value, true));
+  ops.push(`0.969 0.573 0.118 rg 42 ${y - 20} 511 44 re f`);
+  ops.push('0.086 0.157 0.086 rg', T(58, y + 2, 10, opts.highlight.label, true), T(330, y - 2, 17, opts.highlight.value, true));
   y -= 50;
 
   // Paiement.
-  ops.push('0.55 0.57 0.56 rg', T(42, y, 9, 'PAIEMENT'));
+  ops.push('0.72 0.85 0.76 rg', T(42, y, 9, 'PAIEMENT'));
   y -= 22;
   for (const [label, value] of opts.payment) {
-    ops.push('0.35 0.38 0.37 rg', T(48, y, 10, label));
-    ops.push('0.102 0.161 0.122 rg', T(330, y, 10, value, true));
+    ops.push('0.82 0.90 0.84 rg', T(48, y, 10, label));
+    ops.push('1 1 1 rg', T(330, y, 10, value, true));
     y -= 22;
   }
 
   // Signature + pied de page.
-  ops.push('0.90 0.92 0.91 rg 355 140 198 1 re f');
-  ops.push('0.55 0.57 0.56 rg', T(355, 124, 9, 'Signature / cachet'));
-  ops.push('0.55 0.55 0.55 rg', T(42, 96, 9, opts.footerNote ?? 'Document genere automatiquement par GBONHI FOOT.'));
-  ops.push('0.55 0.55 0.55 rg', T(42, 80, 9, `Edite le ${new Date().toLocaleDateString('fr-FR')} a ${new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`));
+  ops.push('0.29 0.49 0.35 rg 355 140 198 1 re f');
+  ops.push('0.72 0.85 0.76 rg', T(355, 124, 9, 'Signature / cachet'));
+  ops.push('0.72 0.85 0.76 rg', T(42, 96, 9, opts.footerNote ?? 'Document genere automatiquement par GBONHI FOOT.'));
+  ops.push('0.72 0.85 0.76 rg', T(42, 80, 9, `Edite le ${new Date().toLocaleDateString('fr-FR')} a ${new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`));
 
   const contentBytes = latin1(ops.join('\n'));
+  const logoRgbBytes = b64ToBytes(RECEIPT_LOGO_RGB_JPEG_BASE64);
+  const logoMaskBytes = b64ToBytes(RECEIPT_LOGO_MASK_JPEG_BASE64);
+  const motifBytes = b64ToBytes(RECEIPT_HEADER_MOTIF_JPEG_BASE64);
+  // Im0 = écusson (RGB) masqué par l'objet 9 (/SMask) -> fond transparent, pas de
+  // carré autour du logo. Im1 = bandeau motif.
   const objects: Array<{ head: string; stream?: Uint8Array }> = [
     { head: '<< /Type /Catalog /Pages 2 0 R >>' },
     { head: '<< /Type /Pages /Kids [3 0 R] /Count 1 >>' },
-    { head: '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 4 0 R /F2 5 0 R >> >> /Contents 6 0 R >>' },
+    { head: '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 4 0 R /F2 5 0 R >> /XObject << /Im0 7 0 R /Im1 8 0 R >> >> /Contents 6 0 R >>' },
     { head: '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>' },
     { head: '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>' },
     { head: `<< /Length ${contentBytes.length} >>`, stream: contentBytes },
+    { head: `<< /Type /XObject /Subtype /Image /Width ${LOGO_T} /Height ${LOGO_T} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /SMask 9 0 R /Length ${logoRgbBytes.length} >>`, stream: logoRgbBytes },
+    { head: `<< /Type /XObject /Subtype /Image /Width ${MOTIF_W} /Height ${MOTIF_H} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${motifBytes.length} >>`, stream: motifBytes },
+    { head: `<< /Type /XObject /Subtype /Image /Width ${LOGO_T} /Height ${LOGO_T} /ColorSpace /DeviceGray /BitsPerComponent 8 /Filter /DCTDecode /Length ${logoMaskBytes.length} >>`, stream: logoMaskBytes },
   ];
 
   const parts: Uint8Array[] = [];
