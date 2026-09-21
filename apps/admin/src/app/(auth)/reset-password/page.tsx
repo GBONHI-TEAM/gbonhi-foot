@@ -32,14 +32,31 @@ export default function ResetPasswordPage() {
       const { data } = await supabase.auth.getSession();
       if (data.session) { if (active) setPhase('form'); return; }
 
-      // 2) Sinon, échanger le `code` de l'URL (PKCE) contre une session.
-      const code = new URLSearchParams(window.location.search).get('code');
+      const params = new URLSearchParams(window.location.search);
+
+      // 2) Lien déclenché CÔTÉ SERVEUR (invitation admin / mot de passe oublié) :
+      // le template Supabase renvoie `?token_hash=...&type=recovery|invite`. On
+      // valide avec verifyOtp — cela NE dépend PAS d'un « code_verifier » présent
+      // dans ce navigateur (contrairement au flux PKCE `code`), donc ça marche
+      // même si la personne ouvre le lien sur un autre appareil.
+      const tokenHash = params.get('token_hash');
+      const type = params.get('type');
+      if (tokenHash && type) {
+        const { error: otpErr } = await supabase.auth.verifyOtp({
+          token_hash: tokenHash,
+          type: type as 'recovery' | 'invite' | 'email' | 'signup' | 'magiclink' | 'email_change',
+        });
+        if (!otpErr) { if (active) setPhase('form'); return; }
+      }
+
+      // 3) Compat : échanger le `code` de l'URL (flux PKCE) contre une session.
+      const code = params.get('code');
       if (code) {
         const { error: exErr } = await supabase.auth.exchangeCodeForSession(code);
         if (!exErr) { if (active) setPhase('form'); return; }
       }
 
-      // 3) Dernier recours : re-vérifier (jetons en hash déjà parsés par supabase-js).
+      // 4) Dernier recours : re-vérifier (jetons en hash déjà parsés par supabase-js).
       const { data: retry } = await supabase.auth.getSession();
       if (active) setPhase(retry.session ? 'form' : 'invalid');
     })();
