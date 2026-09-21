@@ -38,41 +38,69 @@ export class UsersService {
    *  - admins   : comptes du back-office
    *  - all      : tout le monde
    */
+  /**
+   * Liste filtrée des comptes pour le back-office. Groupes :
+   *  - users     : tous les utilisateurs de l'app (ni admin, ni partenaire) — défaut
+   *  - players   : utilisateurs membres d'au moins une équipe (jouent en ligue)
+   *  - captains  : capitaines d'équipe (coachs)
+   *  - reservers : utilisateurs sans équipe (réservent uniquement des terrains)
+   *  - partners  : propriétaires de terrain + accès partenaires délégués
+   *  - admins    : comptes du back-office
+   *  - all       : tout le monde
+   * Chaque compte est annoté `is_partner` / `is_captain` pour l'affichage.
+   */
   async findAll(query: { role?: string; search?: string }) {
-    const group = (query.role ?? 'players').toLowerCase();
+    const group = (query.role ?? 'users').toLowerCase();
     const search = query.search?.trim();
     const searchWhere = search ? { full_name: { contains: search, mode: 'insensitive' as const } } : {};
 
     const adminRoles = ['SUPER_ADMIN', 'ADMIN', 'CONTROLEUR', 'SUPPORT', 'OPERATEUR'];
-    let where: Record<string, unknown> = { ...searchWhere };
 
-    if (group === 'admins' || group === 'admin') {
-      where = { ...searchWhere, role: { in: adminRoles } };
-    } else if (group === 'all') {
-      where = { ...searchWhere };
-    } else {
-      // Groupes basés sur des relations : on calcule les ensembles d'ids.
-      const [admins, owners, accesses, coaches] = await Promise.all([
-        this.prisma.profile.findMany({ where: { role: { in: adminRoles } }, select: { id: true } }),
-        this.prisma.terrain.findMany({ distinct: ['partner_id'], select: { partner_id: true } }),
-        this.prisma.partnerAccess.findMany({ select: { user_id: true } }).catch(() => [] as { user_id: string }[]),
-        this.prisma.team.findMany({ where: { coach_id: { not: null } }, distinct: ['coach_id'], select: { coach_id: true } }),
-      ]);
-      const partnerIds = [...new Set([...owners.map((o) => o.partner_id), ...accesses.map((a) => a.user_id)])];
-      const adminIds = admins.map((a) => a.id);
-      const captainIds = coaches.map((c) => c.coach_id).filter((id): id is string => !!id);
+    // Ensembles de référence, toujours calculés pour pouvoir annoter les lignes.
+    const [admins, owners, accesses, coaches] = await Promise.all([
+      this.prisma.profile.findMany({ where: { role: { in: adminRoles } }, select: { id: true } }),
+      this.prisma.terrain.findMany({ distinct: ['partner_id'], select: { partner_id: true } }),
+      this.prisma.partnerAccess.findMany({ select: { user_id: true } }).catch(() => [] as { user_id: string }[]),
+      this.prisma.team.findMany({ where: { coach_id: { not: null } }, distinct: ['coach_id'], select: { coach_id: true } }),
+    ]);
+    const partnerIds = new Set<string>([...owners.map((o) => o.partner_id), ...accesses.map((a) => a.user_id)]);
+    const adminIds = new Set<string>(admins.map((a) => a.id));
+    const captainIds = new Set<string>(coaches.map((c) => c.coach_id).filter((id): id is string => !!id));
+    const nonAppUsers = { notIn: [...new Set([...adminIds, ...partnerIds])] };
 
-      if (group === 'partners' || group === 'partner') {
-        where = { ...searchWhere, id: { in: partnerIds } };
-      } else if (group === 'captains' || group === 'captain') {
-        where = { ...searchWhere, id: { in: captainIds } };
-      } else {
-        // players (défaut) : app users = ni admin, ni partenaire.
-        where = { ...searchWhere, id: { notIn: [...new Set([...adminIds, ...partnerIds])] } };
-      }
+    let where: Record<string, unknown>;
+    switch (group) {
+      case 'admins':
+      case 'admin':
+        where = { ...searchWhere, role: { in: adminRoles } };
+        break;
+      case 'all':
+        where = { ...searchWhere };
+        break;
+      case 'partners':
+      case 'partner':
+        where = { ...searchWhere, id: { in: [...partnerIds] } };
+        break;
+      case 'captains':
+      case 'captain':
+        where = { ...searchWhere, id: { in: [...captainIds] } };
+        break;
+      case 'players':
+        // Joueurs : utilisateurs de l'app membres d'au moins une équipe active.
+        where = { ...searchWhere, id: nonAppUsers, team_members: { some: { status: 'active' } } };
+        break;
+      case 'reservers':
+        // Réservent uniquement : utilisateurs de l'app SANS équipe.
+        where = { ...searchWhere, id: nonAppUsers, team_members: { none: { status: 'active' } } };
+        break;
+      case 'users':
+      default:
+        // Tous les utilisateurs de l'app (ni admin, ni partenaire).
+        where = { ...searchWhere, id: nonAppUsers };
+        break;
     }
 
-    return this.prisma.profile.findMany({
+    const rows = await this.prisma.profile.findMany({
       where,
       select: {
         id: true,
@@ -87,6 +115,12 @@ export class UsersService {
       },
       orderBy: { created_at: 'desc' },
     });
+
+    return rows.map((u) => ({
+      ...u,
+      is_partner: partnerIds.has(u.id),
+      is_captain: captainIds.has(u.id),
+    }));
   }
 
   findAdminMembers() {
@@ -339,6 +373,81 @@ export class UsersService {
         level: stringValue('level'),
       },
       statistics: { matches_played: matchesPlayed, goals, assists, yellow_cards: yellowCards, red_cards: redCards },
+    };
+  }
+
+  /**
+   * Fiche PARTENAIRE pour le BO : identité + terrains gérés + volumétrie.
+   * Les partenaires sont des comptes `fan` propriétaires d'un terrain (ou avec
+   * un accès partenaire délégué) — ce ne sont PAS des joueurs, on ne renvoie
+   * donc jamais de statistiques sportives.
+   */
+  async getPartnerCard(id: string) {
+    const profile = await this.prisma.profile.findUnique({
+      where: { id },
+      select: { id: true, full_name: true, username: true, avatar_url: true, city: true, created_at: true },
+    });
+    if (!profile) throw new NotFoundException('Partenaire introuvable');
+
+    const [terrains, access] = await Promise.all([
+      this.prisma.terrain.findMany({
+        where: { partner_id: id },
+        select: {
+          id: true, name: true, city: true, address: true, surface: true,
+          capacity: true, price_per_hour: true, commission_rate: true, is_active: true,
+          _count: { select: { reservations: true } },
+        },
+        orderBy: { created_at: 'desc' },
+      }),
+      this.prisma.partnerAccess.findMany({ where: { user_id: id }, select: { partner_id: true } }).catch(() => [] as { partner_id: string }[]),
+    ]);
+
+    const ownedTerrainIds = terrains.map((t) => t.id);
+    const reservationsCount = ownedTerrainIds.length
+      ? await this.prisma.reservation.count({ where: { terrain_id: { in: ownedTerrainIds } } })
+      : 0;
+    const activeCount = terrains.filter((t) => t.is_active).length;
+
+    // Coordonnées depuis Supabase Auth (e-mail + téléphone).
+    let email: string | null = null;
+    let phone: string | null = null;
+    try {
+      const { data, error } = await this.supabase.client.auth.admin.getUserById(id);
+      if (!error && data.user) {
+        email = data.user.email ?? null;
+        phone = (data.user.phone || (data.user.user_metadata?.phone as string | undefined)) ?? null;
+      }
+    } catch {
+      /* les coordonnées restent optionnelles */
+    }
+
+    return {
+      id: profile.id,
+      full_name: profile.full_name,
+      username: profile.username,
+      avatar_url: profile.avatar_url,
+      city: profile.city,
+      created_at: profile.created_at,
+      email,
+      phone,
+      terrains: terrains.map((t) => ({
+        id: t.id,
+        name: t.name,
+        city: t.city,
+        address: t.address,
+        surface: t.surface,
+        capacity: t.capacity,
+        price_per_hour: t.price_per_hour,
+        commission_rate: t.commission_rate,
+        is_active: t.is_active,
+        reservations_count: t._count.reservations,
+      })),
+      stats: {
+        terrains_count: terrains.length,
+        active_terrains: activeCount,
+        reservations_count: reservationsCount,
+        delegated_access: access.length,
+      },
     };
   }
 

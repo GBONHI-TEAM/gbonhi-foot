@@ -89,6 +89,13 @@ export class UsersController {
     return this.usersService.getPlayerCard(id);
   }
 
+  /** Fiche PARTENAIRE pour le BO : identité + terrains gérés (pas un joueur). */
+  @Get(':id/partner-card')
+  @Roles('SUPER_ADMIN', 'ADMIN', 'CONTROLEUR', 'SUPPORT', 'OPERATEUR')
+  partnerCard(@Param('id') id: string) {
+    return this.usersService.getPartnerCard(id);
+  }
+
   /** Carte d'un joueur consultable in-app par tout utilisateur connecté
    *  (coéquipier, adversaire…) — même contenu que la carte publique. */
   @Get(':id/card')

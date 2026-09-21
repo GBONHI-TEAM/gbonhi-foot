@@ -14,6 +14,8 @@ interface ApiUser {
   city: string | null;
   position?: string | null;
   created_at: string | null;
+  is_partner?: boolean;
+  is_captain?: boolean;
   _count?: { team_members: number; reservations: number };
 }
 
@@ -33,14 +35,32 @@ function roleMeta(role: string | null) {
   return ROLE_META[key] ?? { label: role ?? 'Utilisateur', bg: '#F3F4F6', color: '#6B7280' };
 }
 
-// Groupes logiques (résolus côté backend). « Joueurs » = utilisateurs de l'app
-// (hors admins et partenaires), qui sont dans leurs propres onglets.
-const ROLE_FILTERS = [
-  { label: 'Joueurs', value: 'players' },
-  { label: 'Capitaines', value: 'captains' },
+const ADMIN_KEYS = ['super_admin', 'admin', 'controleur', 'support', 'operateur'];
+/** Badge de rôle « réel » : partenaire / admin / capitaine / joueur / simple. */
+function userMeta(u: { role: string | null; is_partner?: boolean; is_captain?: boolean; _count?: { team_members: number } }) {
+  if (u.is_partner) return ROLE_META.partner;
+  const key = (u.role ?? '').toLowerCase();
+  if (ADMIN_KEYS.includes(key)) return roleMeta(u.role);
+  if (u.is_captain) return ROLE_META.captain;
+  if ((u._count?.team_members ?? 0) > 0) return ROLE_META.player;
+  return ROLE_META.user;
+}
+
+// Onglets principaux. « Utilisateurs » regroupe TOUS les comptes de l'app
+// (joueurs de ligue ET simples réserveurs), avec un sous-filtre dédié.
+const PRIMARY_TABS = [
+  { label: 'Utilisateurs', value: 'users' },
   { label: 'Partenaires', value: 'partners' },
   { label: 'Admins', value: 'admins' },
   { label: 'Tous', value: 'all' },
+];
+
+// Sous-filtres du groupe « Utilisateurs ».
+const USER_SUBFILTERS = [
+  { label: 'Tous', value: 'users' },
+  { label: 'Joueurs', value: 'players' },
+  { label: 'Capitaines', value: 'captains' },
+  { label: 'Réservations uniquement', value: 'reservers' },
 ];
 
 function initials(name: string) {
@@ -60,11 +80,17 @@ function fmtDate(iso: string | null) {
 }
 
 export default function UtilisateursPage() {
-  const [role, setRole] = useState('players');
+  const [tab, setTab] = useState('users');
+  const [sub, setSub] = useState('users');
   const [search, setSearch] = useState('');
   const [users, setUsers] = useState<ApiUser[]>([]);
   const [loaded, setLoaded] = useState(false);
-  const [cardUserId, setCardUserId] = useState<string | null>(null);
+  // Fiche à ouvrir : joueur ou partenaire selon la ligne.
+  const [card, setCard] = useState<{ userId: string; kind: 'player' | 'partner' } | null>(null);
+
+  // Groupe effectif envoyé au backend : le sous-filtre quand on est dans
+  // « Utilisateurs », sinon l'onglet principal.
+  const role = tab === 'users' ? sub : tab;
 
   useEffect(() => {
     let cancelled = false;
@@ -101,14 +127,14 @@ export default function UtilisateursPage() {
       <Header title="Gestion des Utilisateurs" />
 
       {/* Filtres */}
-      <div className="flex items-center justify-between mb-6 gap-3 flex-wrap">
+      <div className="flex items-center justify-between mb-4 gap-3 flex-wrap">
         <div className="flex gap-2.5 flex-wrap">
-          {ROLE_FILTERS.map((f) => {
-            const active = role === f.value;
+          {PRIMARY_TABS.map((f) => {
+            const active = tab === f.value;
             return (
               <button
-                key={f.label}
-                onClick={() => setRole(f.value)}
+                key={f.value}
+                onClick={() => setTab(f.value)}
                 className="px-4 py-1.5 rounded-full text-sm font-medium border transition"
                 style={{
                   backgroundColor: active ? '#1E7A3A' : 'white',
@@ -132,6 +158,30 @@ export default function UtilisateursPage() {
           />
         </div>
       </div>
+
+      {/* Sous-filtres « Utilisateurs » : joueurs de ligue, capitaines, ou
+          utilisateurs qui réservent uniquement des terrains. */}
+      {tab === 'users' && (
+        <div className="flex gap-2 flex-wrap mb-6">
+          {USER_SUBFILTERS.map((s) => {
+            const active = sub === s.value;
+            return (
+              <button
+                key={s.value}
+                onClick={() => setSub(s.value)}
+                className="px-3.5 py-1 rounded-full text-[13px] font-medium border transition"
+                style={{
+                  backgroundColor: active ? 'rgba(30,122,58,0.10)' : 'white',
+                  color: active ? '#15803D' : '#6B7280',
+                  borderColor: active ? '#1E7A3A' : '#E5E7EB',
+                }}
+              >
+                {s.label}
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       <div className="mb-4 flex items-center justify-between gap-3 text-sm text-gray-500">
         <p><span className="font-bold text-gray-800">{users.length.toLocaleString('fr-FR')}</span> utilisateurs affichés</p>
@@ -170,7 +220,7 @@ export default function UtilisateursPage() {
             </thead>
             <tbody className="divide-y divide-gray-50">
               {users.map((u) => {
-                const meta = roleMeta(u.role);
+                const meta = userMeta(u);
                 return (
                   <tr key={u.id} className="hover:bg-gray-50 transition">
                     <td className="px-5 py-4">
@@ -195,8 +245,8 @@ export default function UtilisateursPage() {
                     <td className="px-5 py-4 text-gray-500">{fmtDate(u.created_at)}</td>
                     <td className="px-5 py-4">
                       <button
-                        onClick={() => setCardUserId(u.id)}
-                        title="Voir la fiche joueur"
+                        onClick={() => setCard({ userId: u.id, kind: u.is_partner ? 'partner' : 'player' })}
+                        title={u.is_partner ? 'Voir le partenaire' : 'Voir la fiche joueur'}
                         className="inline-flex h-8 items-center gap-1 rounded-md px-2 text-sm font-semibold text-[#1E7A3A] hover:bg-emerald-50"
                       >
                         <Eye size={15} /> Voir
@@ -215,7 +265,8 @@ export default function UtilisateursPage() {
         </div>
       )}
 
-      {cardUserId && <PlayerCardModal userId={cardUserId} onClose={() => setCardUserId(null)} />}
+      {card?.kind === 'player' && <PlayerCardModal userId={card.userId} onClose={() => setCard(null)} />}
+      {card?.kind === 'partner' && <PartnerCardModal userId={card.userId} onClose={() => setCard(null)} />}
     </>
   );
 }
@@ -313,6 +364,113 @@ function PlayerCardModal({ userId, onClose }: { userId: string; onClose: () => v
                 </div>
               ))}
             </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+interface PartnerCard {
+  id: string;
+  full_name: string | null;
+  username: string | null;
+  city: string | null;
+  created_at: string | null;
+  email: string | null;
+  phone: string | null;
+  terrains: {
+    id: string; name: string; city: string; address: string; surface: string;
+    capacity: number; price_per_hour: number; commission_rate: number | null;
+    is_active: boolean; reservations_count: number;
+  }[];
+  stats: { terrains_count: number; active_terrains: number; reservations_count: number; delegated_access: number };
+}
+
+const SURFACE_FR: Record<string, string> = { grass: 'Gazon', artificial: 'Synthétique', futsal: 'Futsal' };
+
+/** Modal lecture seule d'un PARTENAIRE (responsable de terrain) : identité +
+ *  coordonnées + terrains gérés. Ce n'est PAS un joueur → aucune statistique. */
+function PartnerCardModal({ userId, onClose }: { userId: string; onClose: () => void }) {
+  const [card, setCard] = useState<PartnerCard | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const data = await apiFetch<PartnerCard>(`/users/${userId}/partner-card`);
+        if (!cancelled) setCard(data);
+      } catch {
+        if (!cancelled) setError(true);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [userId]);
+
+  const fcfa = (n: number) => `${n.toLocaleString('fr-FR')} FCFA`;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-6">
+      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
+      <div className="relative w-full max-w-lg bg-white rounded-2xl shadow-2xl p-6 max-h-[90vh] overflow-y-auto">
+        <div className="flex items-start justify-between mb-4">
+          <h2 className="text-xl font-black text-gray-900">Fiche partenaire</h2>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-700"><X size={18} /></button>
+        </div>
+
+        {loading ? (
+          <p className="py-10 text-center text-sm text-gray-400">Chargement…</p>
+        ) : error || !card ? (
+          <p className="py-10 text-center text-sm text-gray-400">Fiche indisponible.</p>
+        ) : (
+          <>
+            <div className="mb-4">
+              <p className="text-lg font-bold text-gray-900">{card.full_name || 'Partenaire'}</p>
+              {card.username && <p className="text-sm text-gray-400">@{card.username}</p>}
+              <div className="mt-2 flex flex-col gap-0.5 text-sm text-gray-600">
+                {card.email && <span>✉️ {card.email}</span>}
+                {card.phone && <span>📞 {card.phone}</span>}
+                <span className="text-gray-400 text-xs">Inscrit le {fmtDate(card.created_at)}{card.city ? ` · ${card.city}` : ''}</span>
+              </div>
+            </div>
+
+            <div className="mb-4 grid grid-cols-3 gap-3">
+              {[
+                ['Terrains', card.stats.terrains_count],
+                ['Actifs', card.stats.active_terrains],
+                ['Réservations', card.stats.reservations_count],
+              ].map(([label, val]) => (
+                <div key={label} className="rounded-xl border border-gray-100 bg-gray-50 p-3 text-center">
+                  <p className="text-2xl font-black text-[#1D4ED8]">{val}</p>
+                  <p className="text-xs text-gray-500">{label}</p>
+                </div>
+              ))}
+            </div>
+
+            <p className="text-sm font-semibold text-gray-700 mb-2">Terrains gérés</p>
+            {card.terrains.length === 0 ? (
+              <p className="text-sm text-gray-400 rounded-xl border border-gray-100 px-4 py-3">Aucun terrain rattaché à ce compte.</p>
+            ) : (
+              <div className="rounded-xl border border-gray-100 divide-y divide-gray-50">
+                {card.terrains.map((t) => (
+                  <div key={t.id} className="px-4 py-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-semibold text-gray-900">{t.name}</span>
+                      <span className="inline-flex px-2 py-0.5 rounded-full text-[11px] font-bold" style={{ backgroundColor: t.is_active ? '#DCFCE7' : '#FEE2E2', color: t.is_active ? '#15803D' : '#B91C1C' }}>
+                        {t.is_active ? 'Actif' : 'Inactif'}
+                      </span>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      {t.city} · {SURFACE_FR[t.surface] ?? t.surface} · {fcfa(t.price_per_hour)}/h · {t.reservations_count} réservation{t.reservations_count > 1 ? 's' : ''}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            )}
           </>
         )}
       </div>
