@@ -455,6 +455,147 @@ export class ReservationsService {
     });
   }
 
+  /* ─── Gestion ADMIN (back-office) ────────────────────────────────────────
+     Le staff (SUPER_ADMIN/ADMIN/OPERATEUR) peut gérer TOUTE réservation, sans
+     être propriétaire du terrain. La garde de rôle est appliquée au contrôleur. */
+
+  /** Change le statut d'une réservation (confirmer, annuler, marquer terminée…). */
+  async adminUpdateStatus(id: string, dto: ChangeReservationStatusDto) {
+    const reservation = await this.prisma.reservation.findUnique({
+      where: { id },
+      include: { terrain: { select: { name: true } } },
+    });
+    if (!reservation) throw new NotFoundException('Réservation introuvable');
+
+    const updated = await this.prisma.reservation.update({
+      where: { id },
+      data: { status: dto.status, cancel_reason: dto.cancel_reason ?? null },
+      include: { terrain: true, user: true, payment: true },
+    });
+
+    // Prévenir le joueur du changement (annulation / confirmation).
+    try {
+      if (reservation.user_id && (dto.status === 'cancelled' || dto.status === 'confirmed')) {
+        const day = new Date(reservation.reservation_date).toLocaleDateString('fr-FR');
+        await this.notifications.notify(reservation.user_id, {
+          type: 'reservation_status',
+          title: dto.status === 'cancelled' ? 'Réservation annulée' : 'Réservation confirmée',
+          body: `${reservation.terrain?.name ?? 'Terrain'} — ${day}${dto.cancel_reason ? ` · ${dto.cancel_reason}` : ''}`,
+          data: { reservation_id: id },
+        });
+      }
+    } catch {
+      /* notification best-effort */
+    }
+    return updated;
+  }
+
+  /**
+   * Reporte / repousse une réservation à une autre date ou un autre créneau,
+   * à la demande de l'utilisateur. Vérifie la disponibilité (chevauchement +
+   * terrain bloqué) et recalcule le montant si la durée change.
+   */
+  async adminReschedule(
+    id: string,
+    dto: { reservation_date: string; start_hour: number; end_hour: number },
+  ) {
+    const reservation = await this.prisma.reservation.findUnique({
+      where: { id },
+      include: { terrain: true },
+    });
+    if (!reservation) throw new NotFoundException('Réservation introuvable');
+
+    const duration = dto.end_hour - dto.start_hour;
+    const isHalfHour = (v: number) => Math.abs(v * 2 - Math.round(v * 2)) < Number.EPSILON;
+    if (!isHalfHour(dto.start_hour) || !isHalfHour(dto.end_hour) || duration < 0.5) {
+      throw new BadRequestException('Le créneau doit être défini par tranches de 30 minutes minimum.');
+    }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dto.reservation_date)) {
+      throw new BadRequestException('Date invalide.');
+    }
+    const reservationDate = new Date(`${dto.reservation_date}T00:00:00.000Z`);
+
+    // Chevauchement avec une AUTRE réservation active du même terrain.
+    const conflict = await this.prisma.reservation.findFirst({
+      where: {
+        terrain_id: reservation.terrain_id,
+        id: { not: id },
+        reservation_date: reservationDate,
+        status: { in: ['pending', 'confirmed'] },
+        start_hour: { lt: dto.end_hour },
+        end_hour: { gt: dto.start_hour },
+      },
+      select: { id: true },
+    });
+    if (conflict) {
+      throw new ConflictException('Ce créneau chevauche une autre réservation.');
+    }
+
+    // Terrain bloqué (indisponibilité déclarée par le partenaire).
+    const block = await this.prisma.terrainBlock.findFirst({
+      where: {
+        terrain_id: reservation.terrain_id,
+        blocked_date: reservationDate,
+        OR: [
+          { start_hour: null },
+          { AND: [{ start_hour: { lt: dto.end_hour } }, { end_hour: { gt: dto.start_hour } }] },
+        ],
+      },
+      select: { id: true },
+    });
+    if (block) {
+      throw new ConflictException('Ce créneau est indisponible (terrain bloqué).');
+    }
+
+    // Recalcul du montant si la durée change (le taux de commission figé est conservé).
+    const unit = reservation.terrain.price_per_hour;
+    const total = Math.round(unit * duration);
+    const rate =
+      typeof reservation.fee_rate === 'number' && reservation.fee_rate >= 0 && reservation.fee_rate <= 1
+        ? reservation.fee_rate
+        : PLATFORM_FEE_RATE;
+    const fee = Math.round(total * rate);
+
+    let updated;
+    try {
+      updated = await this.prisma.reservation.update({
+        where: { id },
+        data: {
+          reservation_date: reservationDate,
+          start_hour: dto.start_hour,
+          end_hour: dto.end_hour,
+          unit_price: unit,
+          total_price: total,
+          platform_fee: fee,
+          partner_amount: total - fee,
+        },
+        include: { terrain: true, user: true, payment: true },
+      });
+    } catch (error: unknown) {
+      if ((error as { code?: string }).code === 'P2002') {
+        throw new ConflictException('Ce créneau vient d’être réservé. Choisis un autre horaire.');
+      }
+      throw error;
+    }
+
+    // Prévenir le joueur du report.
+    try {
+      if (reservation.user_id) {
+        const day = reservationDate.toLocaleDateString('fr-FR');
+        const slot = `${dto.start_hour}h - ${dto.end_hour}h`;
+        await this.notifications.notify(reservation.user_id, {
+          type: 'reservation_status',
+          title: 'Réservation reprogrammée',
+          body: `${reservation.terrain?.name ?? 'Terrain'} — ${day} · ${slot}`,
+          data: { reservation_id: id },
+        });
+      }
+    } catch {
+      /* notification best-effort */
+    }
+    return updated;
+  }
+
   /** KPI du tableau de bord partenaire. */
   async summary(user: UserPayload, from?: string, to?: string) {
     const ids = await this.ownerTerrainIds(user);

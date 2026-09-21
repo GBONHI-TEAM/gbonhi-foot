@@ -13,6 +13,7 @@ import {
 import { ReservationsService } from './reservations.service';
 import { CreateReservationDto } from './dto/create-reservation.dto';
 import { ChangeReservationStatusDto } from './dto/change-status.dto';
+import { RescheduleReservationDto } from './dto/reschedule.dto';
 import { SupabaseAuthGuard } from '../auth/supabase-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { UserPayload } from '../../common/types/user-payload.type';
@@ -123,5 +124,18 @@ export class ReservationsController {
     @CurrentUser() user: UserPayload,
   ) {
     return this.reservationsService.updateStatus(id, dto, user);
+  }
+
+  // ── Gestion ADMIN (toute réservation, sans être propriétaire du terrain) ──
+  @Patch(':id/admin-status')
+  @Roles('SUPER_ADMIN', 'ADMIN', 'OPERATEUR')
+  adminUpdateStatus(@Param('id') id: string, @Body() dto: ChangeReservationStatusDto) {
+    return this.reservationsService.adminUpdateStatus(id, dto);
+  }
+
+  @Patch(':id/reschedule')
+  @Roles('SUPER_ADMIN', 'ADMIN', 'OPERATEUR')
+  adminReschedule(@Param('id') id: string, @Body() dto: RescheduleReservationDto) {
+    return this.reservationsService.adminReschedule(id, dto);
   }
 }
