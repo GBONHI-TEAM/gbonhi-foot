@@ -1,5 +1,6 @@
 import { RECEIPT_LOGO_JPEG_BASE64 } from './receipt-logo';
 import { RECEIPT_HEADER_MOTIF_JPEG_BASE64 } from './receipt-header-motif';
+import { RECEIPT_LOGO_RGB_JPEG_BASE64, RECEIPT_LOGO_MASK_JPEG_BASE64 } from './receipt-logo-transparent';
 
 interface ReceiptPdfInput {
   reference: string;
@@ -35,6 +36,14 @@ const LOGO = { data: Buffer.from(RECEIPT_LOGO_JPEG_BASE64, 'base64'), width: 320
 const HEADER_MOTIF = { data: Buffer.from(RECEIPT_HEADER_MOTIF_JPEG_BASE64, 'base64'), width: 1190, height: 194 };
 // Bandeau vert de l'en-tête (haut de page A4) : y 745, hauteur 97, largeur 595.
 const HEADER_BAND = 'q 595 0 0 97 0 745 cm /Im1 Do Q';
+
+// Écusson détouré (fond transparent) pour les documents admin/partenaire
+// uniformisés : image couleur + masque alpha composés via /SMask.
+const LOGO_T = {
+  rgb: Buffer.from(RECEIPT_LOGO_RGB_JPEG_BASE64, 'base64'),
+  mask: Buffer.from(RECEIPT_LOGO_MASK_JPEG_BASE64, 'base64'),
+  size: 220,
+};
 
 // Filigrane : le motif ivoirien GBONHI FOOT tuilé en fond de page, très
 // atténué (ExtGState /GS1), pour habiller tout le fond vert sous le contenu.
@@ -222,53 +231,77 @@ export function createLeagueRegistrationReceiptPdf(input: LeagueReceiptPdfInput)
   return buildPdf(receiptObjects(content));
 }
 
-/** Relevé financier partenaire téléchargé depuis le portail propriétaire. */
+/** Objets d'un document au style unifié admin/partenaire : écusson DÉTOURÉ
+ *  (transparent via /SMask) sur bandeau motif — pas de carré autour du logo. */
+function statementObjects(content: string): PdfObject[] {
+  const contentBuf = Buffer.from(content, 'latin1');
+  const S = LOGO_T.size;
+  return [
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 4 0 R /F2 5 0 R >> /XObject << /Im0 7 0 R /Im1 8 0 R >> >> /Contents 6 0 R >>',
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>',
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>',
+    { head: `<< /Length ${contentBuf.length} >>`, stream: contentBuf },
+    { head: `<< /Type /XObject /Subtype /Image /Width ${S} /Height ${S} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /SMask 9 0 R /Length ${LOGO_T.rgb.length} >>`, stream: LOGO_T.rgb },
+    { head: `<< /Type /XObject /Subtype /Image /Width ${HEADER_MOTIF.width} /Height ${HEADER_MOTIF.height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${HEADER_MOTIF.data.length} >>`, stream: HEADER_MOTIF.data },
+    { head: `<< /Type /XObject /Subtype /Image /Width ${S} /Height ${S} /ColorSpace /DeviceGray /BitsPerComponent 8 /Filter /DCTDecode /Length ${LOGO_T.mask.length} >>`, stream: LOGO_T.mask },
+  ];
+}
+
+/** Relevé financier partenaire — style unifié (identique aux PDF admin). */
 export function createPartnerRevenueStatementPdf(input: PartnerRevenueStatementPdfInput): Buffer {
   const lines = input.lines.slice(0, 10);
   const tableLines = lines.flatMap((line, index) => {
-    const y = 473 - index * 24;
+    const y = 560 - index * 22;
     return [
-      index % 2 === 0 ? '0.07 0.16 0.09 rg 54 ' + (y - 8) + ' 487 21 re f' : '',
-      '0.72 0.72 0.72 rg',
-      text(66, y, 9, line.date),
-      text(182, y, 9, line.terrain),
-      text(432, y, 9, line.amount, 'F2'),
-    ].filter(Boolean);
+      '0.82 0.90 0.84 rg',
+      text(48, y, 10, line.date),
+      text(190, y, 10, line.terrain),
+      '1 1 1 rg',
+      text(430, y, 10, line.amount, 'F2'),
+    ];
   });
+  const highlightY = Math.max(150, 560 - lines.length * 22 - 20);
   const content = [
-    '1 1 1 rg 0 0 595 842 re f',
-    // En-tête identique aux autres reçus : bandeau vert + motif ivoirien.
-    '0.118 0.478 0.227 rg 0 745 595 97 re f',
-    HEADER_BAND,
-    drawLogo(474, 758, 64),
+    // Fond vert plein + bandeau motif + écusson détouré (pas de carré).
+    '0.102 0.371 0.175 rg 0 0 595 842 re f',
+    'q 595 0 0 95 0 747 cm /Im1 Do Q',
+    drawLogo(484, 765, 56),
     '1 1 1 rg',
     text(42, 804, 21, 'GBONHI FOOT', 'F2'),
-    text(42, 778, 10, 'Le football amateur commence ici'),
-    '0.969 0.573 0.118 rg 42 732 511 4 re f',
-    '0.102 0.239 0.169 rg',
-    text(42, 690, 24, 'RELEVÉ FINANCIER PARTENAIRE', 'F2'),
-    text(42, 668, 11, `Référence : ${input.reference}`),
-    '0.94 0.98 0.95 rg 42 580 511 64 re f',
-    '0.102 0.239 0.169 rg',
-    text(66, 619, 10, 'PARTENAIRE'),
-    text(66, 596, 16, input.partnerName, 'F2'),
-    text(330, 619, 10, 'PÉRIODE'),
-    text(330, 596, 12, input.period, 'F2'),
-    '0.102 0.239 0.169 rg 42 518 511 38 re f',
+    '0.82 0.90 0.84 rg',
+    text(42, 784, 9, 'Portail partenaire'),
+    '0.969 0.573 0.118 rg 0 744 595 4 re f',
     '1 1 1 rg',
-    text(66, 540, 10, 'DATE'),
-    text(182, 540, 10, 'TERRAIN'),
-    text(432, 540, 10, 'NET REVERSÉ'),
+    text(42, 712, 20, 'RELEVÉ FINANCIER PARTENAIRE', 'F2'),
+    '0.78 0.87 0.80 rg',
+    text(42, 690, 10, `Référence : ${input.reference}`),
+    // Bénéficiaire + période
+    '0.72 0.85 0.76 rg',
+    text(42, 662, 9, 'PARTENAIRE'),
+    text(330, 662, 9, 'PÉRIODE'),
+    '1 1 1 rg',
+    text(42, 644, 14, input.partnerName, 'F2'),
+    text(330, 644, 12, input.period, 'F2'),
+    '0.29 0.49 0.35 rg 42 620 511 1 re f',
+    // En-tête du tableau
+    '0.72 0.85 0.76 rg',
+    text(48, 596, 9, 'DATE'),
+    text(190, 596, 9, 'TERRAIN'),
+    text(430, 596, 9, 'NET REVERSÉ'),
+    '0.29 0.49 0.35 rg 42 588 511 1 re f',
     ...tableLines,
-    '0.969 0.573 0.118 rg 42 184 511 56 re f',
-    '1 1 1 rg',
-    text(66, 216, 11, `RÉSERVATIONS CONFIRMÉES : ${input.reservationCount}`),
-    text(362, 207, 17, input.totalNet, 'F2'),
-    '0.40 0.40 0.40 rg',
-    text(42, 142, 9, 'Le montant indiqué est net de la commission GBONHI FOOT.'),
-    text(42, 124, 9, lines.length < input.reservationCount ? 'Le détail présente les 10 dernières réservations de la période.' : 'Détail des réservations de la période.'),
-    text(42, 74, 9, 'GBONHI FOOT — La plateforme du football amateur'),
-    text(42, 56, 9, 'Document généré automatiquement depuis le portail partenaire.'),
+    // Total net (bandeau orange, texte foncé)
+    `0.969 0.573 0.118 rg 42 ${highlightY - 20} 511 46 re f`,
+    '0.086 0.157 0.086 rg',
+    text(58, highlightY + 2, 10, `RÉSERVATIONS CONFIRMÉES : ${input.reservationCount}`, 'F2'),
+    text(360, highlightY - 2, 17, input.totalNet, 'F2'),
+    // Pied de page
+    '0.72 0.85 0.76 rg',
+    text(42, 110, 9, 'Le montant indiqué est net de la commission GBONHI FOOT (10%).'),
+    text(42, 92, 9, lines.length < input.reservationCount ? 'Le détail présente les 10 dernières réservations de la période.' : 'Détail des réservations de la période.'),
+    text(42, 66, 9, 'Document généré automatiquement depuis le portail partenaire GBONHI FOOT.'),
   ].join('\n');
-  return buildPdf(receiptObjects(content));
+  return buildPdf(statementObjects(content));
 }
