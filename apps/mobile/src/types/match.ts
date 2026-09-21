@@ -64,6 +64,20 @@ export interface MatchEvent {
 export interface MatchDetail extends Match {
   events: MatchEvent[];
   phase?: string | null;
+  is_paused?: boolean;
+  added_time_first?: number | null;
+  added_time_second?: number | null;
+}
+
+/** Minutes de temps additionnel de la mi-temps EN COURS (selon la phase). */
+export function currentAddedTime(match: {
+  phase?: string | null;
+  added_time_first?: number | null;
+  added_time_second?: number | null;
+}): number {
+  if (match.phase === 'PREMIERE_MP' || match.phase === 'ADDITIONNEL_1') return match.added_time_first ?? 0;
+  if (match.phase === 'DEUXIEME_MP' || match.phase === 'ADDITIONNEL_2') return match.added_time_second ?? 0;
+  return match.added_time_second ?? match.added_time_first ?? 0;
 }
 
 /** Libellé lisible d'une phase de déroulement (bannière live). */

@@ -27,6 +27,7 @@ import {
   eventLabel,
   isUpcoming,
   phaseLabel,
+  currentAddedTime,
 } from '../../../types/match';
 
 /** Pastille : logo de l'équipe si disponible, sinon couleur + initiales. */
@@ -435,9 +436,23 @@ export default function MatchDetailPage() {
               {status.label}
             </Text>
           </View>
-          {status.live && phaseLabel(match.phase) ? (
-            <View className="mt-2 px-3 py-1 rounded-full" style={{ backgroundColor: 'rgba(0,0,0,0.28)' }}>
-              <Text className="text-xs font-bold" style={{ color: '#FFB830' }}>{phaseLabel(match.phase)}</Text>
+          {status.live ? (
+            <View className="mt-2 flex-row items-center gap-2">
+              {phaseLabel(match.phase) ? (
+                <View className="px-3 py-1 rounded-full" style={{ backgroundColor: 'rgba(0,0,0,0.28)' }}>
+                  <Text className="text-xs font-bold" style={{ color: '#FFB830' }}>{phaseLabel(match.phase)}</Text>
+                </View>
+              ) : null}
+              {currentAddedTime(match) > 0 ? (
+                <View className="px-3 py-1 rounded-full" style={{ backgroundColor: 'rgba(0,0,0,0.28)' }}>
+                  <Text className="text-xs font-bold" style={{ color: '#FFB830' }}>+{currentAddedTime(match)}&apos;</Text>
+                </View>
+              ) : null}
+              {match.is_paused ? (
+                <View className="px-3 py-1 rounded-full flex-row items-center gap-1" style={{ backgroundColor: 'rgba(247,146,30,0.22)' }}>
+                  <Text className="text-xs font-black" style={{ color: '#FFB830' }}>⏸ Arrêt de jeu</Text>
+                </View>
+              ) : null}
             </View>
           ) : null}
         </View>

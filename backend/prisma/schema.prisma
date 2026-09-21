@@ -328,6 +328,9 @@ model Match {
   venue_terrain_id String? @db.Uuid
   phase           String?
   controller_name String?
+  is_paused         Boolean @default(false)
+  added_time_first  Int?    @db.SmallInt
+  added_time_second Int?    @db.SmallInt
   // Structure de compétition
   leg           Int?      // 1 = match aller, 2 = match retour
   pool          String?   // Libellé de poule (ex. "A") pour le format POULES
