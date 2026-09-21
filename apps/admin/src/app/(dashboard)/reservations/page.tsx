@@ -30,6 +30,7 @@ const STATUS_META: Record<string, { label: string; bg: string; color: string }> 
   ANNULEE: { label: 'Annulée', bg: '#FEE2E2', color: '#B91C1C' },
   COMPLETED: { label: 'Terminée', bg: '#F3F4F6', color: '#6B7280' },
   TERMINEE: { label: 'Terminée', bg: '#F3F4F6', color: '#6B7280' },
+  NO_SHOW: { label: 'No-show', bg: '#FEE2E2', color: '#B91C1C' },
 };
 
 function statusMeta(s: string | null) {
@@ -258,7 +259,10 @@ function ReservationDetailModal({
   }
 
   const meta = res ? statusMeta(res.status) : null;
-  const isCancelled = (res?.status ?? '').toLowerCase() === 'cancelled' || (res?.status ?? '').toLowerCase() === 'annulee';
+  const st = (res?.status ?? '').toLowerCase();
+  const isCancelled = st === 'cancelled' || st === 'annulee';
+  // Réservation déjà clôturée : ni « Terminée » ni « No-show » ni « Annuler » ne s'appliquent.
+  const isClosed = isCancelled || st === 'completed' || st === 'terminee' || st === 'no_show';
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
@@ -332,7 +336,7 @@ function ReservationDetailModal({
               </>
             ) : (
               <>
-                {!isCancelled && (
+                {!isClosed && (
                   <button onClick={() => changeStatus('cancelled', 'Annulée par l’administration')} disabled={busy}
                     className="h-10 px-4 rounded-lg text-sm font-semibold border inline-flex items-center gap-1.5 disabled:opacity-50" style={{ borderColor: '#FCA5A5', color: '#B91C1C' }}>
                     <Ban size={15} /> Annuler
@@ -343,6 +347,18 @@ function ReservationDetailModal({
                     className="h-10 px-4 rounded-lg text-sm font-semibold border inline-flex items-center gap-1.5 disabled:opacity-50" style={{ borderColor: '#86EFAC', color: '#15803D' }}>
                     <Check size={15} /> Confirmer
                   </button>
+                )}
+                {!isClosed && (
+                  <>
+                    <button onClick={() => changeStatus('completed')} disabled={busy}
+                      className="h-10 px-4 rounded-lg text-sm font-semibold border inline-flex items-center gap-1.5 disabled:opacity-50" style={{ borderColor: '#E5E7EB', color: '#374151' }}>
+                      <Check size={15} /> Terminée
+                    </button>
+                    <button onClick={() => changeStatus('no_show', 'Client absent (no-show)')} disabled={busy}
+                      className="h-10 px-4 rounded-lg text-sm font-semibold border inline-flex items-center gap-1.5 disabled:opacity-50" style={{ borderColor: '#E5E7EB', color: '#6B7280' }}>
+                      <Ban size={15} /> No-show
+                    </button>
+                  </>
                 )}
                 <button onClick={() => { setMode('reschedule'); setError(''); }} disabled={busy}
                   className="h-10 px-4 rounded-lg text-sm font-semibold text-white inline-flex items-center gap-1.5 disabled:opacity-50" style={{ backgroundColor: '#F7921E' }}>
