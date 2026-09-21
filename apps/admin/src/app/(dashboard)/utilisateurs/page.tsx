@@ -85,8 +85,8 @@ export default function UtilisateursPage() {
   const [search, setSearch] = useState('');
   const [users, setUsers] = useState<ApiUser[]>([]);
   const [loaded, setLoaded] = useState(false);
-  // Fiche à ouvrir : joueur ou partenaire selon la ligne.
-  const [card, setCard] = useState<{ userId: string; kind: 'player' | 'partner' } | null>(null);
+  // Fiche à ouvrir : joueur, partenaire ou admin selon la ligne.
+  const [card, setCard] = useState<{ userId: string; kind: 'player' | 'partner' | 'admin' } | null>(null);
 
   // Groupe effectif envoyé au backend : le sous-filtre quand on est dans
   // « Utilisateurs », sinon l'onglet principal.
@@ -244,13 +244,23 @@ export default function UtilisateursPage() {
                     <td className="px-5 py-4 text-gray-700">{u._count?.reservations ?? 0}</td>
                     <td className="px-5 py-4 text-gray-500">{fmtDate(u.created_at)}</td>
                     <td className="px-5 py-4">
-                      <button
-                        onClick={() => setCard({ userId: u.id, kind: u.is_partner ? 'partner' : 'player' })}
-                        title={u.is_partner ? 'Voir le partenaire' : 'Voir la fiche joueur'}
-                        className="inline-flex h-8 items-center gap-1 rounded-md px-2 text-sm font-semibold text-[#1E7A3A] hover:bg-emerald-50"
-                      >
-                        <Eye size={15} /> Voir
-                      </button>
+                      {(() => {
+                        const kind: 'player' | 'partner' | 'admin' = u.is_partner
+                          ? 'partner'
+                          : ADMIN_KEYS.includes((u.role ?? '').toLowerCase())
+                            ? 'admin'
+                            : 'player';
+                        const title = kind === 'partner' ? 'Voir le partenaire' : kind === 'admin' ? 'Voir l’administrateur' : 'Voir la fiche joueur';
+                        return (
+                          <button
+                            onClick={() => setCard({ userId: u.id, kind })}
+                            title={title}
+                            className="inline-flex h-8 items-center gap-1 rounded-md px-2 text-sm font-semibold text-[#1E7A3A] hover:bg-emerald-50"
+                          >
+                            <Eye size={15} /> Voir
+                          </button>
+                        );
+                      })()}
                     </td>
                   </tr>
                 );
@@ -267,6 +277,7 @@ export default function UtilisateursPage() {
 
       {card?.kind === 'player' && <PlayerCardModal userId={card.userId} onClose={() => setCard(null)} />}
       {card?.kind === 'partner' && <PartnerCardModal userId={card.userId} onClose={() => setCard(null)} />}
+      {card?.kind === 'admin' && <AdminCardModal userId={card.userId} onClose={() => setCard(null)} />}
     </>
   );
 }
@@ -471,6 +482,118 @@ function PartnerCardModal({ userId, onClose }: { userId: string; onClose: () => 
                 ))}
               </div>
             )}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+interface AdminCard {
+  id: string;
+  full_name: string | null;
+  username: string | null;
+  role: string | null;
+  created_at: string | null;
+  email: string | null;
+  last_sign_in_at: string | null;
+  invited_at: string | null;
+  confirmed: boolean;
+  status: 'active' | 'invited';
+}
+
+// Description courte du périmètre de chaque rôle back-office.
+const ROLE_PERMISSIONS: Record<string, string> = {
+  super_admin: 'Accès complet : gestion des accès, finance, terrains, ligues et paramètres.',
+  admin: 'Gestion des utilisateurs, terrains, ligues et finance.',
+  controleur: 'Validation des matchs et contrôle des données sportives.',
+  support: 'Assistance utilisateurs et suivi des demandes de support.',
+  operateur: 'Opérations courantes (consultation et édition limitée).',
+};
+
+function fmtDateTime(iso: string | null) {
+  if (!iso) return '—';
+  try {
+    return new Date(iso).toLocaleString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  } catch {
+    return '—';
+  }
+}
+
+/** Modal lecture seule d'un ADMINISTRATEUR : identité, rôle, périmètre et
+ *  statut du compte (actif / invitation en attente, dernière connexion). */
+function AdminCardModal({ userId, onClose }: { userId: string; onClose: () => void }) {
+  const [card, setCard] = useState<AdminCard | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const data = await apiFetch<AdminCard>(`/users/${userId}/admin-card`);
+        if (!cancelled) setCard(data);
+      } catch {
+        if (!cancelled) setError(true);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [userId]);
+
+  const meta = card ? roleMeta(card.role) : null;
+  const permission = card ? (ROLE_PERMISSIONS[(card.role ?? '').toLowerCase()] ?? 'Accès back-office.') : '';
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-6">
+      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
+      <div className="relative w-full max-w-lg bg-white rounded-2xl shadow-2xl p-6 max-h-[90vh] overflow-y-auto">
+        <div className="flex items-start justify-between mb-4">
+          <h2 className="text-xl font-black text-gray-900">Fiche administrateur</h2>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-700"><X size={18} /></button>
+        </div>
+
+        {loading ? (
+          <p className="py-10 text-center text-sm text-gray-400">Chargement…</p>
+        ) : error || !card ? (
+          <p className="py-10 text-center text-sm text-gray-400">Fiche indisponible.</p>
+        ) : (
+          <>
+            <div className="mb-4">
+              <div className="flex items-center gap-2">
+                <p className="text-lg font-bold text-gray-900">{card.full_name || 'Administrateur'}</p>
+                {meta && (
+                  <span className="inline-flex px-2.5 py-0.5 rounded-full text-xs font-semibold" style={{ backgroundColor: meta.bg, color: meta.color }}>
+                    {meta.label}
+                  </span>
+                )}
+              </div>
+              {card.username && <p className="text-sm text-gray-400">@{card.username}</p>}
+              {card.email && <p className="text-sm text-gray-600 mt-1">✉️ {card.email}</p>}
+            </div>
+
+            {/* Statut du compte */}
+            <div className="mb-4 flex items-center gap-2">
+              <span className="inline-flex px-2.5 py-0.5 rounded-full text-xs font-bold" style={{ backgroundColor: card.status === 'active' ? '#DCFCE7' : '#FEF3C7', color: card.status === 'active' ? '#15803D' : '#B45309' }}>
+                {card.status === 'active' ? 'Actif' : 'Invitation en attente'}
+              </span>
+              {!card.confirmed && <span className="text-xs text-gray-400">E-mail non confirmé</span>}
+            </div>
+
+            <div className="rounded-xl border border-gray-100 divide-y divide-gray-50">
+              {([
+                ['Périmètre', permission],
+                ['Dernière connexion', fmtDateTime(card.last_sign_in_at)],
+                ['Invité le', fmtDate(card.invited_at)],
+                ['Compte créé le', fmtDate(card.created_at)],
+              ] as [string, string][]).map(([label, value]) => (
+                <div key={label} className="flex items-start justify-between gap-4 px-4 py-2.5">
+                  <span className="text-sm text-gray-500 shrink-0">{label}</span>
+                  <span className="text-sm font-semibold text-gray-900 text-right">{value}</span>
+                </div>
+              ))}
+            </div>
           </>
         )}
       </div>

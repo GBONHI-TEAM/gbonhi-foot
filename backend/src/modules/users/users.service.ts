@@ -451,6 +451,50 @@ export class UsersService {
     };
   }
 
+  /**
+   * Fiche ADMINISTRATEUR pour le BO : identité, rôle et statut du compte
+   * (actif / invitation en attente, dernière connexion). Ce n'est pas un joueur.
+   */
+  async getAdminCard(id: string) {
+    const profile = await this.prisma.profile.findUnique({
+      where: { id },
+      select: { id: true, full_name: true, username: true, avatar_url: true, role: true, created_at: true },
+    });
+    if (!profile) throw new NotFoundException('Administrateur introuvable');
+
+    let email: string | null = null;
+    let lastSignInAt: string | null = null;
+    let invitedAt: string | null = null;
+    let confirmed = false;
+    try {
+      const { data, error } = await this.supabase.client.auth.admin.getUserById(id);
+      if (!error && data.user) {
+        email = data.user.email ?? null;
+        lastSignInAt = data.user.last_sign_in_at ?? null;
+        invitedAt = (data.user as { invited_at?: string }).invited_at ?? null;
+        confirmed = !!(data.user.confirmed_at || data.user.email_confirmed_at);
+      }
+    } catch {
+      /* coordonnées optionnelles si Auth indisponible */
+    }
+
+    return {
+      id: profile.id,
+      full_name: profile.full_name,
+      username: profile.username,
+      avatar_url: profile.avatar_url,
+      role: profile.role,
+      created_at: profile.created_at,
+      email,
+      last_sign_in_at: lastSignInAt,
+      invited_at: invitedAt,
+      confirmed,
+      // « active » dès qu'une première connexion a eu lieu ; sinon l'invitation
+      // n'a pas encore été acceptée.
+      status: lastSignInAt ? 'active' : 'invited',
+    };
+  }
+
   /** Génère un slug unique pour la carte publique (base : username ou nom). */
   private async generateUniqueSlug(base: string): Promise<string> {
     const root = (base || 'joueur')

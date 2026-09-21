@@ -96,6 +96,13 @@ export class UsersController {
     return this.usersService.getPartnerCard(id);
   }
 
+  /** Fiche ADMINISTRATEUR pour le BO : identité, rôle et statut du compte. */
+  @Get(':id/admin-card')
+  @Roles('SUPER_ADMIN', 'ADMIN', 'CONTROLEUR', 'SUPPORT', 'OPERATEUR')
+  adminCard(@Param('id') id: string) {
+    return this.usersService.getAdminCard(id);
+  }
+
   /** Carte d'un joueur consultable in-app par tout utilisateur connecté
    *  (coéquipier, adversaire…) — même contenu que la carte publique. */
   @Get(':id/card')
