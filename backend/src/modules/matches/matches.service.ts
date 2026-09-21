@@ -299,8 +299,8 @@ export class MatchesService {
   }
 
   /** Changement de statut avec horodatage automatique (coup d'envoi / fin). */
-  async changeStatus(id: string, dto: ChangeMatchStatusDto) {
-    await this.ensureExists(id);
+  async changeStatus(id: string, dto: ChangeMatchStatusDto, user: UserPayload) {
+    await this.assertControlAuthority(id, user);
     const data: Record<string, unknown> = { status: dto.status, updated_at: new Date() };
     if (dto.status === 'EN_COURS') data.started_at = new Date();
     if (dto.status === 'TERMINÉ' || dto.status === 'VALIDÉ') data.finished_at = new Date();
@@ -352,7 +352,8 @@ export class MatchesService {
   }
 
   /** Ajoute un événement. Un but incrémente le score (et crée la passe décisive). */
-  async addEvent(matchId: string, dto: CreateEventDto) {
+  async addEvent(matchId: string, dto: CreateEventDto, user: UserPayload) {
+    await this.assertControlAuthority(matchId, user);
     const match = await this.prisma.match.findUnique({ where: { id: matchId } });
     if (!match) throw new NotFoundException('Match introuvable');
 
@@ -403,7 +404,8 @@ export class MatchesService {
   }
 
   /** Supprime un événement (et décrémente le score si c'était un but). */
-  async removeEvent(matchId: string, eventId: string) {
+  async removeEvent(matchId: string, eventId: string, user: UserPayload) {
+    await this.assertControlAuthority(matchId, user);
     const event = await this.prisma.matchEvent.findFirst({
       where: { id: eventId, match_id: matchId },
     });
@@ -471,20 +473,40 @@ export class MatchesService {
     if (!m) throw new NotFoundException('Match introuvable');
   }
 
+  /**
+   * Contrôle d'un match : autorisé UNIQUEMENT au contrôleur désigné pour CE match
+   * (`referee_id`), ou au SUPER_ADMIN (superviseur). Tout autre compte — même un
+   * autre contrôleur non assigné — est refusé.
+   */
+  private async assertControlAuthority(matchId: string, user: UserPayload) {
+    const match = await this.prisma.match.findUnique({
+      where: { id: matchId },
+      select: { id: true, referee_id: true },
+    });
+    if (!match) throw new NotFoundException('Match introuvable');
+    if ((user.role ?? '').toUpperCase() === 'SUPER_ADMIN') return match;
+    if (match.referee_id && match.referee_id === user.id) return match;
+    throw new ForbiddenException(
+      match.referee_id
+        ? 'Seul le contrôleur désigné pour ce match peut le contrôler.'
+        : 'Aucun contrôleur n’a été désigné pour ce match. Contacte un administrateur.',
+    );
+  }
+
   /* ─── Contrôle du match (contrôleur + phase de déroulement) ─────────────
      Les colonnes `controller_name` et `phase` sont accédées en SQL brut pour
      éviter une régénération du client Prisma. */
 
-  async getControl(id: string): Promise<{ controller_name: string | null; phase: string | null; status: string }> {
-    await this.ensureExists(id);
+  async getControl(id: string, user: UserPayload): Promise<{ controller_name: string | null; phase: string | null; status: string }> {
+    await this.assertControlAuthority(id, user);
     const rows = await this.prisma.$queryRaw<
       { controller_name: string | null; phase: string | null; status: string }[]
     >`SELECT controller_name, phase, status FROM matches WHERE id = ${id}::uuid`;
     return rows[0];
   }
 
-  async setController(id: string, firstName: string, lastName: string) {
-    await this.ensureExists(id);
+  async setController(id: string, firstName: string, lastName: string, user: UserPayload) {
+    await this.assertControlAuthority(id, user);
     const name = `${firstName.trim()} ${lastName.trim()}`.trim();
     await this.prisma.$executeRaw`
       UPDATE matches SET controller_name = ${name}, updated_at = now() WHERE id = ${id}::uuid
@@ -503,8 +525,8 @@ export class MatchesService {
     TERMINE: ", status = 'TERMINÉ', finished_at = now()",
   };
 
-  async setPhase(id: string, phase: string) {
-    await this.ensureExists(id);
+  async setPhase(id: string, phase: string, user: UserPayload) {
+    await this.assertControlAuthority(id, user);
     const extra = MatchesService.PHASE_STATUS[phase];
     if (extra === undefined) throw new BadRequestException('Phase invalide');
     // `phase` est validé par whitelist, `extra` provient de branches contrôlées,
@@ -514,6 +536,6 @@ export class MatchesService {
       phase,
       id,
     );
-    return this.getControl(id);
+    return this.getControl(id, user);
   }
 }

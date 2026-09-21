@@ -93,26 +93,26 @@ export class MatchesController {
   // administrateur « simple » ou tout autre utilisateur est refusé (403).
   @Patch(':id/status')
   @Roles('SUPER_ADMIN', 'CONTROLEUR')
-  changeStatus(@Param('id') id: string, @Body() dto: ChangeMatchStatusDto) {
-    return this.matchesService.changeStatus(id, dto);
+  changeStatus(@Param('id') id: string, @Body() dto: ChangeMatchStatusDto, @CurrentUser() user: UserPayload) {
+    return this.matchesService.changeStatus(id, dto, user);
   }
 
   @Get(':id/control')
   @Roles('SUPER_ADMIN', 'CONTROLEUR')
-  getControl(@Param('id') id: string) {
-    return this.matchesService.getControl(id);
+  getControl(@Param('id') id: string, @CurrentUser() user: UserPayload) {
+    return this.matchesService.getControl(id, user);
   }
 
   @Patch(':id/controller')
   @Roles('SUPER_ADMIN', 'CONTROLEUR')
-  setController(@Param('id') id: string, @Body() dto: SetControllerDto) {
-    return this.matchesService.setController(id, dto.first_name, dto.last_name);
+  setController(@Param('id') id: string, @Body() dto: SetControllerDto, @CurrentUser() user: UserPayload) {
+    return this.matchesService.setController(id, dto.first_name, dto.last_name, user);
   }
 
   @Patch(':id/phase')
   @Roles('SUPER_ADMIN', 'CONTROLEUR')
-  setPhase(@Param('id') id: string, @Body() dto: SetPhaseDto) {
-    return this.matchesService.setPhase(id, dto.phase);
+  setPhase(@Param('id') id: string, @Body() dto: SetPhaseDto, @CurrentUser() user: UserPayload) {
+    return this.matchesService.setPhase(id, dto.phase, user);
   }
 
   @Delete(':id')
@@ -128,13 +128,13 @@ export class MatchesController {
 
   @Post(':id/events')
   @Roles('SUPER_ADMIN', 'CONTROLEUR')
-  addEvent(@Param('id') id: string, @Body() dto: CreateEventDto) {
-    return this.matchesService.addEvent(id, dto);
+  addEvent(@Param('id') id: string, @Body() dto: CreateEventDto, @CurrentUser() user: UserPayload) {
+    return this.matchesService.addEvent(id, dto, user);
   }
 
   @Delete(':id/events/:eventId')
   @Roles('SUPER_ADMIN', 'CONTROLEUR')
-  removeEvent(@Param('id') id: string, @Param('eventId') eventId: string) {
-    return this.matchesService.removeEvent(id, eventId);
+  removeEvent(@Param('id') id: string, @Param('eventId') eventId: string, @CurrentUser() user: UserPayload) {
+    return this.matchesService.removeEvent(id, eventId, user);
   }
 }

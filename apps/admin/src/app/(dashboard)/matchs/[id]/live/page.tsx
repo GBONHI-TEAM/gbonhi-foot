@@ -46,6 +46,7 @@ interface ApiMatch {
   scheduled_at: string;
   venue?: string | null;
   tournament?: { id: string; name: string } | null;
+  referee?: { id: string; full_name: string | null } | null;
   events?: MatchEvent[];
 }
 
@@ -376,9 +377,10 @@ export default function MatchLivePage() {
   const matchId = params?.id;
 
   const { user } = useCurrentUser();
+  const role = user ? normalizeAdminRole(user.role ?? undefined) : null;
   // Seuls les comptes CONTRÔLEUR (et le SUPER_ADMIN superviseur) peuvent
-  // contrôler un match et saisir un score. Aligné avec le backend.
-  const canControl = user ? ['SUPER_ADMIN', 'CONTROLEUR'].includes(normalizeAdminRole(user.role ?? undefined)) : null;
+  // contrôler un match. Aligné avec le backend.
+  const canControl = role ? ['SUPER_ADMIN', 'CONTROLEUR'].includes(role) : null;
 
   const [match, setMatch] = useState<ApiMatch | null>(null);
   const [loading, setLoading] = useState(true);
@@ -487,15 +489,23 @@ export default function MatchLivePage() {
 
   // Accès refusé aux non-contrôleurs (la sécurité réelle est côté API : les
   // endpoints de contrôle renvoient 403 ; ici on affiche un message clair).
-  if (canControl === false) {
+  // Un contrôleur qui n'est PAS le contrôleur désigné de CE match est aussi
+  // refusé (seul le SUPER_ADMIN passe partout).
+  const isDesignated = role === 'SUPER_ADMIN' || (!!user && match.referee?.id === user.id);
+  if (canControl === false || (canControl === true && !isDesignated)) {
+    const notDesignated = canControl === true;
     return (
       <>
         <Header title="Saisie score — Live" />
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-12 text-center">
           <p className="text-5xl mb-3">🔒</p>
-          <p className="text-lg font-black text-gray-900">Accès réservé aux contrôleurs</p>
+          <p className="text-lg font-black text-gray-900">
+            {notDesignated ? 'Tu n’es pas le contrôleur désigné' : 'Accès réservé aux contrôleurs'}
+          </p>
           <p className="mt-2 text-sm text-gray-500 max-w-md mx-auto">
-            Seuls les comptes « contrôleur » désignés peuvent contrôler un match et saisir un score en direct.
+            {notDesignated
+              ? `Seul le contrôleur désigné pour ce match peut le contrôler${match.referee?.full_name ? ` (${match.referee.full_name})` : ''}.`
+              : 'Seuls les comptes « contrôleur » désignés peuvent contrôler un match et saisir un score en direct.'}
           </p>
           <div className="mt-5">
             <Link href="/matchs" className="text-sm font-semibold" style={{ color: '#1E7A3A' }}>← Retour aux matchs</Link>
