@@ -107,9 +107,30 @@ export class TeamsService {
   async remove(id: string, user: UserPayload) {
     const team = await this.prisma.team.findUnique({ where: { id } });
     if (!team) throw new NotFoundException('Équipe introuvable');
-    if (team.coach_id !== user.id) throw new ForbiddenException('Seul le capitaine peut supprimer l\'équipe');
+    const isStaff = !['player', 'fan'].includes((user.role ?? '').toLowerCase());
+    if (team.coach_id !== user.id && !isStaff) {
+      throw new ForbiddenException('Seul le capitaine ou un administrateur peut supprimer l\'équipe');
+    }
 
-    await this.prisma.team.delete({ where: { id } });
+    // Intégrité sportive : une équipe présente dans un match (donc dans un
+    // historique/résultat) ne peut pas être supprimée (contrainte FK). On invite
+    // à la SUSPENDRE à la place — la suspension la retire des listes actives sans
+    // casser l'historique.
+    const matchCount = await this.prisma.match.count({
+      where: { OR: [{ home_team_id: id }, { away_team_id: id }] },
+    });
+    if (matchCount > 0) {
+      throw new BadRequestException(
+        'Cette équipe a un historique de matchs et ne peut pas être supprimée. Suspends-la à la place.',
+      );
+    }
+
+    // Sans match : suppression propre. Les membres, inscriptions et compos sont
+    // en cascade ; on retire d'abord les publications (pas de cascade).
+    await this.prisma.$transaction(async (tx) => {
+      await tx.communityPost.deleteMany({ where: { team_id: id } });
+      await tx.team.delete({ where: { id } });
+    });
     return { message: 'Équipe supprimée' };
   }
 

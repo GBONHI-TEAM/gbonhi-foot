@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { MoreVertical } from 'lucide-react';
+import { MoreVertical, Eye, BarChart3, CalendarDays, Pencil, Pause, Play, Trash2 } from 'lucide-react';
 import { Header } from '../../../components/layout/header';
 import { PlayerProfileDrawer } from '../../../components/players/player-profile-drawer';
 import { apiFetch } from '../../../lib/api';
@@ -416,6 +416,37 @@ export default function EquipesPage() {
   const [selectedPlayer, setSelectedPlayer] = useState<TeamPlayer | null>(null);
   const [teams, setTeams] = useState<Team[]>([]);
   const [loaded, setLoaded] = useState(false);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [editTeam, setEditTeam] = useState<Team | null>(null);
+
+  async function toggleSuspend(team: Team) {
+    setOpenMenu(null);
+    if (busyId) return;
+    const next = team.status === 'ACTIF' ? 'suspended' : 'active';
+    setBusyId(team.id);
+    try {
+      await apiFetch(`/teams/${team.id}`, { method: 'PATCH', body: JSON.stringify({ status: next }) });
+      await reload();
+    } catch (e) {
+      alert(`Action impossible. ${e instanceof Error ? e.message : ''}`);
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function deleteTeam(team: Team) {
+    setOpenMenu(null);
+    if (!window.confirm(`Supprimer définitivement l'équipe « ${team.name} » ? Cette action est irréversible.`)) return;
+    setBusyId(team.id);
+    try {
+      await apiFetch(`/teams/${team.id}`, { method: 'DELETE' });
+      await reload();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Suppression impossible.');
+    } finally {
+      setBusyId(null);
+    }
+  }
 
   async function reload() {
     try {
@@ -532,17 +563,49 @@ export default function EquipesPage() {
                       <MoreVertical size={16} />
                     </button>
                     {openMenu === team.id && (
-                      <div className="absolute right-0 top-8 z-50 w-48 bg-white rounded-xl shadow-xl border border-gray-100 py-1.5" onMouseLeave={() => setOpenMenu(null)}>
-                        {MENU_ACTIONS.map((a) => (
-                          <button
-                            key={a.label}
-                            onClick={() => openTeam(team, a.tab)}
-                            className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 transition"
-                            style={{ color: a.color }}
-                          >
-                            {a.label}
-                          </button>
-                        ))}
+                      <div className="absolute right-0 top-8 z-50 w-52 bg-white rounded-xl shadow-xl border border-gray-100 py-1.5" onMouseLeave={() => setOpenMenu(null)}>
+                        {MENU_ACTIONS.map((a, i) => {
+                          const Icon = i === 0 ? Eye : i === 1 ? BarChart3 : CalendarDays;
+                          return (
+                            <button
+                              key={a.label}
+                              onClick={() => openTeam(team, a.tab)}
+                              className="w-full flex items-center gap-2.5 px-4 py-2 text-sm hover:bg-gray-50 transition"
+                              style={{ color: a.color }}
+                            >
+                              <Icon size={15} className="text-gray-400" /> {a.label}
+                            </button>
+                          );
+                        })}
+
+                        <div className="my-1.5 border-t border-gray-100" />
+
+                        <button
+                          onClick={() => { setEditTeam(team); setOpenMenu(null); }}
+                          className="w-full flex items-center gap-2.5 px-4 py-2 text-sm text-gray-800 hover:bg-gray-50 transition"
+                        >
+                          <Pencil size={15} className="text-gray-400" /> Modifier
+                        </button>
+                        <button
+                          onClick={() => toggleSuspend(team)}
+                          disabled={busyId === team.id}
+                          className="w-full flex items-center gap-2.5 px-4 py-2 text-sm text-gray-800 hover:bg-gray-50 transition disabled:opacity-50"
+                        >
+                          {team.status === 'ACTIF'
+                            ? <><Pause size={15} className="text-gray-400" /> Suspendre</>
+                            : <><Play size={15} className="text-gray-400" /> Réactiver</>}
+                        </button>
+
+                        <div className="my-1.5 border-t border-gray-100" />
+
+                        <button
+                          onClick={() => deleteTeam(team)}
+                          disabled={busyId === team.id}
+                          className="w-full flex items-center gap-2.5 px-4 py-2 text-sm hover:bg-red-50 transition disabled:opacity-50"
+                          style={{ color: '#DC2626' }}
+                        >
+                          <Trash2 size={15} /> Supprimer
+                        </button>
                       </div>
                     )}
                   </div>
@@ -563,6 +626,67 @@ export default function EquipesPage() {
           </tbody>
         </table>
       </div>
+
+      {editTeam && (
+        <EditTeamModal
+          team={editTeam}
+          onClose={() => setEditTeam(null)}
+          onSaved={() => { setEditTeam(null); reload(); }}
+        />
+      )}
     </>
+  );
+}
+
+/** Modal admin : modifier une équipe (nom, ville). */
+function EditTeamModal({ team, onClose, onSaved }: { team: Team; onClose: () => void; onSaved: () => void }) {
+  const [name, setName] = useState(team.name);
+  const [city, setCity] = useState(team.city && team.city !== '—' ? team.city : '');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function save() {
+    if (name.trim().length < 2) { setError('Le nom doit contenir au moins 2 caractères.'); return; }
+    setSaving(true);
+    setError(null);
+    try {
+      await apiFetch(`/teams/${team.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ name: name.trim(), city: city.trim() || undefined }),
+      });
+      onSaved();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Enregistrement impossible.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const inputCls = 'w-full h-11 px-4 rounded-lg border border-gray-200 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:border-primary';
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-6">
+      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
+      <div className="relative w-full max-w-md bg-white rounded-2xl shadow-2xl p-6">
+        <h2 className="text-xl font-black text-gray-900 mb-5">Modifier l&apos;équipe</h2>
+        <div className="space-y-4">
+          <div>
+            <label className="block text-[13px] font-semibold text-gray-800 mb-2">Nom de l&apos;équipe</label>
+            <input className={inputCls} value={name} onChange={(e) => setName(e.target.value)} placeholder="Nom de l'équipe" />
+          </div>
+          <div>
+            <label className="block text-[13px] font-semibold text-gray-800 mb-2">Ville</label>
+            <input className={inputCls} value={city} onChange={(e) => setCity(e.target.value)} placeholder="Ex : Abidjan" />
+          </div>
+        </div>
+        {error && <p className="mt-4 text-sm font-medium text-red-600">{error}</p>}
+        <div className="flex justify-end gap-3 mt-6">
+          <button onClick={onClose} className="px-5 h-11 rounded-lg text-sm font-semibold text-gray-700 border border-gray-200 hover:bg-gray-50 transition">Annuler</button>
+          <button onClick={save} disabled={saving} className="px-5 h-11 rounded-lg text-sm font-semibold text-white transition hover:opacity-90 disabled:opacity-60" style={{ backgroundColor: '#1E7A3A' }}>
+            {saving ? 'Enregistrement…' : 'Enregistrer'}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
