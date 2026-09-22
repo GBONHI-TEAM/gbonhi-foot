@@ -162,14 +162,20 @@ function AuthGate() {
       // Non connecté. Si une vérification OTP était en cours (l'app a pu être
       // fermée par le système pendant qu'on allait chercher le code en boîte
       // mail), on rouvre l'écran de code au lieu de repartir de la connexion.
+      // IMPORTANT : restauration « one-shot » — on efface aussitôt la copie EN
+      // MÉMOIRE, sinon l'AuthGate re-forcerait l'écran OTP en boucle et
+      // l'utilisateur ne pourrait plus revenir (le vrai code reste passé en
+      // paramètres de route ; SecureStore n'est pas touché ici).
       if (pendingOtp && segments[1] !== 'otp') {
+        const otp = pendingOtp;
+        setPendingOtp(null);
         router.replace({
           pathname: '/(auth)/otp',
           params: {
-            ...(pendingOtp.email ? { email: pendingOtp.email } : {}),
-            ...(pendingOtp.phone ? { phone: pendingOtp.phone } : {}),
-            channel: pendingOtp.channel,
-            ...(pendingOtp.purpose ? { purpose: pendingOtp.purpose } : {}),
+            ...(otp.email ? { email: otp.email } : {}),
+            ...(otp.phone ? { phone: otp.phone } : {}),
+            channel: otp.channel,
+            ...(otp.purpose ? { purpose: otp.purpose } : {}),
           },
         });
         return;
