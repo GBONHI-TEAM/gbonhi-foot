@@ -21,6 +21,9 @@ const up = (value?: string | null) => (value ?? '').toUpperCase();
 const confirmed = (value?: string | null) => /CONFIRM|VALID|COMPLET/.test(up(value));
 const cancelled = (value?: string | null) => /CANCEL|ANNUL|REFUS/.test(up(value));
 const fcfa = (value: number) => `${value.toLocaleString('fr-FR')} F`;
+// Formats explicites pour les exports (PDF/XLSX) : montants en FCFA, taux en %.
+const money = (value: number) => `${(value ?? 0).toLocaleString('fr-FR')} FCFA`;
+const pct = (part: number, whole: number) => (whole > 0 ? `${Math.round((part / whole) * 100)} %` : '—');
 
 function periodStart(filter: string) {
   const date = new Date();
@@ -59,7 +62,47 @@ export default function KpiPage() {
   const nb = (value: number) => loaded ? value.toLocaleString('fr-FR') : '—';
   const title = tab === 'acquisition' ? 'KPI — Acquisition & Fidélisation' : tab === 'ligues' ? 'KPI — Ligues' : 'KPI — Réservations';
   const period = searchParams.get('from') || searchParams.get('to') ? `${searchParams.get('from') ?? 'Début'} au ${searchParams.get('to') ?? 'aujourd’hui'}` : filter;
-  const exportRows: Array<[string, ExportCell]> = tab === 'acquisition' ? [['Nouveaux inscrits', data.newUsers], ['Fiches joueurs', data.profiles], ['Sessions Ligues', journeys?.sessions.leagues ?? 0], ['Sessions Réservation', journeys?.sessions.reservation ?? 0]] : tab === 'ligues' ? [['Ligues actives', data.activeLigues], ['Équipes inscrites', data.teamsInLigues], ['Matchs joués', data.matchesPlayed], ['Revenus inscriptions', data.leagueFees]] : [['Réservations', data.reservations], ['Confirmées', data.paid], ['Annulées', data.cancelled], ['Revenus', data.revenue], ['Commission', data.commission]];
+  // Contenu détaillé et explicite des exports (PDF & XLSX), propre à chaque onglet.
+  const exportRows: Array<[string, ExportCell]> =
+    tab === 'acquisition'
+      ? [
+          ['Nouveaux inscrits sur la période', data.newUsers],
+          ['Comptes avec fiche joueur complétée', data.profiles],
+          ['Taux de complétion des fiches', pct(data.profiles, data.newUsers)],
+          ['Utilisateurs (total plateforme)', users.length],
+          ['Sessions totales', journeys?.sessions.total ?? 0],
+          ['Sessions en mode Ligues', journeys?.sessions.leagues ?? 0],
+          ['Sessions en mode Réservation', journeys?.sessions.reservation ?? 0],
+          ['Parcours — Inscrits', journeys?.funnel.registered ?? 0],
+          ['Parcours — Fiche joueur complétée', journeys?.funnel.playerProfiles ?? 0],
+          ['Parcours — Membre d’une équipe', journeys?.funnel.inTeam ?? 0],
+          ['Parcours — Inscrit en ligue', journeys?.funnel.inLeague ?? 0],
+          ['Parcours — A effectué une réservation', journeys?.funnel.madeReservation ?? 0],
+        ]
+      : tab === 'ligues'
+      ? [
+          ['Ligues actives', data.activeLigues],
+          ['Équipes inscrites (toutes ligues)', data.teamsInLigues],
+          ['Moyenne d’équipes par ligue active', data.activeLigues ? (data.teamsInLigues / data.activeLigues).toFixed(1) : '—'],
+          ['Matchs joués sur la période', data.matchesPlayed],
+          ['Fiches joueurs créées', data.profiles],
+          ['Revenus des inscriptions (estimé)', money(data.leagueFees)],
+        ]
+      : [
+          ['Total des réservations (période)', data.reservations],
+          ['Réservations confirmées', data.paid],
+          ['Réservations annulées', data.cancelled],
+          ['Taux de confirmation', pct(data.paid, data.reservations)],
+          ['Taux d’annulation', pct(data.cancelled, data.reservations)],
+          ['Revenus générés (confirmées)', money(data.revenue)],
+          ['Commission GBONHI (10%)', money(data.commission)],
+          ['Reversé aux partenaires', money(Math.max(0, data.revenue - data.commission))],
+          ['Panier moyen par réservation', data.paid ? money(Math.round(data.revenue / data.paid)) : '—'],
+          ['Terrains actifs', data.activeTerrains],
+          ...data.topTerrains.map(
+            (t, i) => [`Top terrain #${i + 1}`, `${t.name} — ${t.count} rés. — ${money(t.revenue)}`] as [string, ExportCell],
+          ),
+        ];
   const fileName = `gbonhi-foot-kpi-${tab}-${new Date().toISOString().slice(0, 10)}`;
 
   return <>

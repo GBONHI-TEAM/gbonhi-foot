@@ -24,7 +24,10 @@
           "NSAllowsLocalNetworking": true
         },
         "ITSAppUsesNonExemptEncryption": false,
-        "LSApplicationQueriesSchemes": ["whatsapp"]
+        "LSApplicationQueriesSchemes": [
+          "whatsapp",
+          "whatsapp"
+        ]
       }
     },
     "android": {
@@ -36,6 +39,11 @@
       "versionCode": 1,
       "googleServicesFile": "./google-services.json",
       "permissions": [
+        "android.permission.POST_NOTIFICATIONS",
+        "android.permission.CAMERA",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.RECORD_AUDIO",
         "android.permission.POST_NOTIFICATIONS",
         "android.permission.CAMERA",
         "android.permission.READ_EXTERNAL_STORAGE",
@@ -95,6 +103,12 @@
         "projectId": "fc79255f-9744-4303-9ff2-8bd3a66244e1"
       }
     },
-    "owner": "genius21"
+    "owner": "genius21",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/fc79255f-9744-4303-9ff2-8bd3a66244e1"
+    }
   }
 }
