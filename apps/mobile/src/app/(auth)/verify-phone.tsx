@@ -6,7 +6,6 @@ import { apiClient } from '../../lib/api';
 import { useAuthStore } from '../../store/auth.store';
 import { KB_DONE_ID } from '../../components/ui/keyboard-done-bar';
 import { setPendingOtp, clearPendingOtp, clearPendingDeepRoute } from '../../lib/pending-flow';
-import { frenchAuthError } from '../../lib/auth-errors';
 
 const CIV_PHONE = /^\d{8,10}$/;
 
@@ -99,19 +98,23 @@ export default function VerifyPhoneScreen() {
       // check best-effort : on continue si le backend est injoignable.
     }
 
-    // Envoi du code par e-mail (canal temporaire en attendant le SMS Orange).
-    const { error } = await supabase.auth.signInWithOtp({ email, options: { shouldCreateUser: false } });
-    setLoading(false);
-    if (error) {
-      Alert.alert('Envoi du code impossible', frenchAuthError(error.message));
+    // Envoi du code par SMS (Orange) — vérification du numéro.
+    try {
+      await apiClient.post('/api/v1/auth/phone/request-otp', { phone: full, purpose: 'verify-phone' });
+    } catch (e: unknown) {
+      setLoading(false);
+      const raw = (e as { response?: { data?: { message?: string | string[] } } }).response?.data?.message;
+      const msg = Array.isArray(raw) ? raw.join('\n') : raw ?? 'Réessaie dans quelques instants.';
+      Alert.alert('Envoi du code impossible', msg);
       return;
     }
+    setLoading(false);
     Alert.alert(
-      'Code envoyé par e-mail',
-      'La vérification par SMS arrive bientôt. Pour l’instant, saisis le code envoyé à ton adresse e-mail.',
+      'Code envoyé par SMS',
+      `Saisis le code à 6 chiffres envoyé au ${full} par SMS.`,
       [{ text: 'OK', onPress: async () => {
-        await setPendingOtp({ email, phone: full, channel: 'email', purpose: 'verify-phone' });
-        router.push({ pathname: '/(auth)/otp', params: { email, phone: full, channel: 'email', purpose: 'verify-phone' } });
+        await setPendingOtp({ email, phone: full, channel: 'sms', purpose: 'verify-phone' });
+        router.push({ pathname: '/(auth)/otp', params: { email, phone: full, channel: 'sms', purpose: 'verify-phone' } });
       } }],
     );
   }

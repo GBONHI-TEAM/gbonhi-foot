@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { supabase } from '../../lib/supabase';
+import { apiClient } from '../../lib/api';
 import { useAuthStore } from '../../store/auth.store';
 import { setPendingOtp, clearPendingOtp } from '../../lib/pending-flow';
 import { frenchAuthError } from '../../lib/auth-errors';
@@ -42,9 +43,13 @@ export default function OtpScreen() {
   const email = params.email;
   const phone = params.phone;
   const channel: 'email' | 'sms' = params.channel === 'sms' ? 'sms' : 'email';
-  // « verify-phone » : vérification du numéro d'un compte OAuth (Apple/Google).
+  // « verify-phone » : vérification du numéro via SMS Orange (code maison à 6
+  // chiffres, envoyé/vérifié par NOTRE API). Concerne les comptes OAuth sans
+  // numéro (et tout ajout/vérification de numéro).
   const isVerifyPhone = params.purpose === 'verify-phone';
-  const length = channel === 'sms' ? 4 : 6;
+  const length = isVerifyPhone ? 6 : channel === 'sms' ? 4 : 6;
+  // Disposition à 6 cases (e-mail OU vérification SMS Orange) vs 4 cases (SMS Supabase).
+  const sixBox = isVerifyPhone || channel === 'email';
 
   const [digits, setDigits] = useState<string[]>(Array(length).fill(''));
   const [loading, setLoading] = useState(false);
@@ -111,6 +116,29 @@ export default function OtpScreen() {
       return;
     }
     setLoading(true);
+
+    // Vérification du NUMÉRO via SMS Orange : c'est NOTRE API qui valide le code
+    // (l'utilisateur est déjà connecté). On enregistre ensuite le numéro validé.
+    if (isVerifyPhone) {
+      try {
+        await apiClient.post('/api/v1/auth/phone/verify-otp', { phone: phone ?? '', code, purpose: 'verify-phone' });
+      } catch (e: unknown) {
+        setLoading(false);
+        const raw = (e as { response?: { data?: { message?: string | string[] } } }).response?.data?.message;
+        Alert.alert('Code invalide', Array.isArray(raw) ? raw.join('\n') : raw ?? 'Code incorrect.');
+        return;
+      }
+      if (phone) {
+        await supabase.auth.updateUser({ data: { phone } });
+        const { data: sess } = await supabase.auth.getSession();
+        useAuthStore.getState().setSession(sess.session);
+      }
+      await clearPendingOtp();
+      setLoading(false);
+      return;
+    }
+
+    // Inscription / connexion : OTP e-mail Supabase (inchangé).
     const { error } =
       channel === 'sms'
         ? await supabase.auth.verifyOtp({ phone: phone ?? '', token: code, type: 'sms' })
@@ -120,14 +148,6 @@ export default function OtpScreen() {
       Alert.alert('Code invalide', frenchAuthError(error.message));
       return;
     }
-    // Vérification d'un numéro (compte OAuth) : on enregistre le numéro validé
-    // AVANT que le layout ne réévalue l'accès, pour éviter de reboucler.
-    if (isVerifyPhone && phone) {
-      await supabase.auth.updateUser({ data: { phone } });
-      const { data: sess } = await supabase.auth.getSession();
-      useAuthStore.getState().setSession(sess.session);
-    }
-    // Vérification réussie → on efface le contexte OTP persistant.
     await clearPendingOtp();
     setLoading(false);
     // Succès → redirection auto (onAuthStateChange / AuthGate dans le root layout).
@@ -135,11 +155,21 @@ export default function OtpScreen() {
 
   async function handleResend() {
     if (countdown > 0 || resending) return;
-    if (channel === 'sms' && !phone) { Alert.alert('Erreur', 'Numéro manquant, reviens en arrière.'); return; }
-    if (channel === 'email' && !email) { Alert.alert('Erreur', 'Email manquant, reviens en arrière.'); return; }
+    if ((isVerifyPhone || channel === 'sms') && !phone) { Alert.alert('Erreur', 'Numéro manquant, reviens en arrière.'); return; }
+    if (!isVerifyPhone && channel === 'email' && !email) { Alert.alert('Erreur', 'Email manquant, reviens en arrière.'); return; }
 
     setResending(true);
     try {
+      // Vérification du numéro : renvoi du SMS via NOTRE API (Orange).
+      if (isVerifyPhone) {
+        await apiClient.post('/api/v1/auth/phone/request-otp', { phone: phone as string, purpose: 'verify-phone' });
+        setDigits(Array(length).fill(''));
+        inputRefs.current[0]?.focus();
+        setCountdown(60);
+        Alert.alert('Code renvoyé', `Un nouveau code a été envoyé au ${formatPhone(phone)} par SMS.`);
+        return;
+      }
+
       const { error } =
         channel === 'sms'
           ? await supabase.auth.signInWithOtp({ phone: phone as string })
@@ -159,7 +189,8 @@ export default function OtpScreen() {
           : `Un nouveau code a été envoyé à ${email}.`,
       );
     } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : 'Vérifie ta connexion et réessaie.';
+      const raw = (e as { response?: { data?: { message?: string | string[] } } }).response?.data?.message;
+      const msg = Array.isArray(raw) ? raw.join('\n') : raw ?? (e instanceof Error ? e.message : 'Vérifie ta connexion et réessaie.');
       Alert.alert('Renvoi impossible', msg);
     } finally {
       setResending(false);
@@ -181,9 +212,9 @@ export default function OtpScreen() {
         >
           <ImageBackground
             source={
-              channel === 'sms'
-                ? require('../../../assets/images/otp-bg.png')
-                : require('../../../assets/images/otp-bg-email.png')
+              sixBox
+                ? require('../../../assets/images/otp-bg-email.png')
+                : require('../../../assets/images/otp-bg.png')
             }
             resizeMode="cover"
             style={{ width: '100%', aspectRatio: 754 / 1628 }}
@@ -207,15 +238,15 @@ export default function OtpScreen() {
 
             {/* Sous-titre dynamique — vrai destinataire */}
             <View style={{ position: 'absolute', top: '35.9%', left: '5%', right: '5%', alignItems: 'center' }}>
-              <Text style={{ color: 'rgba(255,255,255,0.55)', fontSize: channel === 'sms' ? 16 : 15 }}>
-                Code envoyé {channel === 'sms' ? 'au ' : 'à '}
+              <Text style={{ color: 'rgba(255,255,255,0.55)', fontSize: 15 }}>
+                Code envoyé {isVerifyPhone || channel === 'sms' ? 'au ' : 'à '}
                 <Text style={{ color: '#FFFFFF', fontWeight: '700' }}>
-                  {channel === 'sms' ? formatPhone(phone) : email}
+                  {isVerifyPhone || channel === 'sms' ? formatPhone(phone) : email}
                 </Text>
               </Text>
             </View>
 
-            {channel === 'sms' ? (
+            {!sixBox ? (
               /* 4 cases transparentes sur les cases gravées de la maquette */
               digits.map((d, i) => (
                 <TextInput
