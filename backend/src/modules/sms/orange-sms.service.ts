@@ -27,6 +27,30 @@ export class OrangeSmsService {
     return !!this.senderAddress && !!this.authorizationHeader;
   }
 
+  /** Diagnostic (booléens uniquement, aucun secret) : quelles variables le
+   *  backend voit-il réellement ? Utile pour vérifier la config Render. */
+  diagnostics(): {
+    configured: boolean;
+    hasAuthorization: boolean;
+    hasClientId: boolean;
+    hasClientSecret: boolean;
+    hasSenderAddress: boolean;
+    hasSenderName: boolean;
+    tokenUrl: string;
+    baseUrl: string;
+  } {
+    return {
+      configured: this.configured,
+      hasAuthorization: !!(this.config.get<string>('ORANGE_SMS_AUTHORIZATION') ?? '').trim(),
+      hasClientId: !!(this.config.get<string>('ORANGE_SMS_CLIENT_ID') ?? '').trim(),
+      hasClientSecret: !!(this.config.get<string>('ORANGE_SMS_CLIENT_SECRET') ?? '').trim(),
+      hasSenderAddress: !!this.senderAddress,
+      hasSenderName: !!this.senderName,
+      tokenUrl: this.tokenUrl,
+      baseUrl: this.baseUrl,
+    };
+  }
+
   private get tokenUrl(): string {
     return this.config.get<string>('ORANGE_SMS_TOKEN_URL') ?? 'https://api.orange.com/oauth/v3/token';
   }

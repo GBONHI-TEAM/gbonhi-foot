@@ -1,4 +1,4 @@
-import { Controller, Post, Body, UseGuards } from '@nestjs/common';
+import { Controller, Post, Get, Body, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { IsString, IsOptional, IsIn, IsEmail, MinLength, MaxLength } from 'class-validator';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -133,6 +133,16 @@ export class AuthController {
       email: dto.email,
       fullName: dto.fullName,
     });
+  }
+
+  // ── Diagnostic de la config SMS (staff) : quelles variables sont présentes ──
+  @Get('sms/status')
+  @ApiBearerAuth()
+  @UseGuards(SupabaseAuthGuard, RolesGuard)
+  @Roles('SUPER_ADMIN', 'ADMIN')
+  @ApiOperation({ summary: 'État de la configuration Orange SMS (booléens, sans secrets)' })
+  smsStatus() {
+    return this.orangeSms.diagnostics();
   }
 
   // ── Test d'envoi SMS (staff uniquement) : valide la config Orange ───────────
