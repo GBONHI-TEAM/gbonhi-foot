@@ -84,9 +84,20 @@ function readableOn(hex?: string | null): string {
   return lum > 0.6 ? '#0D1F0D' : '#FFFFFF';
 }
 
+/** Marque à afficher sur le maillot : le numéro s'il existe, sinon l'initiale
+ *  du joueur (pour ne jamais laisser un maillot vide). */
+function jerseyLabel(p: LineupPlayer): string {
+  if (p.number != null && String(p.number).trim() !== '') return String(p.number);
+  const short = shortName(p.name).trim();
+  return short ? short.charAt(0).toUpperCase() : '•';
+}
+
 /** Jeton joueur : maillot à numéro (style diffusion TV) + nom. */
 function PlayerToken({ p, onPress, jersey, jerseyText }: { p: LineupPlayer; onPress: (userId: string) => void; jersey: string; jerseyText: string }) {
   const shirtBorder = jerseyText === '#FFFFFF' ? 'rgba(255,255,255,0.30)' : 'rgba(0,0,0,0.30)';
+  // Contour opposé à la couleur du texte : le numéro reste lisible sur TOUTE
+  // couleur de maillot (clair, foncé ou intermédiaire).
+  const outline = jerseyText === '#FFFFFF' ? 'rgba(0,0,0,0.55)' : 'rgba(255,255,255,0.65)';
   return (
     <Pressable
       onPress={() => p.user_id && onPress(p.user_id)}
@@ -99,7 +110,7 @@ function PlayerToken({ p, onPress, jersey, jerseyText }: { p: LineupPlayer; onPr
         {/* Épaules du maillot */}
         <View style={{ position: 'absolute', top: 6, left: -4, width: 12, height: 12, borderRadius: 3, backgroundColor: jersey, borderWidth: 1, borderColor: shirtBorder, transform: [{ rotate: '45deg' }] }} />
         <View style={{ position: 'absolute', top: 6, right: -4, width: 12, height: 12, borderRadius: 3, backgroundColor: jersey, borderWidth: 1, borderColor: shirtBorder, transform: [{ rotate: '45deg' }] }} />
-        <Text style={{ color: jerseyText, fontWeight: '800', fontSize: 17 }}>{p.number ?? ''}</Text>
+        <Text style={{ color: jerseyText, fontWeight: '800', fontSize: 17, textShadowColor: outline, textShadowRadius: 2, textShadowOffset: { width: 0, height: 0 } }}>{jerseyLabel(p)}</Text>
       </View>
       {/* Nom */}
       <View style={{ marginTop: 6, backgroundColor: 'rgba(0,0,0,0.4)', borderRadius: 6, paddingHorizontal: 6, paddingVertical: 1, maxWidth: 76 }}>
