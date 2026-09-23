@@ -72,11 +72,22 @@ export class PhoneOtpService {
       throw new HttpException('Patiente quelques secondes avant de redemander un code.', HttpStatus.TOO_MANY_REQUESTS);
     }
 
+    // Connexion par téléphone : on exige qu'un compte existe (et on mémorise son
+    // e-mail pour ouvrir la session à la vérification). Évite d'envoyer un SMS à
+    // un numéro sans compte.
+    let email = input.email?.trim().toLowerCase() || null;
+    if (purpose === 'login') {
+      email = email ?? (await this.resolveEmailByPhone(phone));
+      if (!email) {
+        throw new BadRequestException('Aucun compte associé à ce numéro. Inscris-toi d’abord.');
+      }
+    }
+
     const code = String(randomInt(0, 1_000_000)).padStart(6, '0');
     await this.prisma.phoneOtp.create({
       data: {
         phone,
-        email: input.email?.trim().toLowerCase() || null,
+        email,
         purpose,
         code_hash: this.hash(phone, code),
         expires_at: new Date(Date.now() + OTP_TTL_MS),
@@ -134,9 +145,12 @@ export class PhoneOtpService {
     }
 
     // Inscription / connexion : l'e-mail reste l'identité du compte.
-    const email = (input.email ?? row.email ?? '').trim().toLowerCase();
+    let email = (input.email ?? row.email ?? '').trim().toLowerCase();
+    if (!email && purpose === 'login') {
+      email = (await this.resolveEmailByPhone(phone)) ?? '';
+    }
     if (!email) {
-      throw new BadRequestException('E-mail requis pour établir la session.');
+      throw new BadRequestException('Aucun compte associé. Inscris-toi d’abord.');
     }
     const session = await this.issueSession(email, {
       phone,
@@ -189,5 +203,15 @@ export class PhoneOtpService {
       SELECT id::text AS id FROM auth.users WHERE lower(email) = ${email} LIMIT 1
     `;
     return rows[0]?.id ?? null;
+  }
+
+  /** Retrouve l'e-mail (identité du compte) associé à un numéro vérifié. */
+  private async resolveEmailByPhone(phone: string): Promise<string | null> {
+    const rows = await this.prisma.$queryRaw<{ email: string | null }[]>`
+      SELECT email FROM auth.users
+      WHERE raw_user_meta_data->>'phone' = ${phone}
+      ORDER BY created_at DESC LIMIT 1
+    `;
+    return rows[0]?.email?.toLowerCase() ?? null;
   }
 }

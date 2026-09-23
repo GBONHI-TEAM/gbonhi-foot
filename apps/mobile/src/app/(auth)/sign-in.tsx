@@ -12,10 +12,8 @@ import {
   Alert,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { supabase } from '../../lib/supabase';
 import { apiClient } from '../../lib/api';
 import { setPendingOtp } from '../../lib/pending-flow';
-import { frenchAuthError } from '../../lib/auth-errors';
 import { signInWithGoogle } from '../../lib/auth-google';
 import { signInWithApple, isAppleCancel } from '../../lib/auth-apple';
 
@@ -68,33 +66,18 @@ export default function SignInScreen() {
     setLoading(true);
     const phone = `+225${telephone.replace(/\s/g, '')}`;
 
-    // Connexion via le canal e-mail (SMS non encore configuré) :
-    // 1) retrouver l'email associé au numéro, 2) envoyer le code e-mail.
+    // Connexion par téléphone : envoi du code par SMS (Orange). Le backend
+    // vérifie qu'un compte existe pour ce numéro avant d'envoyer le SMS.
     try {
-      const { data } = await apiClient.post<{ email: string | null }>(
-        '/api/v1/auth/resolve-login',
-        { phone },
-      );
-      if (!data.email) {
-        setLoading(false);
-        Alert.alert('Aucun compte', "Aucun compte associé à ce numéro. Inscris-toi d'abord.");
-        return;
-      }
-      const { error } = await supabase.auth.signInWithOtp({
-        email: data.email,
-        options: { shouldCreateUser: false },
-      });
+      await apiClient.post('/api/v1/auth/phone/request-otp', { phone, purpose: 'login' });
       setLoading(false);
-      if (error) {
-        Alert.alert('Connexion impossible', frenchAuthError(error.message));
-        return;
-      }
-      await setPendingOtp({ email: data.email, phone, channel: 'email' });
-      router.push({ pathname: '/(auth)/otp', params: { email: data.email, phone, channel: 'email' } });
+      await setPendingOtp({ phone, channel: 'sms', purpose: 'login' });
+      router.push({ pathname: '/(auth)/otp', params: { phone, channel: 'sms', purpose: 'login' } });
     } catch (e: unknown) {
       setLoading(false);
-      const msg = e instanceof Error ? e.message : 'Erreur inconnue';
-      Alert.alert('Connexion impossible', `Impossible de contacter le serveur (${msg}). Vérifie que le backend est démarré.`);
+      const raw = (e as { response?: { data?: { message?: string | string[] } } }).response?.data?.message;
+      const msg = Array.isArray(raw) ? raw.join('\n') : raw ?? (e instanceof Error ? e.message : 'Réessaie dans un instant.');
+      Alert.alert('Connexion impossible', msg);
     }
   }
 

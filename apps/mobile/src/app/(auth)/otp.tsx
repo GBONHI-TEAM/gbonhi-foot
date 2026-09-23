@@ -47,9 +47,12 @@ export default function OtpScreen() {
   // chiffres, envoyé/vérifié par NOTRE API). Concerne les comptes OAuth sans
   // numéro (et tout ajout/vérification de numéro).
   const isVerifyPhone = params.purpose === 'verify-phone';
-  const length = isVerifyPhone ? 6 : channel === 'sms' ? 4 : 6;
-  // Disposition à 6 cases (e-mail OU vérification SMS Orange) vs 4 cases (SMS Supabase).
-  const sixBox = isVerifyPhone || channel === 'email';
+  const isSmsLogin = params.purpose === 'login'; // connexion par téléphone via SMS Orange
+  // Code SMS « maison » (6 chiffres, envoyé/vérifié par NOTRE API) : vérif. numéro OU connexion.
+  const smsOtp = isVerifyPhone || isSmsLogin;
+  const length = smsOtp ? 6 : channel === 'sms' ? 4 : 6;
+  // Disposition à 6 cases (e-mail OU SMS Orange) vs 4 cases (SMS Supabase).
+  const sixBox = smsOtp || channel === 'email';
 
   const [digits, setDigits] = useState<string[]>(Array(length).fill(''));
   const [loading, setLoading] = useState(false);
@@ -117,21 +120,42 @@ export default function OtpScreen() {
     }
     setLoading(true);
 
-    // Vérification du NUMÉRO via SMS Orange : c'est NOTRE API qui valide le code
-    // (l'utilisateur est déjà connecté). On enregistre ensuite le numéro validé.
-    if (isVerifyPhone) {
+    // Code SMS Orange (vérifié par NOTRE API) : vérification du numéro OU
+    // connexion par téléphone.
+    if (smsOtp) {
+      let tokenHash: string | undefined;
       try {
-        await apiClient.post('/api/v1/auth/phone/verify-otp', { phone: phone ?? '', code, purpose: 'verify-phone' });
+        const resp = await apiClient.post<{ verified: boolean; tokenHash?: string }>(
+          '/api/v1/auth/phone/verify-otp',
+          { phone: phone ?? '', code, purpose: isVerifyPhone ? 'verify-phone' : 'login' },
+        );
+        tokenHash = resp.data?.tokenHash;
       } catch (e: unknown) {
         setLoading(false);
         const raw = (e as { response?: { data?: { message?: string | string[] } } }).response?.data?.message;
         Alert.alert('Code invalide', Array.isArray(raw) ? raw.join('\n') : raw ?? 'Code incorrect.');
         return;
       }
-      if (phone) {
-        await supabase.auth.updateUser({ data: { phone } });
-        const { data: sess } = await supabase.auth.getSession();
-        useAuthStore.getState().setSession(sess.session);
+      if (isVerifyPhone) {
+        // L'utilisateur est déjà connecté : on enregistre le numéro validé.
+        if (phone) {
+          await supabase.auth.updateUser({ data: { phone } });
+          const { data: sess } = await supabase.auth.getSession();
+          useAuthStore.getState().setSession(sess.session);
+        }
+      } else {
+        // Connexion : on ouvre la session avec le jeton renvoyé par le backend.
+        if (!tokenHash) {
+          setLoading(false);
+          Alert.alert('Connexion impossible', 'Réessaie dans un instant.');
+          return;
+        }
+        const { error } = await supabase.auth.verifyOtp({ token_hash: tokenHash, type: 'magiclink' });
+        if (error) {
+          setLoading(false);
+          Alert.alert('Connexion impossible', frenchAuthError(error.message));
+          return;
+        }
       }
       await clearPendingOtp();
       setLoading(false);
@@ -155,14 +179,14 @@ export default function OtpScreen() {
 
   async function handleResend() {
     if (countdown > 0 || resending) return;
-    if ((isVerifyPhone || channel === 'sms') && !phone) { Alert.alert('Erreur', 'Numéro manquant, reviens en arrière.'); return; }
-    if (!isVerifyPhone && channel === 'email' && !email) { Alert.alert('Erreur', 'Email manquant, reviens en arrière.'); return; }
+    if ((smsOtp || channel === 'sms') && !phone) { Alert.alert('Erreur', 'Numéro manquant, reviens en arrière.'); return; }
+    if (!smsOtp && channel === 'email' && !email) { Alert.alert('Erreur', 'Email manquant, reviens en arrière.'); return; }
 
     setResending(true);
     try {
-      // Vérification du numéro : renvoi du SMS via NOTRE API (Orange).
-      if (isVerifyPhone) {
-        await apiClient.post('/api/v1/auth/phone/request-otp', { phone: phone as string, purpose: 'verify-phone' });
+      // SMS Orange (vérif. numéro ou connexion) : renvoi via NOTRE API.
+      if (smsOtp) {
+        await apiClient.post('/api/v1/auth/phone/request-otp', { phone: phone as string, purpose: isVerifyPhone ? 'verify-phone' : 'login' });
         setDigits(Array(length).fill(''));
         inputRefs.current[0]?.focus();
         setCountdown(60);
@@ -239,9 +263,9 @@ export default function OtpScreen() {
             {/* Sous-titre dynamique — vrai destinataire */}
             <View style={{ position: 'absolute', top: '35.9%', left: '5%', right: '5%', alignItems: 'center' }}>
               <Text style={{ color: 'rgba(255,255,255,0.55)', fontSize: 15 }}>
-                Code envoyé {isVerifyPhone || channel === 'sms' ? 'au ' : 'à '}
+                Code envoyé {smsOtp || channel === 'sms' ? 'au ' : 'à '}
                 <Text style={{ color: '#FFFFFF', fontWeight: '700' }}>
-                  {isVerifyPhone || channel === 'sms' ? formatPhone(phone) : email}
+                  {smsOtp || channel === 'sms' ? formatPhone(phone) : email}
                 </Text>
               </Text>
             </View>
