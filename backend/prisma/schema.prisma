@@ -642,6 +642,23 @@ model FinanceCost {
   @@map("finance_costs")
 }
 
+/** Codes OTP de vérification par SMS (Orange). Le code n'est jamais stocké en
+ *  clair : seul son hachage (`code_hash`) est conservé, avec une expiration. */
+model PhoneOtp {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  phone       String
+  email       String?
+  purpose     String    @default("register")
+  code_hash   String
+  expires_at  DateTime  @db.Timestamptz(6)
+  attempts    Int       @default(0)
+  consumed_at DateTime? @db.Timestamptz(6)
+  created_at  DateTime  @default(now()) @db.Timestamptz(6)
+
+  @@index([phone, created_at])
+  @@map("phone_otps")
+}
+
 /** Reversement effectué à un partenaire (solde d'un montant dû). Fige un
  *  instantané (montant net, brut, commission, nb de réservations) pour le reçu,
  *  et rattache les réservations soldées (settlement_id) afin d'éviter de payer

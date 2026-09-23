@@ -1,20 +1,77 @@
-import { Controller, Post, Body } from '@nestjs/common';
-import { ApiTags, ApiOperation } from '@nestjs/swagger';
+import { Controller, Post, Body, UseGuards } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
+import { IsString, IsOptional, IsIn, IsEmail, MinLength, MaxLength } from 'class-validator';
 import { PrismaService } from '../../prisma/prisma.service';
+import { PhoneOtpService } from './phone-otp.service';
+import { OrangeSmsService } from '../sms/orange-sms.service';
+import { SupabaseAuthGuard } from './supabase-auth.guard';
+import { RolesGuard } from '../../common/access/roles.guard';
+import { Roles } from '../../common/access/roles.decorator';
+
+class RequestOtpDto {
+  @IsString()
+  @MaxLength(20)
+  phone: string;
+
+  @IsOptional()
+  @IsEmail()
+  email?: string;
+
+  @IsOptional()
+  @IsIn(['register', 'login', 'verify-phone'])
+  purpose?: string;
+}
+
+class VerifyOtpDto {
+  @IsString()
+  @MaxLength(20)
+  phone: string;
+
+  @IsString()
+  @MinLength(4)
+  @MaxLength(8)
+  code: string;
+
+  @IsOptional()
+  @IsIn(['register', 'login', 'verify-phone'])
+  purpose?: string;
+
+  @IsOptional()
+  @IsEmail()
+  email?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  fullName?: string;
+}
+
+class SmsTestDto {
+  @IsString()
+  @MaxLength(20)
+  to: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(300)
+  message?: string;
+}
 
 /**
  * Endpoints PUBLICS (aucun guard) utilisés AVANT authentification :
- *  - /auth/check-account : détecte un compte existant (email OU téléphone) pour
- *    empêcher les inscriptions en doublon.
- *  - /auth/resolve-login : retrouve l'email associé à un numéro pour permettre la
- *    connexion par téléphone via le canal OTP e-mail (tant que le SMS n'est pas
- *    configuré). Les comptes sont créés via e-mail : `auth.users.email` porte
- *    l'identité, le numéro est stocké dans `raw_user_meta_data->>'phone'`.
+ *  - /auth/check-account : détecte un compte existant (email OU téléphone).
+ *  - /auth/resolve-login : retrouve l'email associé à un numéro.
+ *  - /auth/phone/request-otp & /auth/phone/verify-otp : vérification par SMS (Orange).
+ *  - /auth/sms/test : envoi d'un SMS de test (réservé au staff) pour valider la config.
  */
 @ApiTags('Auth')
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly phoneOtp: PhoneOtpService,
+    private readonly orangeSms: OrangeSmsService,
+  ) {}
 
   @Post('check-account')
   @ApiOperation({ summary: 'Vérifie si un compte existe (email ou téléphone)' })
@@ -56,5 +113,36 @@ export class AuthController {
     `;
 
     return { email: rows[0]?.email ?? null };
+  }
+
+  // ── Vérification par SMS (Orange) ───────────────────────────────────────────
+
+  @Post('phone/request-otp')
+  @ApiOperation({ summary: 'Envoie un code de vérification par SMS (Orange)' })
+  requestOtp(@Body() dto: RequestOtpDto) {
+    return this.phoneOtp.requestOtp({ phone: dto.phone, email: dto.email, purpose: dto.purpose });
+  }
+
+  @Post('phone/verify-otp')
+  @ApiOperation({ summary: 'Vérifie le code SMS ; ouvre une session pour inscription/connexion' })
+  verifyOtp(@Body() dto: VerifyOtpDto) {
+    return this.phoneOtp.verifyOtp({
+      phone: dto.phone,
+      code: dto.code,
+      purpose: dto.purpose,
+      email: dto.email,
+      fullName: dto.fullName,
+    });
+  }
+
+  // ── Test d'envoi SMS (staff uniquement) : valide la config Orange ───────────
+  @Post('sms/test')
+  @ApiBearerAuth()
+  @UseGuards(SupabaseAuthGuard, RolesGuard)
+  @Roles('SUPER_ADMIN', 'ADMIN')
+  @ApiOperation({ summary: 'Envoie un SMS de test (validation de la config Orange)' })
+  async smsTest(@Body() dto: SmsTestDto): Promise<{ sent: boolean; configured: boolean }> {
+    await this.orangeSms.sendSms(dto.to.trim(), dto.message?.trim() || 'GBONHI FOOT : SMS de test. Configuration Orange OK.');
+    return { sent: true, configured: this.orangeSms.configured };
   }
 }
