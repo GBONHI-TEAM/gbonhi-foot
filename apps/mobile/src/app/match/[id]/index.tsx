@@ -85,11 +85,30 @@ function readableOn(hex?: string | null): string {
 }
 
 /** Marque à afficher sur le maillot : le numéro s'il existe, sinon l'initiale
- *  du joueur (pour ne jamais laisser un maillot vide). */
+ *  du joueur (dernier filet de sécurité — normalement l'auto-numérotation évite
+ *  ce cas). */
 function jerseyLabel(p: LineupPlayer): string {
   if (p.number != null && String(p.number).trim() !== '') return String(p.number);
   const short = shortName(p.name).trim();
   return short ? short.charAt(0).toUpperCase() : '•';
+}
+
+/** Numérotation d'AFFICHAGE : conserve les numéros saisis, et attribue aux
+ *  joueurs sans numéro le plus petit entier libre (unique dans l'équipe), afin
+ *  qu'aucun maillot n'apparaisse vide. Ce sont des numéros d'affichage — le
+ *  capitaine reste invité à saisir les vrais numéros. */
+function withDisplayNumbers(players: LineupPlayer[]): LineupPlayer[] {
+  const used = new Set<number>();
+  for (const p of players) {
+    const n = Number(p.number);
+    if (p.number != null && String(p.number).trim() !== '' && Number.isFinite(n)) used.add(n);
+  }
+  let next = 1;
+  const nextFree = () => { while (used.has(next)) next += 1; used.add(next); return next; };
+  return players.map((p) => {
+    const has = p.number != null && String(p.number).trim() !== '' && Number.isFinite(Number(p.number));
+    return has ? p : { ...p, number: nextFree() };
+  });
 }
 
 /** Jeton joueur : maillot à numéro (style diffusion TV) + nom. */
@@ -175,8 +194,10 @@ function LineupPitch({ starters, subs, onPlayerPress, jersey, jerseyText }: { st
 function LineupCard({ side, onEdit, onPlayerPress }: { side: LineupSide | null; onEdit: (teamId: string) => void; onPlayerPress: (userId: string) => void }) {
   if (!side) return null;
   const l = side.lineup;
-  const starters = l?.players.filter((p) => p.role === 'starter') ?? [];
-  const subs = l?.players.filter((p) => p.role === 'sub') ?? [];
+  // Numéros d'affichage : on comble les numéros manquants (unique par équipe).
+  const numbered = l ? withDisplayNumbers(l.players) : [];
+  const starters = numbered.filter((p) => p.role === 'starter');
+  const subs = numbered.filter((p) => p.role === 'sub');
   // Couleur du maillot = celle paramétrée par l'équipe. Domicile → couleur
   // principale, extérieur → couleur secondaire (calculé côté API, avec repli).
   const jersey = side.jersey_color

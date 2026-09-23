@@ -206,6 +206,12 @@ export default function LineupPublishScreen() {
           <Text className="text-white font-bold text-sm">Effectif</Text>
           <Text className="text-white/50 text-xs">{starters} titulaires · {subs} remplaçants</Text>
         </View>
+        <View className="rounded-xl px-3 py-2 mb-3 flex-row items-start gap-2" style={{ backgroundColor: 'rgba(247,146,30,0.10)', borderWidth: 1, borderColor: 'rgba(247,146,30,0.35)' }}>
+          <Text style={{ fontSize: 13 }}>💡</Text>
+          <Text className="text-white/75 text-xs flex-1 leading-4">
+            Renseigne le numéro de maillot de chaque joueur pour un affichage officiel. Les joueurs sans numéro reçoivent un numéro d’affichage automatique.
+          </Text>
+        </View>
         {members.length === 0 ? (
           <Text className="text-white/50 text-sm py-6 text-center">Aucun membre actif dans cette équipe.</Text>
         ) : members.map((m) => {
