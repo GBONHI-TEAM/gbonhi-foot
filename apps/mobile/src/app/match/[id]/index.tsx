@@ -363,6 +363,18 @@ export default function MatchDetailPage() {
     fetchMatch();
   }, [fetchMatch]);
 
+  // Filet de sécurité : en plus du temps réel, on rafraîchit périodiquement tant
+  // que le match est EN DIRECT, et au retour sur l'écran. Garantit l'affichage
+  // des actions saisies sur le panneau admin (score, phase, arrêt de jeu, temps
+  // additionnel) même si un événement temps réel est manqué (reconnexion…).
+  const isLiveMatch = !!match && matchStatusMeta(match.status).live;
+  useFocusEffect(useCallback(() => { void fetchMatch({ silent: true }); }, [fetchMatch]));
+  useEffect(() => {
+    if (!id || !isLiveMatch) return;
+    const timer = setInterval(() => { void fetchMatch({ silent: true }); void fetchLineups(); }, 8000);
+    return () => clearInterval(timer);
+  }, [id, isLiveMatch, fetchMatch, fetchLineups]);
+
   // Temps réel : à chaque changement sur le match ou ses événements, on refetch.
   useEffect(() => {
     if (!id) return;
