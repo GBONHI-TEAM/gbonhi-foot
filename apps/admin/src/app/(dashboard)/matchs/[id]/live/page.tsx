@@ -1,5 +1,5 @@
 'use client';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { ChevronDown, Trash2, ArrowLeft } from 'lucide-react';
@@ -429,39 +429,32 @@ export default function MatchLivePage() {
     }
   }
 
-  // Bascule arrêt de jeu ↔ reprise (la mi-temps en cours est conservée).
-  async function togglePause(paused: boolean) {
+  // Bascule arrêt de jeu ↔ reprise. Mise à jour OPTIMISTE (instantanée) + envoi
+  // réseau en arrière-plan, sans recharger tout le match → réponse immédiate.
+  function togglePause(paused: boolean) {
     if (!matchId) return;
-    setBusy(true);
-    try {
-      await apiFetch(`/matches/${matchId}/pause`, {
-        method: 'PATCH',
-        body: JSON.stringify({ paused }),
-      });
-      await load();
-    } catch {
-      /* ignore */
-    } finally {
-      setBusy(false);
-    }
+    setControl((c) => (c ? { ...c, is_paused: paused } : c));
+    apiFetch(`/matches/${matchId}/pause`, {
+      method: 'PATCH',
+      body: JSON.stringify({ paused }),
+    }).catch(() => { void load(); }); // réconciliation seulement en cas d'échec
   }
 
-  // Définit les minutes de temps additionnel d'une mi-temps (1 ou 2).
-  async function setAddedTime(half: 1 | 2, minutes: number) {
+  // Temps additionnel : mise à jour OPTIMISTE immédiate + persistance réseau
+  // « débouncée » par mi-temps (on n'envoie que la valeur finale après une
+  // rafale de +/-), sans recharger tout le match.
+  const addedTimeTimers = useRef<Record<number, ReturnType<typeof setTimeout>>>({});
+  function setAddedTime(half: 1 | 2, minutes: number) {
     if (!matchId) return;
     const clamped = Math.max(0, Math.min(30, minutes));
-    setBusy(true);
-    try {
-      await apiFetch(`/matches/${matchId}/added-time`, {
+    setControl((c) => (c ? { ...c, [half === 1 ? 'added_time_first' : 'added_time_second']: clamped } : c));
+    if (addedTimeTimers.current[half]) clearTimeout(addedTimeTimers.current[half]);
+    addedTimeTimers.current[half] = setTimeout(() => {
+      apiFetch(`/matches/${matchId}/added-time`, {
         method: 'PATCH',
         body: JSON.stringify({ half, minutes: clamped }),
-      });
-      await load();
-    } catch {
-      /* ignore */
-    } finally {
-      setBusy(false);
-    }
+      }).catch(() => { void load(); });
+    }, 350);
   }
 
   useEffect(() => {
