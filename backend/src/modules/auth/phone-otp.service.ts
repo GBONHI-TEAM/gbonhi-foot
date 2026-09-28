@@ -41,6 +41,29 @@ export class PhoneOtpService {
     return `+225${digits}`; // fallback : numéro ivoirien local
   }
 
+  /**
+   * Compte de démonstration (dossier agrégateur / testeurs) : un numéro dédié
+   * accepte un code OTP FIXE sans envoi de SMS. Actif uniquement si la variable
+   * DEMO_LOGIN_PHONE est définie. Le compte s'auto-provisionne à la première
+   * connexion. À NE PAS utiliser pour de vrais comptes.
+   */
+  private demoConfig(): { phone: string; code: string; email: string } | null {
+    const raw = this.config.get<string>('DEMO_LOGIN_PHONE');
+    if (!raw || !raw.trim()) return null;
+    return {
+      phone: this.normalizePhone(raw),
+      code: (this.config.get<string>('DEMO_LOGIN_OTP') ?? '000000').trim(),
+      email: (this.config.get<string>('DEMO_LOGIN_EMAIL') ?? 'demo.wave@gbonhifoot.app')
+        .trim()
+        .toLowerCase(),
+    };
+  }
+
+  private isDemoPhone(phone: string): boolean {
+    const d = this.demoConfig();
+    return !!d && d.phone === phone;
+  }
+
   private hash(phone: string, code: string): string {
     const secret =
       this.config.get<string>('OTP_HASH_SECRET') ??
@@ -54,6 +77,10 @@ export class PhoneOtpService {
     const phone = this.normalizePhone(input.phone);
     if (!/^\+\d{8,15}$/.test(phone)) {
       throw new BadRequestException('Numéro de téléphone invalide.');
+    }
+    // Compte de démonstration : aucun SMS, le code est fixe (cf. demoConfig).
+    if (this.isDemoPhone(phone)) {
+      return { sent: true, expiresInSeconds: Math.round(OTP_TTL_MS / 1000) };
     }
     if (!this.orangeSms.configured) {
       throw new ServiceUnavailableException('La vérification par SMS n’est pas encore configurée.');
@@ -119,6 +146,27 @@ export class PhoneOtpService {
     const purpose: Purpose = (['register', 'login', 'verify-phone'] as const).includes(input.purpose as Purpose)
       ? (input.purpose as Purpose)
       : 'register';
+
+    // Compte de démonstration : code fixe accepté sans passer par la table OTP.
+    const demo = this.demoConfig();
+    if (demo && demo.phone === phone) {
+      if (String(input.code ?? '').trim() !== demo.code) {
+        throw new BadRequestException('Code incorrect.');
+      }
+      if (purpose === 'verify-phone') {
+        return { verified: true };
+      }
+      const email = input.email?.trim().toLowerCase() || demo.email;
+      const session = await this.issueSession(
+        email,
+        {
+          phone,
+          full_name: input.fullName?.trim() || 'Compte de démonstration',
+        },
+        true, // auto-provisionne le compte de démo si absent
+      );
+      return { verified: true, email, otp: session.otp, tokenHash: session.tokenHash };
+    }
 
     const row = await this.prisma.phoneOtp.findFirst({
       where: { phone, purpose, consumed_at: null, expires_at: { gt: new Date() } },
