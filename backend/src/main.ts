@@ -30,14 +30,24 @@ async function bootstrap() {
   );
 
   // CORS — allow mobile app and web portals.
+  // ADMIN_URL / PARTNER_URL acceptent une liste séparée par des virgules (pour
+  // autoriser à la fois le domaine personnalisé et l'ancien .onrender.com pendant
+  // la migration). On garde aussi en dur les hôtes Render et le localhost de dev.
+  const splitOrigins = (v?: string) =>
+    (v ?? '').split(',').map((s) => s.trim().replace(/\/+$/, '')).filter(Boolean);
+  const corsOrigins = [
+    ...splitOrigins(process.env.ADMIN_URL),
+    ...splitOrigins(process.env.PARTNER_URL),
+    'https://admin.gbonhifoot.com',
+    'https://partenaire.gbonhifoot.com',
+    'https://gbonhi-foot-admin.onrender.com',
+    'https://gbonhi-foot-partner.onrender.com',
+    'http://localhost:3000',
+    'http://localhost:3002',
+  ];
   // Méthodes explicites : sans ça, PATCH/DELETE peuvent être refusés au préflight.
   app.enableCors({
-    origin: [
-      process.env.ADMIN_URL ?? 'http://localhost:3000',
-      process.env.PARTNER_URL ?? 'http://localhost:3002',
-      'http://localhost:3000',
-      'http://localhost:3002',
-    ],
+    origin: [...new Set(corsOrigins)],
     methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
     credentials: true,
