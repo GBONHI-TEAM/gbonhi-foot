@@ -66,9 +66,12 @@ interface LineupSide { team: { id: string; name: string; primary_color?: string 
 interface LineupsResponse { kickoff: string; home: LineupSide | null; away: LineupSide | null }
 
 // Nom court affiché sous le maillot (dernier mot du nom).
+/** Nom affiché sous le joueur : le PRÉNOM (premier mot du nom complet).
+ *  « Abraham Da Costa » → « Abraham ». Plus lisible et reconnaissable qu'un
+ *  nom de famille isolé sur le terrain. */
 function shortName(name: string): string {
-  const parts = name.trim().split(/\s+/);
-  return parts.length > 1 ? parts[parts.length - 1] : name;
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  return parts.length ? parts[0] : name.trim();
 }
 
 /** Couleur de texte lisible (noir ou blanc) sur un fond hex donné. */
