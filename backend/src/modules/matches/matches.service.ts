@@ -140,16 +140,25 @@ export class MatchesService {
     });
     if (!match) throw new NotFoundException('Match introuvable');
 
-    // Avatars des joueurs cités dans les compos (par user_id).
+    // Avatars ET vrais noms des joueurs cités dans les compos (par user_id).
+    // Le `name` stocké dans la compo est un snapshot texte (potentiellement
+    // saisi à la main) : pour les joueurs reliés à un compte réel, on affiche
+    // toujours le nom du profil à jour, et on ne garde le snapshot qu'en repli
+    // (joueurs fictifs sans user_id).
     const allPlayers = match.lineups.flatMap((l) => (Array.isArray(l.players) ? (l.players as LineupPlayerInput[]) : []));
     const userIds = [...new Set(allPlayers.map((p) => p?.user_id).filter((v): v is string => !!v))];
     const avatarById = new Map<string, string | null>();
+    const nameById = new Map<string, string>();
     if (userIds.length) {
       const profiles = await this.prisma.profile.findMany({
         where: { id: { in: userIds } },
-        select: { id: true, avatar_url: true },
+        select: { id: true, avatar_url: true, full_name: true, username: true },
       });
-      profiles.forEach((p) => avatarById.set(p.id, p.avatar_url));
+      profiles.forEach((p) => {
+        avatarById.set(p.id, p.avatar_url);
+        const real = p.full_name?.trim() || p.username?.trim();
+        if (real) nameById.set(p.id, real);
+      });
     }
 
     const build = async (
@@ -163,7 +172,12 @@ export class MatchesService {
       const published = !!row?.published_at;
       // Enrichit chaque joueur avec sa photo de profil.
       const players = row && Array.isArray(row.players)
-        ? (row.players as LineupPlayerInput[]).map((p) => ({ ...p, avatar_url: p?.user_id ? avatarById.get(p.user_id) ?? null : null }))
+        ? (row.players as LineupPlayerInput[]).map((p) => ({
+            ...p,
+            // Nom réel du profil si le joueur est un compte ; sinon nom saisi.
+            name: (p?.user_id && nameById.get(p.user_id)) || p?.name,
+            avatar_url: p?.user_id ? avatarById.get(p.user_id) ?? null : null,
+          }))
         : [];
       // Visible : composition publiée, ou brouillon si l'utilisateur gère l'équipe.
       const lineup = row && (published || editable)
