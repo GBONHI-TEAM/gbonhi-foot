@@ -66,7 +66,7 @@ export function setApiAuthSession(session: Session | null): void {
  * vers le backend déployé sur Render en HTTPS.
  */
 const BACKEND_PORT = 3001;
-const PROD_API_URL = 'https://gbonhi-foot-api.onrender.com';
+const PROD_API_URL = 'https://api.gbonhifoot.com';
 
 /**
  * Base des liens d'invitation d'équipe. TOUJOURS en HTTPS prod (le lien est
