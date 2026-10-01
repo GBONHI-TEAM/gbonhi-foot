@@ -1,9 +1,10 @@
 'use client';
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { Header } from '../../../components/layout/header';
 import { Download, ChevronLeft, ChevronRight, Trash2, FileDown, Sheet } from 'lucide-react';
-import { apiDownload, apiFetch } from '../../../lib/api';
+import { apiDownload } from '../../../lib/api';
+import { useApiQuery } from '../../../lib/use-api-query';
 import { usePartnerAccess } from '../../../components/auth/partner-access-provider';
 import { ApiReservation, ApiReservationStats, fcfa } from '../../../lib/domain';
 import { createXlsxBlob } from '../../../lib/xlsx-export';
@@ -35,34 +36,16 @@ function downloadBlob(blob: Blob, filename: string): void {
 export default function RevenusPage() {
   const searchParams = useSearchParams();
   const { isOwner, loading: accessLoading } = usePartnerAccess();
-  const [stats, setStats] = useState<ApiReservationStats | null>(null);
-  const [reservations, setReservations] = useState<ApiReservation[]>([]);
-  const [history, setHistory] = useState<RevenueHistoryPoint[]>([]);
   const [downloading, setDownloading] = useState<'csv' | 'pdf' | null>(null);
   const [downloadError, setDownloadError] = useState<string | null>(null);
 
-  useEffect(() => {
-    let cancelled = false;
-    if (accessLoading || !isOwner) return;
-    (async () => {
-      try {
-        const [s, resas, revenueHistory] = await Promise.all([
-          apiFetch<ApiReservationStats>('/reservations/stats/summary'),
-          apiFetch<ApiReservation[]>('/reservations'),
-          apiFetch<RevenueHistoryPoint[]>('/reservations/stats/revenue-history'),
-        ]);
-        if (cancelled) return;
-        setStats(s);
-        if (Array.isArray(resas)) setReservations(resas);
-        if (Array.isArray(revenueHistory)) setHistory(revenueHistory);
-      } catch {
-        /* état vide */
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [accessLoading, isOwner, searchParams]);
+  const revEnabled = isOwner && !accessLoading;
+  const statsQ = useApiQuery<ApiReservationStats>(['rev-summary'], '/reservations/stats/summary', { enabled: revEnabled });
+  const reservationsQ = useApiQuery<ApiReservation[]>(['rev-reservations'], '/reservations', { enabled: revEnabled });
+  const historyQ = useApiQuery<RevenueHistoryPoint[]>(['rev-history'], '/reservations/stats/revenue-history', { enabled: revEnabled });
+  const stats = statsQ.data ?? null;
+  const reservations = Array.isArray(reservationsQ.data) ? reservationsQ.data : [];
+  const history = Array.isArray(historyQ.data) ? historyQ.data : [];
 
   const now = new Date();
   const moisLabel = MOIS[now.getMonth()].charAt(0).toUpperCase() + MOIS[now.getMonth()].slice(1);

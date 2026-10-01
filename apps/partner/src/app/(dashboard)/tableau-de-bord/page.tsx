@@ -1,8 +1,7 @@
 'use client';
-import { useEffect, useState } from 'react';
 import { Header } from '../../../components/layout/header';
 import { Wallet, CalendarCheck, TrendingUp, Gauge, LineChart, Star, ListChecks } from 'lucide-react';
-import { apiFetch } from '../../../lib/api';
+import { useApiQuery } from '../../../lib/use-api-query';
 import { useCurrentUser } from '../../../lib/use-user';
 import { usePartnerAccess } from '../../../components/auth/partner-access-provider';
 import { useTerrain } from '../../../lib/terrain-context';
@@ -39,49 +38,38 @@ export default function PartnerDashboardPage() {
   const user = useCurrentUser();
   const { isOwner, loading: accessLoading } = usePartnerAccess();
   const { selectedTerrain: terrain } = useTerrain();
-  const [stats, setStats] = useState<ApiReservationStats | ApiOperationalStats | null>(null);
-  const [resaJour, setResaJour] = useState<ResaJour[]>([]);
-  const [revenueHistory, setRevenueHistory] = useState<RevenuePoint[]>([]);
-  const [latestReviews, setLatestReviews] = useState<PartnerReview[]>([]);
+  const dashEnabled = !accessLoading;
+  const statsQ = useApiQuery<ApiReservationStats | ApiOperationalStats>(
+    ['dash-stats', isOwner],
+    isOwner ? '/reservations/stats/summary' : '/reservations/stats/operational-summary',
+    { enabled: dashEnabled },
+  );
+  const resasQ = useApiQuery<ApiReservation[]>(
+    ['dash-resas-today', todayISO()],
+    `/reservations?date=${todayISO()}`,
+    { enabled: dashEnabled },
+  );
+  const historyQ = useApiQuery<RevenuePoint[]>(
+    ['dash-history'],
+    '/reservations/stats/revenue-history',
+    { enabled: dashEnabled && isOwner },
+  );
+  const reviewsQ = useApiQuery<PartnerReview[]>(['dash-reviews'], '/terrains/mine/reviews', { enabled: dashEnabled });
 
-  useEffect(() => {
-    let cancelled = false;
-    if (accessLoading) return;
-    (async () => {
-      try {
-        const [s, resas, history, reviews] = await Promise.all([
-          isOwner
-            ? apiFetch<ApiReservationStats>('/reservations/stats/summary')
-            : apiFetch<ApiOperationalStats>('/reservations/stats/operational-summary'),
-          apiFetch<ApiReservation[]>(`/reservations?date=${todayISO()}`),
-          isOwner ? apiFetch<RevenuePoint[]>('/reservations/stats/revenue-history') : Promise.resolve([] as RevenuePoint[]),
-          apiFetch<PartnerReview[]>('/terrains/mine/reviews'),
-        ]);
-        if (cancelled) return;
-        setStats(s);
-        setRevenueHistory(Array.isArray(history) ? history : []);
-        setLatestReviews(Array.isArray(reviews) ? reviews : []);
-        if (Array.isArray(resas)) {
-          setResaJour(
-            resas
-              .slice()
-              .sort((a, b) => a.start_hour - b.start_hour)
-              .map((r) => ({
-                heure: `${String(r.start_hour).padStart(2, '0')}h00`,
-                client: r.user?.full_name ?? r.client_name ?? 'Client',
-                detail: isOwner && typeof r.total_price === 'number' ? `Terrain · ${fcfa(r.total_price)}` : 'Terrain',
-                statut: STATUS_FR[r.status],
-              }))
-          );
-        }
-      } catch {
-        /* état vide — aucune donnée fictive */
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [accessLoading, isOwner]);
+  const stats = statsQ.data ?? null;
+  const revenueHistory = Array.isArray(historyQ.data) ? historyQ.data : [];
+  const latestReviews = Array.isArray(reviewsQ.data) ? reviewsQ.data : [];
+  const resaJour: ResaJour[] = Array.isArray(resasQ.data)
+    ? resasQ.data
+        .slice()
+        .sort((a, b) => a.start_hour - b.start_hour)
+        .map((r) => ({
+          heure: `${String(r.start_hour).padStart(2, '0')}h00`,
+          client: r.user?.full_name ?? r.client_name ?? 'Client',
+          detail: isOwner && typeof r.total_price === 'number' ? `Terrain · ${fcfa(r.total_price)}` : 'Terrain',
+          statut: STATUS_FR[r.status],
+        }))
+    : [];
 
   const nomUser = displayName(user);
   const nomTerrain = terrain?.name ?? '';

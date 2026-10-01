@@ -1,9 +1,10 @@
 'use client';
 
-import { FormEvent, useCallback, useEffect, useState } from 'react';
+import { FormEvent, useState } from 'react';
 import { Header } from '../../../components/layout/header';
 import { ChevronRight, LifeBuoy, Loader2, Mail, MessageCircle, Plus, X } from 'lucide-react';
 import { apiFetch } from '../../../lib/api';
+import { useApiQuery } from '../../../lib/use-api-query';
 
 const FAQ = [
   "Comment fonctionne le statut d'ouverture de mon terrain ?",
@@ -30,8 +31,6 @@ function apiError(error: unknown) {
 
 export default function SupportPage() {
   const [filter, setFilter] = useState<Filter>('Toutes');
-  const [tickets, setTickets] = useState<Ticket[]>([]);
-  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [modal, setModal] = useState(false);
   const [subject, setSubject] = useState('');
@@ -41,13 +40,12 @@ export default function SupportPage() {
   const [saving, setSaving] = useState(false);
 
   const status = filter === 'Toutes' ? '' : filter === 'Ouvertes' ? 'ouvert' : filter === 'En cours' ? 'en_cours' : 'resolu';
-  const load = useCallback(async () => {
-    setLoading(true); setError(null);
-    try { const list = await apiFetch<Ticket[]>(`/support/tickets?kind=support${status ? `&status=${status}` : ''}`); setTickets(Array.isArray(list) ? list : []); }
-    catch (reason) { setTickets([]); setError(apiError(reason)); }
-    finally { setLoading(false); }
-  }, [status]);
-  useEffect(() => { void load(); }, [load]);
+  const { data: ticketsData, isLoading: loading, refetch } = useApiQuery<Ticket[]>(
+    ['partner-support', status],
+    `/support/tickets?kind=support${status ? `&status=${status}` : ''}`,
+  );
+  const tickets = Array.isArray(ticketsData) ? ticketsData : [];
+  const load = () => refetch();
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); setSaving(true); setError(null);

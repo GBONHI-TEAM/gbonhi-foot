@@ -1,9 +1,9 @@
 'use client';
 
-import { useEffect, useState } from 'react';
 import { BellRing, CheckCheck, CalendarClock } from 'lucide-react';
 import { Header } from '../../../components/layout/header';
 import { apiFetch } from '../../../lib/api';
+import { useApiQuery } from '../../../lib/use-api-query';
 
 interface Notif {
   id: string;
@@ -21,34 +21,24 @@ function fmt(iso: string): string {
 }
 
 export default function NotificationsPage() {
-  const [items, setItems] = useState<Notif[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  async function load() {
-    setLoading(true);
-    try {
-      const data = await apiFetch<Notif[]>('/notifications');
-      setItems(Array.isArray(data) ? data : []);
-    } catch {
-      setItems([]);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  useEffect(() => { void load(); }, []);
+  const { data: itemsData, isLoading: loading, refetch } = useApiQuery<Notif[]>(
+    ['partner-notifications'],
+    '/notifications',
+  );
+  const items = Array.isArray(itemsData) ? itemsData : [];
+  const load = () => refetch();
 
   async function markAll() {
     try {
       await apiFetch('/notifications/read-all', { method: 'PATCH' });
-      setItems((prev) => prev.map((n) => ({ ...n, read: true })));
+      void load();
     } catch { /* ignore */ }
   }
 
   async function markOne(id: string) {
     try {
       await apiFetch(`/notifications/${id}/read`, { method: 'PATCH' });
-      setItems((prev) => prev.map((n) => (n.id === id ? { ...n, read: true } : n)));
+      void load();
     } catch { /* ignore */ }
   }
 

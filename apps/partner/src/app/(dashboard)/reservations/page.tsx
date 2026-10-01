@@ -1,9 +1,9 @@
 'use client';
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Header } from '../../../components/layout/header';
 import { Info, Search, Check, Clock, X, ChevronRight } from 'lucide-react';
-import { apiFetch } from '../../../lib/api';
+import { useApiQuery } from '../../../lib/use-api-query';
 import { usePartnerAccess } from '../../../components/auth/partner-access-provider';
 import {
   ApiReservation,
@@ -61,32 +61,16 @@ function mapRow(r: ApiReservation, showFinancials: boolean): Row {
 }
 
 export default function ReservationsPage() {
-  const { isOwner, loading: accessLoading } = usePartnerAccess();
+  const { isOwner } = usePartnerAccess();
   const [tab, setTab] = useState('Toutes');
   const [query, setQuery] = useState('');
-  const [rows, setRows] = useState<Row[]>([]);
-  const [loading, setLoading] = useState(true);
   const router = useRouter();
 
-  async function load(signal?: { cancelled: boolean }) {
-    try {
-      const data = await apiFetch<ApiReservation[]>('/reservations');
-      if (signal?.cancelled) return;
-      if (Array.isArray(data)) setRows(data.map((reservation) => mapRow(reservation, isOwner)));
-    } catch {
-      /* liste vide */
-    } finally {
-      if (!signal?.cancelled) setLoading(false);
-    }
-  }
-
-  useEffect(() => {
-    const signal = { cancelled: false };
-    load(signal);
-    return () => {
-      signal.cancelled = true;
-    };
-  }, [isOwner, accessLoading]);
+  const { data: reservationsData, isLoading: loading } = useApiQuery<ApiReservation[]>(
+    ['partner-reservations'],
+    '/reservations',
+  );
+  const rows = Array.isArray(reservationsData) ? reservationsData.map((reservation) => mapRow(reservation, isOwner)) : [];
 
   const filtered = useMemo(
     () =>

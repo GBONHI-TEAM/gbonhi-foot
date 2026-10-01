@@ -1,8 +1,8 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Header } from '../../../components/layout/header';
 import { Star } from 'lucide-react';
-import { apiFetch } from '../../../lib/api';
+import { useApiQuery } from '../../../lib/use-api-query';
 import {
   ApiReview,
   dateFR,
@@ -31,32 +31,12 @@ function Stars({ value, size = 14 }: { value: number; size?: number }) {
 
 export default function AvisPage() {
   const { selectedTerrain: terrain } = useTerrain();
-  const [reviews, setReviews] = useState<ApiReview[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    if (!terrain) {
-      setReviews([]);
-      setLoading(false);
-      return;
-    }
-    let cancelled = false;
-    setLoading(true);
-    (async () => {
-      try {
-        const list = await apiFetch<ApiReview[]>(`/terrains/${terrain.id}/reviews`);
-        if (cancelled) return;
-        if (Array.isArray(list)) setReviews(list);
-      } catch {
-        /* état vide si l'API échoue */
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [terrain]);
+  const { data: reviewsData, isLoading: loading } = useApiQuery<ApiReview[]>(
+    ['terrain-reviews', terrain?.id ?? ''],
+    `/terrains/${terrain?.id}/reviews`,
+    { enabled: !!terrain },
+  );
+  const reviews = Array.isArray(reviewsData) ? reviewsData : [];
 
   const count = terrain?.rating_count ?? reviews.length;
   const avg = terrain?.rating_avg ?? 0;

@@ -1,8 +1,9 @@
 'use client';
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Header } from '../../../components/layout/header';
 import { Ban, Info, X, CalendarDays } from 'lucide-react';
 import { apiFetch } from '../../../lib/api';
+import { useApiQuery } from '../../../lib/use-api-query';
 import { ApiBlock, ApiReservation, ApiSlot } from '../../../lib/domain';
 import { useTerrain } from '../../../lib/terrain-context';
 
@@ -55,8 +56,14 @@ export default function CreneauxPage() {
   const [modal, setModal] = useState(false);
   // Pré-remplissage du blocage quand on clique directement sur une case libre.
   const [prefill, setPrefill] = useState<{ date: string; hour: number } | null>(null);
-  const [blocks, setBlocks] = useState<ApiBlock[]>([]);
-  const [reservations, setReservations] = useState<ApiReservation[]>([]);
+  const blocksQ = useApiQuery<ApiBlock[]>(['terrain-blocks', terrain?.id ?? ''], `/terrains/${terrain?.id}/blocks`, { enabled: !!terrain });
+  const reservationsQ = useApiQuery<ApiReservation[]>(['terrain-reservations', terrain?.id ?? ''], '/reservations', { enabled: !!terrain });
+  const blocks = Array.isArray(blocksQ.data) ? blocksQ.data : [];
+  // L'endpoint renvoie tous les terrains du partenaire → on filtre sur le terrain sélectionné.
+  const reservations = terrain && Array.isArray(reservationsQ.data)
+    ? reservationsQ.data.filter((r) => r.terrain?.id === terrain.id)
+    : [];
+  const loadBlocks = (_terrainId?: string) => blocksQ.refetch();
 
   const monday = useMemo(() => mondayOfWeek(), []);
   const weekDates = useMemo(
@@ -67,41 +74,6 @@ export default function CreneauxPage() {
     }),
     [monday]
   );
-
-  async function loadBlocks(terrainId: string) {
-    try {
-      const b = await apiFetch<ApiBlock[]>(`/terrains/${terrainId}/blocks`);
-      if (Array.isArray(b)) setBlocks(b);
-    } catch {
-      /* ignore */
-    }
-  }
-
-  useEffect(() => {
-    if (!terrain) {
-      setBlocks([]);
-      setReservations([]);
-      return;
-    }
-    let cancelled = false;
-    (async () => {
-      try {
-        const [b, resas] = await Promise.all([
-          apiFetch<ApiBlock[]>(`/terrains/${terrain.id}/blocks`).catch(() => [] as ApiBlock[]),
-          apiFetch<ApiReservation[]>('/reservations').catch(() => [] as ApiReservation[]),
-        ]);
-        if (cancelled) return;
-        if (Array.isArray(b)) setBlocks(b);
-        // Réservations du terrain sélectionné uniquement (l'endpoint renvoie tous les terrains du partenaire).
-        if (Array.isArray(resas)) setReservations(resas.filter((r) => r.terrain?.id === terrain.id));
-      } catch {
-        /* état vide */
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [terrain]);
 
   const slots: ApiSlot[] = terrain?.slots ?? [];
 

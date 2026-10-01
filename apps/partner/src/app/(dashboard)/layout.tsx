@@ -5,6 +5,7 @@ import { PartnerAccessProvider } from '../../components/auth/partner-access-prov
 import { PeriodRefreshBoundary } from '../../components/layout/period-refresh-boundary';
 import { TerrainProvider } from '../../lib/terrain-context';
 import { ReservationAlerts } from '../../components/alerts/reservation-alerts';
+import { QueryProvider } from '../../lib/query-provider';
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createSupabaseServerClient();
@@ -13,16 +14,18 @@ export default async function DashboardLayout({ children }: { children: React.Re
   if (!user) redirect('/connexion');
 
   return (
-    <PartnerAccessProvider>
-      <TerrainProvider>
-        <div className="min-h-screen bg-gray-50">
-          <Sidebar />
-          <div className="ml-60 pt-16">
-            <main className="p-8"><PeriodRefreshBoundary>{children}</PeriodRefreshBoundary></main>
+    <QueryProvider>
+      <PartnerAccessProvider>
+        <TerrainProvider>
+          <div className="min-h-screen bg-gray-50">
+            <Sidebar />
+            <div className="ml-60 pt-16">
+              <main className="p-8"><PeriodRefreshBoundary>{children}</PeriodRefreshBoundary></main>
+            </div>
+            <ReservationAlerts />
           </div>
-          <ReservationAlerts />
-        </div>
-      </TerrainProvider>
-    </PartnerAccessProvider>
+        </TerrainProvider>
+      </PartnerAccessProvider>
+    </QueryProvider>
   );
 }

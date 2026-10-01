@@ -1,10 +1,11 @@
 'use client';
 
-import { FormEvent, useCallback, useEffect, useState } from 'react';
+import { FormEvent, useState } from 'react';
 import { Header } from '../../../components/layout/header';
 import { AlertCircle, Loader2, Plus, ShieldCheck, Trash2, Users } from 'lucide-react';
 import { usePartnerAccess } from '../../../components/auth/partner-access-provider';
 import { apiFetch } from '../../../lib/api';
+import { useApiQuery } from '../../../lib/use-api-query';
 import { initials } from '../../../lib/domain';
 
 type AccessStatus = 'INVITED' | 'ACTIVE' | 'SUSPENDED' | 'REVOKED';
@@ -47,8 +48,6 @@ function memberName(member: TeamAccess): string {
 
 export default function RolesPage() {
   const { isOwner, loading } = usePartnerAccess();
-  const [members, setMembers] = useState<TeamAccess[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
@@ -56,20 +55,10 @@ export default function RolesPage() {
   const [saving, setSaving] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
 
-  const loadMembers = useCallback(async () => {
-    if (!isOwner) return;
-    setIsLoading(true);
-    try {
-      const result = await apiFetch<TeamAccess[]>('/partner-accesses/me/team');
-      setMembers(Array.isArray(result) ? result : []);
-    } catch (error) {
-      setFeedback(errorMessage(error));
-    } finally {
-      setIsLoading(false);
-    }
-  }, [isOwner]);
-
-  useEffect(() => { void loadMembers(); }, [loadMembers]);
+  const membersQuery = useApiQuery<TeamAccess[]>(['partner-team'], '/partner-accesses/me/team', { enabled: isOwner });
+  const members = Array.isArray(membersQuery.data) ? membersQuery.data : [];
+  const isLoading = membersQuery.isLoading;
+  const loadMembers = () => membersQuery.refetch();
 
   async function inviteManager(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();

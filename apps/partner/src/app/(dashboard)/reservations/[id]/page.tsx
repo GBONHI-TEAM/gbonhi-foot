@@ -1,9 +1,10 @@
 'use client';
-import { useCallback, useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { ArrowLeft, Ban, Check, Clock, MapPin, User, Wallet, CalendarClock } from 'lucide-react';
 import { Header } from '../../../../components/layout/header';
 import { apiFetch } from '../../../../lib/api';
+import { useApiQuery } from '../../../../lib/use-api-query';
 import { usePartnerAccess } from '../../../../components/auth/partner-access-provider';
 import { ReservationStatus, STATUS_FR, fcfa, heureRange } from '../../../../lib/domain';
 
@@ -41,23 +42,15 @@ export default function PartnerReservationDetailPage() {
   const id = params?.id;
   const router = useRouter();
   const { isOwner } = usePartnerAccess();
-  const [res, setRes] = useState<Reservation | null>(null);
-  const [notFound, setNotFound] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [cancelling, setCancelling] = useState(false);
   const [reason, setReason] = useState('');
 
-  const reload = useCallback(async () => {
-    if (!id) return;
-    try {
-      setRes(await apiFetch<Reservation>(`/reservations/terrain/${id}`));
-    } catch {
-      setNotFound(true);
-    }
-  }, [id]);
-
-  useEffect(() => { void reload(); }, [reload]);
+  const resQuery = useApiQuery<Reservation>(['partner-reservation', id ?? ''], `/reservations/terrain/${id}`, { enabled: !!id });
+  const res = resQuery.data ?? null;
+  const notFound = resQuery.isError;
+  const reload = () => resQuery.refetch();
 
   async function changeStatus(status: ReservationStatus, cancel_reason?: string) {
     if (!id) return;
