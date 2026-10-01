@@ -4,6 +4,7 @@ import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { Building2, Mail, MoreHorizontal, Plus, RefreshCw, ShieldAlert, X } from 'lucide-react';
 import { Header } from '../../../components/layout/header';
 import { ApiError, apiFetch } from '../../../lib/api';
+import { useApiQuery } from '../../../lib/use-api-query';
 
 type AccessRole = 'OWNER' | 'MANAGER';
 type AccessStatus = 'INVITED' | 'ACTIVE' | 'SUSPENDED' | 'REVOKED';
@@ -48,33 +49,23 @@ function toMessage(error: unknown) {
 }
 
 export default function PartnerAccessesPage() {
-  const [accesses, setAccesses] = useState<PartnerAccess[]>([]);
-  const [partners, setPartners] = useState<PartnerOption[]>([]);
-  const [loading, setLoading] = useState(true);
+  const accessesQ = useApiQuery<PartnerAccess[]>(['partner-accesses'], '/partner-accesses');
+  const partnersQ = useApiQuery<PartnerOption[]>(['partner-accesses-partners'], '/partner-accesses/partners');
+  const accesses = Array.isArray(accessesQ.data) ? accessesQ.data : [];
+  const partners = Array.isArray(partnersQ.data) ? partnersQ.data : [];
+  const loading = accessesQ.isLoading || partnersQ.isLoading;
+  const load = () => { void accessesQ.refetch(); void partnersQ.refetch(); };
   const [modalOpen, setModalOpen] = useState(false);
   const [actionId, setActionId] = useState<string | null>(null);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [form, setForm] = useState({ partnerId: '', fullName: '', email: '', role: 'MANAGER' as AccessRole, username: '' });
 
-  const load = async () => {
-    setLoading(true);
-    try {
-      const [accessData, partnerData] = await Promise.all([
-        apiFetch<PartnerAccess[]>('/partner-accesses'),
-        apiFetch<PartnerOption[]>('/partner-accesses/partners'),
-      ]);
-      setAccesses(accessData);
-      setPartners(partnerData);
-      setForm((current) => ({ ...current, partnerId: current.partnerId || partnerData[0]?.id || '' }));
-    } catch (caught) {
-      setError(toMessage(caught));
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => { void load(); }, []);
+  // Pré-sélectionne le premier partenaire une fois la liste chargée.
+  useEffect(() => {
+    const first = partners[0]?.id;
+    if (first) setForm((current) => (current.partnerId ? current : { ...current, partnerId: first }));
+  }, [partners]);
 
   const summary = useMemo(() => ({
     active: accesses.filter((item) => item.status === 'ACTIVE').length,

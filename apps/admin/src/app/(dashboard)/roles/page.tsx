@@ -1,9 +1,10 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Check, Eye, KeyRound, UserPlus, X } from 'lucide-react';
 import { Header } from '../../../components/layout/header';
 import { ADMIN_ROLES, ROLE_LABELS, type AdminRole } from '../../../lib/admin-access';
 import { ApiError, apiFetch } from '../../../lib/api';
+import { useApiQuery } from '../../../lib/use-api-query';
 
 type Permission = 'full' | 'limited' | 'none';
 
@@ -30,17 +31,14 @@ function message(error: unknown) {
 }
 
 export default function RolesPage() {
-  const [members, setMembers] = useState<AdminMember[]>([]);
+  const { data: membersData, refetch } = useApiQuery<AdminMember[]>(['admin-members'], '/users/admin-members');
+  const members = Array.isArray(membersData) ? membersData : [];
+  const load = () => refetch();
   const [modal, setModal] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [form, setForm] = useState({ fullName: '', email: '', role: 'ADMIN' as AdminRole, username: '' });
   const [saving, setSaving] = useState(false);
-  const load = async () => {
-    try { setMembers(await apiFetch<AdminMember[]>('/users/admin-members')); }
-    catch (caught) { setError(message(caught)); }
-  };
-  useEffect(() => { void load(); }, []);
   const invite = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault(); setSaving(true); setError('');
     try {

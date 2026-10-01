@@ -1,16 +1,15 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { CalendarCheck, FileDown, FileText, MapPin, Sheet, Trophy, Users } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
 import { Header } from '../../../components/layout/header';
-import { apiFetch } from '../../../lib/api';
+import { useApiQuery } from '../../../lib/use-api-query';
 import { createPdfBlob, createXlsxBlob, downloadBlob, type ExportCell } from '../../../lib/file-export';
 
 type Tab = 'acquisition' | 'ligues' | 'reservations';
 interface AdminUser { id: string; position?: string | null; created_at?: string | null; }
 interface League { id: string; status: string; created_at?: string | null; _count?: { teams: number; matches: number }; registration_fee?: number | null; prize_info?: string | null; }
-interface Team { id: string; }
 interface Terrain { id: string; name?: string; is_active?: boolean; partner?: { full_name?: string | null } | null; }
 interface Match { id: string; status: string; scheduled_at?: string | null; }
 interface Reservation { id: string; status?: string | null; reservation_date?: string | null; total_price?: number | null; platform_fee?: number | null; terrain?: { id: string; name: string; partner?: { full_name?: string | null } | null } | null; }
@@ -45,9 +44,17 @@ export default function KpiPage() {
   const [filter, setFilter] = useState('Mois');
   const [customFrom, setCustomFrom] = useState('');
   const [customTo, setCustomTo] = useState('');
-  const [users, setUsers] = useState<AdminUser[]>([]); const [leagues, setLigues] = useState<League[]>([]); const [teams, setTeams] = useState<Team[]>([]); const [terrains, setTerrains] = useState<Terrain[]>([]); const [matches, setMatches] = useState<Match[]>([]); const [reservations, setReservations] = useState<Reservation[]>([]); const [journeys, setJourneys] = useState<JourneyOverview | null>(null); const [loaded, setLoaded] = useState(false);
-
-  useEffect(() => { let closed = false; void Promise.all([apiFetch<AdminUser[]>('/users').catch(() => []), apiFetch<League[]>('/leagues').catch(() => []), apiFetch<Team[]>('/teams').catch(() => []), apiFetch<Terrain[]>('/terrains/admin').catch(() => []), apiFetch<Match[]>('/matches').catch(() => []), apiFetch<Reservation[]>('/reservations/all').catch(() => [])]).then(([u, l, t, te, m, r]) => { if (closed) return; setUsers(u); setLigues(l); setTeams(t); setTerrains(te); setMatches(m); setReservations(r); setLoaded(true); }); return () => { closed = true; }; }, [searchParams]);
+  const usersQ = useApiQuery<AdminUser[]>(['kpi-users'], '/users');
+  const leaguesQ = useApiQuery<League[]>(['kpi-leagues'], '/leagues');
+  const terrainsQ = useApiQuery<Terrain[]>(['kpi-terrains'], '/terrains/admin');
+  const matchesQ = useApiQuery<Match[]>(['kpi-matches'], '/matches');
+  const reservationsQ = useApiQuery<Reservation[]>(['kpi-reservations'], '/reservations/all');
+  const users = usersQ.data ?? [];
+  const leagues = leaguesQ.data ?? [];
+  const terrains = terrainsQ.data ?? [];
+  const matches = matchesQ.data ?? [];
+  const reservations = reservationsQ.data ?? [];
+  const loaded = !(usersQ.isLoading || leaguesQ.isLoading || terrainsQ.isLoading || matchesQ.isLoading || reservationsQ.isLoading);
   const urlFrom = searchParams.get('from');
   const urlTo = searchParams.get('to');
   // Fenêtre temporelle : le filtre global (URL) prime ; sinon le filtre local
@@ -73,16 +80,16 @@ export default function KpiPage() {
       : now;
     return { start: s, end: e };
   }, [filter, urlFrom, urlTo, customFrom, customTo]);
-  // Sessions & funnel période-conscients : refetch dès que la fenêtre change.
-  useEffect(() => {
-    let closed = false;
-    const params = new URLSearchParams();
-    if (start) params.set('from', start.toISOString().slice(0, 10));
-    if (end) params.set('to', end.toISOString().slice(0, 10));
-    const qs = params.toString();
-    apiFetch<JourneyOverview>(`/analytics/user-journeys${qs ? `?${qs}` : ''}`).then((j) => { if (!closed) setJourneys(j); }).catch(() => { if (!closed) setJourneys(null); });
-    return () => { closed = true; };
-  }, [start, end]);
+  // Sessions & funnel période-conscients : clé incluant la fenêtre → refetch
+  // (mis en cache) dès que start/end changent.
+  const journeyParams = new URLSearchParams();
+  if (start) journeyParams.set('from', start.toISOString().slice(0, 10));
+  if (end) journeyParams.set('to', end.toISOString().slice(0, 10));
+  const journeyQs = journeyParams.toString();
+  const { data: journeys } = useApiQuery<JourneyOverview>(
+    ['user-journeys', journeyQs],
+    `/analytics/user-journeys${journeyQs ? `?${journeyQs}` : ''}`,
+  );
   const data = useMemo(() => { const scopedReservations = reservations.filter((item) => inPeriod(item.reservation_date, start, end)); const paid = scopedReservations.filter((item) => confirmed(item.status)); const resAmount = paid.reduce((sum, item) => sum + (item.total_price ?? 0), 0); const teamsInLigues = leagues.reduce((sum, item) => sum + (item._count?.teams ?? 0), 0); const matchesPlayed = matches.filter((item) => /TERMIN|VALID/.test(up(item.status)) && inPeriod(item.scheduled_at, start, end)).length; const top = new Map<string, { name: string; partner: string; count: number; revenue: number }>(); paid.forEach((reservation) => { const key = reservation.terrain?.id ?? 'unknown'; const current = top.get(key) ?? { name: reservation.terrain?.name ?? 'Terrain', partner: reservation.terrain?.partner?.full_name ?? '—', count: 0, revenue: 0 }; current.count += 1; current.revenue += reservation.total_price ?? 0; top.set(key, current); }); return { newUsers: users.filter((item) => inPeriod(item.created_at, start, end)).length, profiles: users.filter((item) => Boolean(item.position) && inPeriod(item.created_at, start, end)).length, activeLigues: leagues.filter((item) => ACTIVE_LEAGUE.includes(up(item.status))).length, teamsInLigues, matchesPlayed, reservations: scopedReservations.length, paid: paid.length, cancelled: scopedReservations.filter((item) => cancelled(item.status)).length, revenue: resAmount, commission: paid.reduce((sum, item) => sum + (item.platform_fee ?? 0), 0), activeTerrains: terrains.filter((item) => item.is_active !== false).length, topTerrains: [...top.values()].sort((a, b) => b.count - a.count).slice(0, 5), leagueFees: leagues.reduce((sum, item) => sum + (item.registration_fee ?? 0) * (item._count?.teams ?? 0), 0) }; }, [users, leagues, matches, reservations, terrains, start, end]);
   const nb = (value: number) => loaded ? value.toLocaleString('fr-FR') : '—';
   const title = tab === 'acquisition' ? 'KPI — Acquisition & Fidélisation' : tab === 'ligues' ? 'KPI — Ligues' : 'KPI — Réservations';

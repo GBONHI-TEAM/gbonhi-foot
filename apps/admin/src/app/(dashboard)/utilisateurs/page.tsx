@@ -4,6 +4,7 @@ import { Search, Users, Eye, X } from 'lucide-react';
 import { Header } from '../../../components/layout/header';
 import { EmptyState } from '../../../components/ui/empty-state';
 import { apiFetch } from '../../../lib/api';
+import { useApiQuery } from '../../../lib/use-api-query';
 
 interface ApiUser {
   id: string;
@@ -83,8 +84,7 @@ export default function UtilisateursPage() {
   const [tab, setTab] = useState('users');
   const [sub, setSub] = useState('users');
   const [search, setSearch] = useState('');
-  const [users, setUsers] = useState<ApiUser[]>([]);
-  const [loaded, setLoaded] = useState(false);
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   // Fiche à ouvrir : joueur, partenaire ou admin selon la ligne.
   const [card, setCard] = useState<{ userId: string; kind: 'player' | 'partner' | 'admin' } | null>(null);
 
@@ -92,30 +92,22 @@ export default function UtilisateursPage() {
   // « Utilisateurs », sinon l'onglet principal.
   const role = tab === 'users' ? sub : tab;
 
+  // Recherche « debounced » : on attend 250 ms après la dernière frappe.
   useEffect(() => {
-    let cancelled = false;
-    setLoaded(false);
-    const params = new URLSearchParams();
-    if (role) params.set('role', role);
-    if (search.trim()) params.set('search', search.trim());
-    const qs = params.toString();
-    const t = setTimeout(() => {
-      (async () => {
-        try {
-          const data = await apiFetch<ApiUser[]>(`/users${qs ? `?${qs}` : ''}`);
-          if (!cancelled) setUsers(Array.isArray(data) ? data : []);
-        } catch {
-          if (!cancelled) setUsers([]);
-        } finally {
-          if (!cancelled) setLoaded(true);
-        }
-      })();
-    }, 250);
-    return () => {
-      cancelled = true;
-      clearTimeout(t);
-    };
-  }, [role, search]);
+    const t = setTimeout(() => setDebouncedSearch(search.trim()), 250);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  const usersParams = new URLSearchParams();
+  if (role) usersParams.set('role', role);
+  if (debouncedSearch) usersParams.set('search', debouncedSearch);
+  const usersQs = usersParams.toString();
+  const { data: usersData, isLoading } = useApiQuery<ApiUser[]>(
+    ['users', role, debouncedSearch],
+    `/users${usersQs ? `?${usersQs}` : ''}`,
+  );
+  const users = Array.isArray(usersData) ? usersData : [];
+  const loaded = !isLoading;
 
   const displayName = (u: ApiUser) => u.full_name?.trim() || u.username?.trim() || '—';
   const empty = useMemo(() => loaded && users.length === 0, [loaded, users]);

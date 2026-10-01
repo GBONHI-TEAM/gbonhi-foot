@@ -1,10 +1,10 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { FileDown, Plus, Sheet } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Header } from '../../../components/layout/header';
-import { apiFetch } from '../../../lib/api';
+import { useApiQuery } from '../../../lib/use-api-query';
 import { createPdfBlob, createXlsxBlob, downloadBlob } from '../../../lib/file-export';
 
 interface Summary { ca: number; commission: number; reverse: number; transactions: number; costs: number; marge: number; }
@@ -82,18 +82,13 @@ function CostBreakdown({ costs }: { costs: Cost[] }) {
 export default function FinancePage() {
   const searchParams = useSearchParams();
   const router = useRouter();
-  const [summary, setSummary] = useState<Summary | null>(null);
-  const [costs, setCosts] = useState<Cost[]>([]);
-  const [reservations, setReservations] = useState<Reservation[]>([]);
-  const [loaded, setLoaded] = useState(false);
-
-  useEffect(() => {
-    void Promise.all([
-      apiFetch<Summary>('/finance/summary').catch(() => null),
-      apiFetch<Cost[]>('/finance/costs').catch(() => []),
-      apiFetch<Reservation[]>('/reservations/all').catch(() => []),
-    ]).then(([summaryData, costData, reservationData]) => { setSummary(summaryData); setCosts(costData); setReservations(reservationData); setLoaded(true); });
-  }, [searchParams]);
+  const summaryQ = useApiQuery<Summary>(['finance-summary'], '/finance/summary');
+  const costsQ = useApiQuery<Cost[]>(['finance-costs'], '/finance/costs');
+  const reservationsQ = useApiQuery<Reservation[]>(['finance-reservations'], '/reservations/all');
+  const summary = summaryQ.data ?? null;
+  const costs = Array.isArray(costsQ.data) ? costsQ.data : [];
+  const reservations = Array.isArray(reservationsQ.data) ? reservationsQ.data : [];
+  const loaded = !(summaryQ.isLoading || costsQ.isLoading || reservationsQ.isLoading);
 
   const value = (amount?: number) => loaded && summary ? fcfa(amount ?? 0) : '—';
   const period = searchParams.get('from') || searchParams.get('to') ? `${searchParams.get('from') ?? 'Début'} au ${searchParams.get('to') ?? 'aujourd’hui'}` : 'Toutes les périodes';

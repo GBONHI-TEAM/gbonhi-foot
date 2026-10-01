@@ -1,8 +1,8 @@
 'use client';
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { Header } from '../../../../../components/layout/header';
-import { apiFetch } from '../../../../../lib/api';
+import { useApiQuery } from '../../../../../lib/use-api-query';
 
 type ResultStatus = 'JOUÉ' | 'À VENIR' | 'REPORTÉ';
 
@@ -141,32 +141,13 @@ export default function LigueResultatsPage() {
   const params = useParams<{ id: string }>();
   const leagueId = params?.id;
 
-  const [leagueName, setLeagueName] = useState<string>('');
-  const [matches, setMatches] = useState<ResultMatch[]>([]);
-  const [loading, setLoading] = useState(true);
   const [activeChip, setActiveChip] = useState<string>('Toutes');
   const [statusFilter, setStatusFilter] = useState<ResultStatus | null>(null);
 
-  useEffect(() => {
-    if (!leagueId) return;
-    let cancelled = false;
-    setLoading(true);
-    (async () => {
-      try {
-        const data = await apiFetch<ApiLeagueDetail>(`/leagues/${leagueId}`);
-        if (cancelled) return;
-        setLeagueName(data.name ?? '');
-        setMatches(Array.isArray(data.matches) ? data.matches.map(mapMatch) : []);
-      } catch {
-        if (!cancelled) setMatches([]);
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [leagueId]);
+  const leagueQuery = useApiQuery<ApiLeagueDetail>(['league-results', leagueId ?? ''], `/leagues/${leagueId}`, { enabled: !!leagueId });
+  const leagueName = leagueQuery.data?.name ?? '';
+  const matches = Array.isArray(leagueQuery.data?.matches) ? leagueQuery.data!.matches.map(mapMatch) : [];
+  const loading = leagueQuery.isLoading;
 
   const roundChips = useMemo(() => {
     const rounds = [...new Set(matches.map((m) => m.round))].sort((a, b) => a - b);

@@ -1,10 +1,10 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Star } from 'lucide-react';
 import { Header } from '../../../components/layout/header';
 import { EmptyState } from '../../../components/ui/empty-state';
-import { apiFetch } from '../../../lib/api';
+import { useApiQuery } from '../../../lib/use-api-query';
 
 interface ApiReview {
   id: string;
@@ -41,19 +41,11 @@ function requiresModeration(review: ApiReview) {
 }
 
 export default function AvisPage() {
-  const [reviews, setReviews] = useState<ApiReview[]>([]);
-  const [loaded, setLoaded] = useState(false);
+  const { data: reviewsData, isLoading } = useApiQuery<ApiReview[]>(['reviews'], '/reviews');
+  const reviews = Array.isArray(reviewsData) ? reviewsData : [];
+  const loaded = !isLoading;
   const [filter, setFilter] = useState<ReviewFilter>('all');
   const [terrainId, setTerrainId] = useState('');
-
-  useEffect(() => {
-    let cancelled = false;
-    void apiFetch<ApiReview[]>('/reviews')
-      .then((data) => { if (!cancelled) setReviews(Array.isArray(data) ? data : []); })
-      .catch(() => { if (!cancelled) setReviews([]); })
-      .finally(() => { if (!cancelled) setLoaded(true); });
-    return () => { cancelled = true; };
-  }, []);
 
   const terrains = useMemo(() => {
     const byId = new Map<string, string>();

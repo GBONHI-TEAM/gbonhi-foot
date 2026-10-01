@@ -1,10 +1,11 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { CalendarDays, Trash2 } from 'lucide-react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import { Header } from '../../../../components/layout/header';
 import { apiFetch } from '../../../../lib/api';
+import { useApiQuery } from '../../../../lib/use-api-query';
 
 interface Cost { id: string; label: string; category: string; amount: number; incurred_on: string; }
 const CATEGORIES = [{ value: 'ARBITRAGE', label: 'Arbitrage' }, { value: 'SUPERVISION', label: 'Supervision' }, { value: 'LOGISTIQUE', label: 'Logistique' }, { value: 'MARKETING', label: 'Marketing' }, { value: 'INFRASTRUCTURE', label: 'Infrastructure' }, { value: 'AUTRE', label: 'Autre coût' }];
@@ -16,9 +17,10 @@ function Field({ label, children }: { label: React.ReactNode; children: React.Re
 
 export default function DeclarerCoutsPage() {
   const router = useRouter();
-  const searchParams = useSearchParams();
-  const [costs, setCosts] = useState<Cost[]>([]);
-  const [loaded, setLoaded] = useState(false);
+  const costsQ = useApiQuery<Cost[]>(['finance-costs'], '/finance/costs');
+  const costs = Array.isArray(costsQ.data) ? costsQ.data : [];
+  const loaded = !costsQ.isLoading;
+  const load = () => costsQ.refetch();
   const [category, setCategory] = useState('ARBITRAGE');
   const [beneficiary, setBeneficiary] = useState('');
   const [description, setDescription] = useState('');
@@ -27,8 +29,6 @@ export default function DeclarerCoutsPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
-  async function load() { try { const data = await apiFetch<Cost[]>('/finance/costs'); setCosts(Array.isArray(data) ? data : []); } catch { setCosts([]); } finally { setLoaded(true); } }
-  useEffect(() => { void load(); }, [searchParams]);
   const total = useMemo(() => costs.reduce((sum, cost) => sum + cost.amount, 0), [costs]);
 
   async function submit() {
@@ -43,7 +43,7 @@ export default function DeclarerCoutsPage() {
       setBeneficiary(''); setDescription(''); setAmount(''); await load();
     } catch (reason) { setError(reason instanceof Error ? reason.message : "Impossible d'enregistrer ce coût."); } finally { setSaving(false); }
   }
-  async function remove(id: string) { const previous = costs; setCosts((current) => current.filter((cost) => cost.id !== id)); try { await apiFetch(`/finance/costs/${id}`, { method: 'DELETE' }); } catch { setCosts(previous); } }
+  async function remove(id: string) { try { await apiFetch(`/finance/costs/${id}`, { method: 'DELETE' }); } finally { void load(); } }
 
   return <>
     <Header title="Déclarer des coûts" />

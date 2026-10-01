@@ -1,7 +1,8 @@
 'use client';
-import { useCallback, useEffect, useState } from 'react';
+import { useState } from 'react';
 import { X } from 'lucide-react';
 import { apiFetch } from '../../lib/api';
+import { useApiQuery } from '../../lib/use-api-query';
 
 export interface Ticket {
   id: string;
@@ -47,34 +48,26 @@ function formatDate(iso: string) {
 }
 
 export function TicketsManager({ kind, refreshKey = 0 }: { kind: 'support' | 'incident'; refreshKey?: number }) {
-  const [tickets, setTickets] = useState<Ticket[]>([]);
-  const [counts, setCounts] = useState<Record<string, number>>({});
   const [filter, setFilter] = useState<string>('');
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
   const [selected, setSelected] = useState<Ticket | null>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError('');
-    try {
-      const qs = `kind=${kind}${filter ? `&status=${filter}` : ''}`;
-      const [list, c] = await Promise.all([
-        apiFetch<Ticket[]>(`/support/tickets?${qs}`),
-        apiFetch<Record<string, number>>(`/support/tickets/counts?kind=${kind}`),
-      ]);
-      setTickets(Array.isArray(list) ? list : []);
-      setCounts(c ?? {});
-    } catch {
-      // Les détails techniques restent dans les logs du navigateur et de l'API.
-      setError('Impossible de charger les demandes pour le moment. Vérifie la connexion puis réessaie.');
-      setTickets([]);
-    } finally {
-      setLoading(false);
-    }
-  }, [kind, filter]);
-
-  useEffect(() => { void load(); }, [load, refreshKey]);
+  const qs = `kind=${kind}${filter ? `&status=${filter}` : ''}`;
+  const listQ = useApiQuery<Ticket[]>(['tickets', kind, filter, refreshKey], `/support/tickets?${qs}`);
+  const countsQ = useApiQuery<Record<string, number>>(
+    ['tickets-counts', kind, refreshKey],
+    `/support/tickets/counts?kind=${kind}`,
+  );
+  const tickets = Array.isArray(listQ.data) ? listQ.data : [];
+  const counts = countsQ.data ?? {};
+  const loading = listQ.isLoading || countsQ.isLoading;
+  const error =
+    listQ.isError || countsQ.isError
+      ? 'Impossible de charger les demandes pour le moment. Vérifie la connexion puis réessaie.'
+      : '';
+  const load = () => {
+    void listQ.refetch();
+    void countsQ.refetch();
+  };
 
   const total = STATUS_ORDER.reduce((s, k) => s + (counts[k] ?? 0), 0);
 

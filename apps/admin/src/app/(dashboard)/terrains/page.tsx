@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   Check,
   ChevronLeft,
@@ -16,6 +16,7 @@ import {
 import { Header } from '../../../components/layout/header';
 import { EmptyState } from '../../../components/ui/empty-state';
 import { apiFetch } from '../../../lib/api';
+import { useApiQuery } from '../../../lib/use-api-query';
 import { createSupabaseBrowserClient } from '../../../lib/supabase/client';
 
 interface TerrainPartner {
@@ -386,42 +387,25 @@ function TerrainForm({
 }
 
 export default function TerrainsPage() {
-  const [terrains, setTerrains] = useState<ApiTerrain[]>([]);
-  const [partners, setPartners] = useState<PartnerOption[]>([]);
-  const [loading, setLoading] = useState(true);
+  const terrainsQ = useApiQuery<ApiTerrain[]>(['terrains-admin'], '/terrains/admin');
+  const partnersQ = useApiQuery<PartnerOption[]>(['terrains-partners'], '/partner-accesses/partners');
+  const terrains = Array.isArray(terrainsQ.data) ? terrainsQ.data : [];
+  const partners = Array.isArray(partnersQ.data) ? partnersQ.data : [];
+  const loading = terrainsQ.isLoading;
+  const load = () => { void terrainsQ.refetch(); void partnersQ.refetch(); };
   const [filter, setFilter] = useState<'all' | 'active' | 'inactive'>('all');
   const [search, setSearch] = useState('');
   const [formTerrain, setFormTerrain] = useState<ApiTerrain | null | undefined>(undefined);
-
-  async function load() {
-    setLoading(true);
-    try {
-      const terrainData = await apiFetch<ApiTerrain[]>('/terrains/admin');
-      // La liste des terrains reste utilisable même si les options partenaires
-      // ne sont temporairement pas disponibles (seule la création est alors bloquée).
-      const partnerData = await apiFetch<PartnerOption[]>('/partner-accesses/partners').catch(() => []);
-      setTerrains(Array.isArray(terrainData) ? terrainData : []);
-      setPartners(Array.isArray(partnerData) ? partnerData : []);
-    } catch {
-      setTerrains([]);
-      setPartners([]);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  useEffect(() => { void load(); }, []);
 
   // Activer/désactiver un terrain directement depuis la liste (switch), sans
   // ouvrir la fiche. Optimiste : on met à jour l'UI puis on revient en arrière
   // en cas d'échec.
   async function toggleActive(terrain: ApiTerrain) {
     const next = !terrain.is_active;
-    setTerrains((list) => list.map((t) => (t.id === terrain.id ? { ...t, is_active: next } : t)));
     try {
       await apiFetch(`/terrains/${terrain.id}`, { method: 'PATCH', body: JSON.stringify({ is_active: next }) });
-    } catch {
-      setTerrains((list) => list.map((t) => (t.id === terrain.id ? { ...t, is_active: terrain.is_active } : t)));
+    } finally {
+      void load();
     }
   }
 

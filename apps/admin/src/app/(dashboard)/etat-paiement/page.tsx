@@ -1,9 +1,9 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Search } from 'lucide-react';
 import { Header } from '../../../components/layout/header';
-import { apiFetch } from '../../../lib/api';
+import { useApiQuery } from '../../../lib/use-api-query';
 
 interface Intent {
   id: string;
@@ -54,23 +54,12 @@ function fmt(iso: string) {
 export default function EtatPaiementPage() {
   const [status, setStatus] = useState('');
   const [search, setSearch] = useState('');
-  const [rows, setRows] = useState<Intent[]>([]);
-  const [loaded, setLoaded] = useState(false);
-
-  const load = useCallback(async () => {
-    setLoaded(false);
-    try {
-      const qs = status ? `?status=${status}` : '';
-      const data = await apiFetch<Intent[]>(`/payments/intents${qs}`);
-      setRows(Array.isArray(data) ? data : []);
-    } catch {
-      setRows([]);
-    } finally {
-      setLoaded(true);
-    }
-  }, [status]);
-
-  useEffect(() => { void load(); }, [load]);
+  const { data: rowsData, isLoading } = useApiQuery<Intent[]>(
+    ['payment-intents', status],
+    `/payments/intents${status ? `?status=${status}` : ''}`,
+  );
+  const rows = Array.isArray(rowsData) ? rowsData : [];
+  const loaded = !isLoading;
 
   const filtered = rows.filter((r) => {
     if (!search.trim()) return true;

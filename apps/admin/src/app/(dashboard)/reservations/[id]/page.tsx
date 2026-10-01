@@ -1,10 +1,11 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { ArrowLeft, Ban, CalendarClock, Check, Clock, MapPin, User, Wallet, CalendarCheck } from 'lucide-react';
 import { Header } from '../../../../components/layout/header';
 import { apiFetch } from '../../../../lib/api';
+import { useApiQuery } from '../../../../lib/use-api-query';
 
 interface Reservation {
   id: string;
@@ -51,25 +52,20 @@ export default function ReservationDetailPage() {
   const params = useParams<{ id: string }>();
   const id = params?.id;
   const router = useRouter();
-  const [res, setRes] = useState<Reservation | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const [notFound, setNotFound] = useState(false);
   const [mode, setMode] = useState<'view' | 'reschedule'>('view');
   const [form, setForm] = useState({ date: '', start: 0, end: 0 });
 
-  const reload = useCallback(async () => {
-    if (!id) return;
-    try {
-      const data = await apiFetch<Reservation>(`/reservations/${id}`);
-      setRes(data);
-      setForm({ date: toDateInput(data.reservation_date), start: data.start_hour ?? 0, end: data.end_hour ?? 0 });
-    } catch {
-      setNotFound(true);
-    }
-  }, [id]);
+  const resQuery = useApiQuery<Reservation>(['reservation', id ?? ''], `/reservations/${id}`, { enabled: !!id });
+  const res = resQuery.data ?? null;
+  const notFound = resQuery.isError;
+  const reload = () => resQuery.refetch();
 
-  useEffect(() => { void reload(); }, [reload]);
+  // Synchronise le formulaire de report dès que la réservation est chargée.
+  useEffect(() => {
+    if (res) setForm({ date: toDateInput(res.reservation_date), start: res.start_hour ?? 0, end: res.end_hour ?? 0 });
+  }, [res]);
 
   async function changeStatus(newStatus: string, cancelReason?: string) {
     if (!id) return;

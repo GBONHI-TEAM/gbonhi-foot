@@ -1,9 +1,10 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Bell, Send } from 'lucide-react';
 import { Header } from '../../../components/layout/header';
 import { apiFetch } from '../../../lib/api';
+import { useApiQuery } from '../../../lib/use-api-query';
 
 interface ApiNotification { id: string; title: string | null; body: string | null; type: string | null; broadcast: boolean | null; created_at: string | null; }
 type Target = 'all' | 'league' | 'reservation' | 'partners';
@@ -17,20 +18,18 @@ function fmtDateTime(iso: string | null) {
 const inputClass = 'w-full rounded-lg border border-gray-200 bg-white px-4 text-sm text-gray-900 outline-none transition focus:border-[#1E7A3A] focus:ring-1 focus:ring-[#1E7A3A]';
 
 export default function NotificationsPage() {
-  const [items, setItems] = useState<ApiNotification[]>([]);
-  const [loaded, setLoaded] = useState(false);
+  const { data: itemsData, isLoading, refetch } = useApiQuery<ApiNotification[]>(
+    ['notifications-all'],
+    '/notifications/all',
+  );
+  const items = Array.isArray(itemsData) ? itemsData : [];
+  const loaded = !isLoading;
+  const load = () => refetch();
   const [title, setTitle] = useState('');
   const [body, setBody] = useState('');
   const [target, setTarget] = useState<Target>('all');
   const [sending, setSending] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
-
-  async function load() {
-    try { setItems(await apiFetch<ApiNotification[]>('/notifications/all')); }
-    catch { setItems([]); }
-    finally { setLoaded(true); }
-  }
-  useEffect(() => { void load(); }, []);
 
   async function send() {
     if (!title.trim() || !body.trim()) { setFeedback('Saisissez un titre et un message avant l’envoi.'); return; }

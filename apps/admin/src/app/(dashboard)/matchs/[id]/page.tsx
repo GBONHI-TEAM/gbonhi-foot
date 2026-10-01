@@ -1,11 +1,11 @@
 'use client';
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { ArrowLeft, MapPin, User, Radio } from 'lucide-react';
 import { Header } from '../../../../components/layout/header';
 import { PlayerProfileDrawer } from '../../../../components/players/player-profile-drawer';
-import { apiFetch } from '../../../../lib/api';
+import { useApiQuery } from '../../../../lib/use-api-query';
 
 type MatchStatus =
   | 'PROGRAMMÉ'
@@ -121,27 +121,10 @@ export default function MatchDetailPage() {
   const params = useParams<{ id: string }>();
   const matchId = params?.id;
 
-  const [match, setMatch] = useState<ApiMatch | null>(null);
-  const [loading, setLoading] = useState(true);
+  const matchQuery = useApiQuery<ApiMatch>(['match', matchId ?? ''], `/matches/${matchId}`, { enabled: !!matchId });
+  const match = matchQuery.data ?? null;
+  const loading = matchQuery.isLoading;
   const [selectedPlayer, setSelectedPlayer] = useState<{ id: string; teamName: string; jersey: number | null } | null>(null);
-
-  useEffect(() => {
-    if (!matchId) return;
-    let cancelled = false;
-    (async () => {
-      try {
-        const data = await apiFetch<ApiMatch>(`/matches/${matchId}`);
-        if (!cancelled) setMatch(data);
-      } catch {
-        if (!cancelled) setMatch(null);
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [matchId]);
 
   const events = useMemo(
     () => [...(match?.events ?? [])].sort((a, b) => a.minute - b.minute),

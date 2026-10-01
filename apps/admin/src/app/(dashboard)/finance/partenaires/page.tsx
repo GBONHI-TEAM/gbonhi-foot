@@ -1,10 +1,11 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Download, FileDown, Search, Sheet, Wallet, X, Check } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { Header } from '../../../../components/layout/header';
 import { apiFetch } from '../../../../lib/api';
+import { useApiQuery } from '../../../../lib/use-api-query';
 import { createPdfBlob, createReceiptPdfBlob, createXlsxBlob, downloadBlob } from '../../../../lib/file-export';
 
 interface PartnerRow { partnerId: string; partnerName: string; terrains: string[]; amountOwed: number; transactions: number; status: string; }
@@ -56,28 +57,15 @@ function downloadReceipt(s: Settlement) {
 
 export default function PartenairesAPayerPage() {
   const router = useRouter();
-  const [rows, setRows] = useState<PartnerRow[]>([]);
-  const [settlements, setSettlements] = useState<Settlement[]>([]);
-  const [loaded, setLoaded] = useState(false);
+  const partnersQ = useApiQuery<PartnerRow[]>(['finance-partners'], '/finance/partners');
+  const settlementsQ = useApiQuery<Settlement[]>(['finance-settlements'], '/finance/settlements');
+  const rows = Array.isArray(partnersQ.data) ? partnersQ.data : [];
+  const settlements = Array.isArray(settlementsQ.data) ? settlementsQ.data : [];
+  const loaded = !(partnersQ.isLoading || settlementsQ.isLoading);
+  const load = () => { void partnersQ.refetch(); void settlementsQ.refetch(); };
   const [statusFilter, setStatusFilter] = useState('À payer');
   const [search, setSearch] = useState('');
   const [settleTarget, setSettleTarget] = useState<PartnerRow | null>(null);
-
-  const load = useCallback(async () => {
-    setLoaded(false);
-    try {
-      const [partners, hist] = await Promise.all([
-        apiFetch<PartnerRow[]>('/finance/partners').catch(() => []),
-        apiFetch<Settlement[]>('/finance/settlements').catch(() => []),
-      ]);
-      setRows(Array.isArray(partners) ? partners : []);
-      setSettlements(Array.isArray(hist) ? hist : []);
-    } finally {
-      setLoaded(true);
-    }
-  }, []);
-
-  useEffect(() => { void load(); }, [load]);
 
   const showingPaid = statusFilter === 'Payé';
 
