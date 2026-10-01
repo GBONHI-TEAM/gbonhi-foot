@@ -1,9 +1,9 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Activity, AlertTriangle, CalendarDays, LineChart, Star } from 'lucide-react';
 import { Header } from '../../../components/layout/header';
-import { apiFetch } from '../../../lib/api';
+import { useApiQuery } from '../../../lib/use-api-query';
 
 const FILTERS = ["Aujourd'hui", '7 jours', '30 jours', 'Ce mois', 'Période'] as const;
 type PeriodFilter = (typeof FILTERS)[number];
@@ -53,20 +53,12 @@ export default function DashboardPage() {
   const [activeFilter, setActiveFilter] = useState<PeriodFilter>("Aujourd'hui");
   const [customFrom, setCustomFrom] = useState(today);
   const [customTo, setCustomTo] = useState(today);
-  const [overview, setOverview] = useState<Overview | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
   const range = useMemo(() => rangeFor(activeFilter, customFrom, customTo), [activeFilter, customFrom, customTo]);
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true); setError(null);
-    void apiFetch<Overview>(`/analytics/operations-overview?from=${range.from}&to=${range.to}`)
-      .then((result) => { if (!cancelled) setOverview(result); })
-      .catch(() => { if (!cancelled) { setOverview(null); setError('Les indicateurs sont momentanément indisponibles. Réessaie dans quelques instants.'); } })
-      .finally(() => { if (!cancelled) setLoading(false); });
-    return () => { cancelled = true; };
-  }, [range.from, range.to]);
+  const { data: overview, isLoading: loading, isError } = useApiQuery<Overview>(
+    ['operations-overview', range.from, range.to],
+    `/analytics/operations-overview?from=${range.from}&to=${range.to}`,
+  );
+  const error = isError ? 'Les indicateurs sont momentanément indisponibles. Réessaie dans quelques instants.' : null;
 
   const summary = overview?.summary;
   const maxActivity = Math.max(1, ...(overview?.series.map((row) => row.activity + row.registrations + row.reservations) ?? [1]));

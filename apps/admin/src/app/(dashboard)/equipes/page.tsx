@@ -4,6 +4,7 @@ import { MoreVertical, Eye, BarChart3, CalendarDays, Pencil, Pause, Play, Trash2
 import { Header } from '../../../components/layout/header';
 import { PlayerProfileDrawer } from '../../../components/players/player-profile-drawer';
 import { apiFetch } from '../../../lib/api';
+import { useApiQuery } from '../../../lib/use-api-query';
 
 type TeamStatus = 'ACTIF' | 'SUSPENDU';
 
@@ -414,8 +415,10 @@ export default function EquipesPage() {
   const [selectedTeam, setSelectedTeam] = useState<Team | null>(null);
   const [drawerTab, setDrawerTab] = useState('Joueurs');
   const [selectedPlayer, setSelectedPlayer] = useState<TeamPlayer | null>(null);
-  const [teams, setTeams] = useState<Team[]>([]);
-  const [loaded, setLoaded] = useState(false);
+  const { data: teamsRaw, isLoading, refetch } = useApiQuery<ApiTeam[]>(['teams'], '/teams');
+  const teams = Array.isArray(teamsRaw) ? teamsRaw.map(mapTeam) : [];
+  const loaded = !isLoading;
+  const reload = () => refetch();
   const [busyId, setBusyId] = useState<string | null>(null);
   const [editTeam, setEditTeam] = useState<Team | null>(null);
 
@@ -447,19 +450,6 @@ export default function EquipesPage() {
       setBusyId(null);
     }
   }
-
-  async function reload() {
-    try {
-      const data = await apiFetch<ApiTeam[]>('/teams');
-      setTeams(Array.isArray(data) ? data.map(mapTeam) : []);
-    } catch {
-      setTeams([]);
-    } finally {
-      setLoaded(true);
-    }
-  }
-
-  useEffect(() => { reload(); }, []);
 
   function openTeam(team: Team, tab: string) {
     setSelectedTeam(team);

@@ -1,10 +1,10 @@
 'use client';
-import { useCallback, useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { CalendarCheck } from 'lucide-react';
 import { Header } from '../../../components/layout/header';
 import { EmptyState } from '../../../components/ui/empty-state';
-import { apiFetch } from '../../../lib/api';
+import { useApiQuery } from '../../../lib/use-api-query';
 
 interface ApiReservation {
   id: string;
@@ -67,29 +67,18 @@ function fmtSlot(start: number | null, end: number | null) {
 export default function ReservationsPage() {
   const [status, setStatus] = useState('');
   const [date, setDate] = useState('');
-  const [rows, setRows] = useState<ApiReservation[]>([]);
-  const [loaded, setLoaded] = useState(false);
   const router = useRouter();
 
-  const load = useCallback(async () => {
-    setLoaded(false);
-    const params = new URLSearchParams();
-    if (status) params.set('status', status);
-    if (date) params.set('date', date);
-    const qs = params.toString();
-    try {
-      const data = await apiFetch<ApiReservation[]>(`/reservations/all${qs ? `?${qs}` : ''}`);
-      setRows(Array.isArray(data) ? data : []);
-    } catch {
-      setRows([]);
-    } finally {
-      setLoaded(true);
-    }
-  }, [status, date]);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
+  const params = new URLSearchParams();
+  if (status) params.set('status', status);
+  if (date) params.set('date', date);
+  const qs = params.toString();
+  const { data, isLoading } = useApiQuery<ApiReservation[]>(
+    ['reservations-all', status, date],
+    `/reservations/all${qs ? `?${qs}` : ''}`,
+  );
+  const rows = Array.isArray(data) ? data : [];
+  const loaded = !isLoading;
 
   return (
     <>

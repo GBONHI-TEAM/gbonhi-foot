@@ -5,6 +5,7 @@ import { ChevronDown, MapPin, User, Plus, Radio, Eye, Target } from 'lucide-reac
 import { Header } from '../../../components/layout/header';
 import { EmptyState } from '../../../components/ui/empty-state';
 import { apiFetch } from '../../../lib/api';
+import { useApiQuery } from '../../../lib/use-api-query';
 
 type MatchStatus =
   | 'PROGRAMMÉ'
@@ -348,54 +349,27 @@ function CreateMatchModal({
 }
 
 export default function MatchsPage() {
-  const [leagues, setLeagues] = useState<LeagueOption[]>([]);
   const [tournamentId, setTournamentId] = useState('');
   const [status, setStatus] = useState('');
   const [date, setDate] = useState('');
-  const [matches, setMatches] = useState<ApiMatch[]>([]);
-  const [loaded, setLoaded] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
-  const [reloadKey, setReloadKey] = useState(0);
 
-  // Charge la liste des tournois pour le sélecteur.
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const data = await apiFetch<LeagueOption[]>('/leagues');
-        if (!cancelled && Array.isArray(data)) setLeagues(data.map((l) => ({ id: l.id, name: l.name })));
-      } catch {
-        if (!cancelled) setLeagues([]);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  // Liste des tournois pour le sélecteur (mise en cache).
+  const { data: leaguesData } = useApiQuery<LeagueOption[]>(['leagues-options'], '/leagues');
+  const leagues = Array.isArray(leaguesData) ? leaguesData.map((l) => ({ id: l.id, name: l.name })) : [];
 
-  // Charge les matchs selon les filtres.
-  useEffect(() => {
-    let cancelled = false;
-    setLoaded(false);
-    const params = new URLSearchParams();
-    if (tournamentId) params.set('tournament_id', tournamentId);
-    if (status) params.set('status', status);
-    if (date) params.set('date', date);
-    const qs = params.toString();
-    (async () => {
-      try {
-        const data = await apiFetch<ApiMatch[]>(`/matches${qs ? `?${qs}` : ''}`);
-        if (!cancelled) setMatches(Array.isArray(data) ? data : []);
-      } catch {
-        if (!cancelled) setMatches([]);
-      } finally {
-        if (!cancelled) setLoaded(true);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [tournamentId, status, date, reloadKey]);
+  // Liste des matchs selon les filtres (mise en cache ; refetch après création).
+  const matchParams = new URLSearchParams();
+  if (tournamentId) matchParams.set('tournament_id', tournamentId);
+  if (status) matchParams.set('status', status);
+  if (date) matchParams.set('date', date);
+  const matchQs = matchParams.toString();
+  const { data: matchesData, isLoading, refetch: refetchMatches } = useApiQuery<ApiMatch[]>(
+    ['matches', tournamentId, status, date],
+    `/matches${matchQs ? `?${matchQs}` : ''}`,
+  );
+  const matches = Array.isArray(matchesData) ? matchesData : [];
+  const loaded = !isLoading;
 
   const counts = useMemo(() => {
     const c = { live: 0, upcoming: 0, played: 0, reported: 0 };
@@ -481,7 +455,7 @@ export default function MatchsPage() {
         <CreateMatchModal
           leagues={leagues}
           onClose={() => setShowCreate(false)}
-          onCreated={() => setReloadKey((k) => k + 1)}
+          onCreated={() => void refetchMatches()}
         />
       )}
 

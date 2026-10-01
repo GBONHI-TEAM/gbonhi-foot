@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { Header } from '../../../components/layout/header';
 import { apiFetch } from '../../../lib/api';
+import { useApiQuery } from '../../../lib/use-api-query';
 import { createSupabaseBrowserClient } from '../../../lib/supabase/client';
 
 type LeagueStatus =
@@ -863,21 +864,10 @@ export default function LiguesPage() {
   const [openMenu, setOpenMenu] = useState<string | null>(null);
   const [formOpen, setFormOpen] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
-  const [leagues, setLeagues] = useState<League[]>([]);
-  const [loaded, setLoaded] = useState(false);
-
-  async function reload() {
-    try {
-      const data = await apiFetch<ApiLeague[]>('/leagues');
-      setLeagues(Array.isArray(data) ? data.map(mapLeague) : []);
-    } catch {
-      setLeagues([]);
-    } finally {
-      setLoaded(true);
-    }
-  }
-
-  useEffect(() => { reload(); }, []);
+  const { data: leaguesRaw, isLoading, refetch } = useApiQuery<ApiLeague[]>(['leagues'], '/leagues');
+  const leagues = Array.isArray(leaguesRaw) ? leaguesRaw.map(mapLeague) : [];
+  const loaded = !isLoading;
+  const reload = () => { void refetch(); };
 
   async function changeStatus(id: string, status: string) {
     const body: { status: string; reason?: string } = { status };
