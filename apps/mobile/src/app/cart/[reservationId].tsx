@@ -7,6 +7,7 @@ import { apiClient } from '../../lib/api';
 import { formatFcfa } from '../../types/terrain';
 import { PendingReservationCart, useReservationCartStore } from '../../store/reservation-cart.store';
 import { METHOD_META, formatDate, time, timeRemaining, isReservationExpired } from '../../lib/cart-format';
+import { startWaveReservation, waitForIntent } from '../../lib/wave-checkout';
 
 export default function CartPaymentScreen() {
   const router = useRouter();
@@ -135,6 +136,37 @@ export default function CartPaymentScreen() {
     if (!reservation || busy || expired) return;
     try {
       setBusy(true);
+
+      // Paiement Wave : checkout hébergé (ouvre le navigateur) puis attente de
+      // la confirmation (webhook). Repli sur le paiement simulé si Wave n'est
+      // pas encore activé côté serveur.
+      if (selectedMethod === 'wave') {
+        const started = await startWaveReservation(reservation.id);
+        if (started) {
+          const status = await waitForIntent(started.intent_id);
+          if (status === 'validated') {
+            removePendingReservation(reservation.id);
+            router.replace({
+              pathname: '/terrain/[id]/confirmation',
+              params: {
+                id: reservation.terrain_id,
+                reservationId: reservation.id,
+                date: reservation.reservation_date,
+                start: String(reservation.start_hour),
+                total: String(reservation.total_price),
+                method: 'wave',
+              },
+            });
+          } else if (status === 'cancelled') {
+            Alert.alert('Paiement non abouti', 'Le paiement Wave n’a pas été finalisé. Aucun montant n’a été retenu (ou tu as été remboursé).');
+          } else {
+            Alert.alert('Paiement en cours', 'Si tu as payé, la confirmation peut prendre un instant. Tu retrouveras ta réservation dans « Mes réservations ».');
+          }
+          return;
+        }
+        // started === null → Wave non configuré → on continue vers le simulé.
+      }
+
       const { data } = await apiClient.post<{ reservation_id: string; payment_method: string; cash: boolean }>(
         `/api/v1/payments/reservations/${reservation.id}/checkout`,
         { payment_method: selectedMethod },

@@ -7,6 +7,7 @@ import { AppHeader } from '../../../components/ui/app-header';
 import { RemoteImage } from '../../../components/ui/remote-image';
 import { imageThumb } from '../../../lib/image';
 import { METHOD_META } from '../../../lib/cart-format';
+import { startWaveLeague, waitForIntent } from '../../../lib/wave-checkout';
 
 interface League {
   id: string;
@@ -83,6 +84,25 @@ export default function InscriptionLeaguePage() {
     if (!team || !league) return;
     setSubmitting(true);
     try {
+      // Paiement Wave : checkout hébergé + attente de la confirmation (webhook).
+      // Repli sur le paiement simulé si Wave n'est pas encore activé côté serveur.
+      if (selectedMethod === 'wave' && id) {
+        const started = await startWaveLeague(id, team.id);
+        if (started) {
+          const status = await waitForIntent(started.intent_id);
+          if (status === 'validated') {
+            setRegistration({ team, league_payment: { id: '', amount: league?.registration_fee ?? 0, status: 'accepted', transaction_id: '' } });
+            setDone(true);
+          } else if (status === 'cancelled') {
+            Alert.alert('Inscription non aboutie', 'Le paiement Wave n’a pas été finalisé (ou l’inscription n’était plus possible et tu as été remboursé).');
+          } else {
+            Alert.alert('Paiement en cours', 'Si tu as payé, ton inscription sera confirmée dès réception du paiement.');
+          }
+          return;
+        }
+        // started === null → Wave non configuré → on continue vers le simulé.
+      }
+
       const { data } = await apiClient.post<{ payment_id: string; status: 'accepted'; amount: number }>(`/api/v1/payments/leagues/${id}/checkout`, { team_id: team.id, payment_method: selectedMethod });
       setRegistration({ team, league_payment: { id: data.payment_id, amount: data.amount, status: data.status, transaction_id: '' } });
       setDone(true);

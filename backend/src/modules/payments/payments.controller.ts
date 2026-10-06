@@ -87,6 +87,13 @@ export class PaymentsController {
     return this.payments.waveStatus();
   }
 
+  /** État d'un intent Wave (l'app sonde la confirmation après paiement). */
+  @UseGuards(SupabaseAuthGuard)
+  @Get('wave/intents/:id')
+  getWaveIntent(@Param('id') id: string, @CurrentUser() user: UserPayload) {
+    return this.payments.getWaveIntentStatus(id, user);
+  }
+
   /** Moyens de paiement ACTIVÉS (app mobile). */
   @UseGuards(SupabaseAuthGuard)
   @Get('methods')

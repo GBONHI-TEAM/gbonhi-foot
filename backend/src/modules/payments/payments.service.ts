@@ -127,6 +127,19 @@ export class PaymentsService {
   }
 
   /**
+   * État d'un intent Wave (pour que l'app sonde la confirmation après paiement).
+   * Réservé au propriétaire de l'intent.
+   */
+  async getWaveIntentStatus(id: string, user: UserPayload) {
+    const intent = await this.prisma.paymentIntent.findFirst({
+      where: { id, user_id: user.id },
+      select: { id: true, status: true, mode: true, reference: true, provider_transaction_id: true },
+    });
+    if (!intent) throw new NotFoundException('Suivi de paiement introuvable');
+    return intent;
+  }
+
+  /**
    * Crée une session de checkout Wave pour une réservation en attente et
    * renvoie l'URL à ouvrir (wave_launch_url). La réservation reste `pending`
    * jusqu'à réception du webhook `checkout.session.completed`.
