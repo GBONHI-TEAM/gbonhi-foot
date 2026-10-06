@@ -64,6 +64,11 @@ model PaymentIntent {
   payment_method String?
   status         String   @default("opened") // opened | pending | validated | cancelled
   reference      String? // id réservation / paiement lié
+  // Liaison avec un prestataire de paiement externe (ex : Wave Checkout).
+  provider                String? // ex : 'wave'
+  provider_session_id     String? // ex : id de session Wave (cos-...)
+  provider_transaction_id String? // id de transaction Wave (visible côté client)
+  checkout_url            String? // wave_launch_url à ouvrir dans le navigateur
   created_at     DateTime @default(now()) @db.Timestamptz(6)
   updated_at     DateTime @default(now()) @db.Timestamptz(6)
 

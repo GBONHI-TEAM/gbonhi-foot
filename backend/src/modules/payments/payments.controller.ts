@@ -1,4 +1,5 @@
-import { Body, Controller, Get, Header, Param, Patch, Post, Query, StreamableFile, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Header, Headers, Param, Patch, Post, Query, Req, RawBodyRequest, StreamableFile, UseGuards } from '@nestjs/common';
+import { FastifyRequest } from 'fastify';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { SupabaseAuthGuard } from '../auth/supabase-auth.guard';
 import { RolesGuard } from '../../common/access/roles.guard';
@@ -47,6 +48,32 @@ export class PaymentsController {
     @CurrentUser() user: UserPayload,
   ) {
     return this.payments.checkoutPendingReservation(id, dto, user);
+  }
+
+  // ── Paiement Wave (Checkout API) ──
+  /** Crée une session de checkout Wave pour une réservation en attente. */
+  @UseGuards(SupabaseAuthGuard)
+  @Post('wave/reservations/:id/checkout')
+  createWaveReservationCheckout(@Param('id') id: string, @CurrentUser() user: UserPayload) {
+    return this.payments.createWaveReservationCheckout(id, user);
+  }
+
+  /** Webhook Wave (PUBLIC). La signature est vérifiée sur le corps BRUT. */
+  @Post('wave/webhook')
+  waveWebhook(
+    @Req() req: RawBodyRequest<FastifyRequest>,
+    @Headers('wave-signature') signature?: string,
+  ) {
+    const raw = req.rawBody ? req.rawBody.toString('utf8') : JSON.stringify(req.body ?? {});
+    return this.payments.handleWaveWebhook(raw, signature);
+  }
+
+  /** État de la config Wave (back-office). */
+  @UseGuards(SupabaseAuthGuard, RolesGuard)
+  @Roles('SUPER_ADMIN', 'ADMIN')
+  @Get('wave/status')
+  waveStatus() {
+    return this.payments.waveStatus();
   }
 
   /** Moyens de paiement ACTIVÉS (app mobile). */

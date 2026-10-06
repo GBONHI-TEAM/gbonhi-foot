@@ -15,6 +15,9 @@ async function bootstrap() {
   const app = (await NestFactory.create(
     AppModule,
     new FastifyAdapter({ logger: true }) as any,
+    // rawBody: conserve le corps brut des requêtes (requis pour vérifier la
+    // signature des webhooks Wave sur les octets exacts reçus).
+    { rawBody: true },
   )) as NestFastifyApplication;
 
   // Filtre global d'exceptions (JSON lisible au lieu de 503 opaque)
