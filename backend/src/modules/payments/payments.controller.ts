@@ -58,6 +58,17 @@ export class PaymentsController {
     return this.payments.createWaveReservationCheckout(id, user);
   }
 
+  /** Crée une session de checkout Wave pour une inscription en ligue. */
+  @UseGuards(SupabaseAuthGuard)
+  @Post('wave/leagues/:id/checkout')
+  createWaveLeagueCheckout(
+    @Param('id') id: string,
+    @Body() dto: CreateLeagueCheckoutDto,
+    @CurrentUser() user: UserPayload,
+  ) {
+    return this.payments.createWaveLeagueCheckout(id, dto, user);
+  }
+
   /** Webhook Wave (PUBLIC). La signature est vérifiée sur le corps BRUT. */
   @Post('wave/webhook')
   waveWebhook(

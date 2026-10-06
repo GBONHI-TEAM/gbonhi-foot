@@ -110,6 +110,14 @@ export class WaveService {
     return this.request<WaveCheckoutSession>('GET', `/v1/checkout/sessions/${encodeURIComponent(id)}`);
   }
 
+  /**
+   * Rembourse le paiement d'une session de checkout. Idempotent côté Wave
+   * (rembourser deux fois ne crée pas de seconde transaction).
+   */
+  async refundCheckout(id: string): Promise<void> {
+    await this.request<unknown>('POST', `/v1/checkout/sessions/${encodeURIComponent(id)}/refund`);
+  }
+
   // ── Vérification de la signature du webhook ─────────────────────────────────
   /**
    * Vérifie l'en-tête `Wave-Signature: t=<ts>,v1=<sig>[,v1=<sig2>]` sur le CORPS
