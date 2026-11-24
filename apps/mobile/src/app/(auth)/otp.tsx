@@ -39,7 +39,7 @@ function formatPhone(p?: string) {
 
 export default function OtpScreen() {
   const router = useRouter();
-  const params = useLocalSearchParams<{ email?: string; phone?: string; channel?: string; purpose?: string }>();
+  const params = useLocalSearchParams<{ email?: string; phone?: string; channel?: string; purpose?: string; fullName?: string }>();
   const email = params.email;
   const phone = params.phone;
   const channel: 'email' | 'sms' = params.channel === 'sms' ? 'sms' : 'email';
@@ -48,8 +48,12 @@ export default function OtpScreen() {
   // numéro (et tout ajout/vérification de numéro).
   const isVerifyPhone = params.purpose === 'verify-phone';
   const isSmsLogin = params.purpose === 'login'; // connexion par téléphone via SMS Orange
-  // Code SMS « maison » (6 chiffres, envoyé/vérifié par NOTRE API) : vérif. numéro OU connexion.
-  const smsOtp = isVerifyPhone || isSmsLogin;
+  // « register » : inscription — le code part par SMS sur le numéro, l'e-mail
+  // restant l'identifiant du compte (A6).
+  const isSmsRegister = params.purpose === 'register' && channel === 'sms';
+  // Code SMS « maison » (6 chiffres, envoyé/vérifié par NOTRE API) : vérif.
+  // numéro, connexion OU inscription par téléphone.
+  const smsOtp = isVerifyPhone || isSmsLogin || isSmsRegister;
   const length = smsOtp ? 6 : channel === 'sms' ? 4 : 6;
   // Disposition à 6 cases (e-mail OU SMS Orange) vs 4 cases (SMS Supabase).
   const sixBox = smsOtp || channel === 'email';
@@ -74,9 +78,9 @@ export default function OtpScreen() {
       ...(email ? { email } : {}),
       ...(phone ? { phone } : {}),
       channel,
-      ...(isVerifyPhone ? { purpose: 'verify-phone' } : {}),
+      ...(params.purpose ? { purpose: params.purpose } : {}),
     });
-  }, [email, phone, channel, isVerifyPhone]);
+  }, [email, phone, channel, params.purpose]);
 
   function goBack() {
     // L'utilisateur abandonne la saisie du code → on oublie le contexte OTP.
@@ -120,14 +124,20 @@ export default function OtpScreen() {
     }
     setLoading(true);
 
-    // Code SMS Orange (vérifié par NOTRE API) : vérification du numéro OU
-    // connexion par téléphone.
+    // Code SMS Orange (vérifié par NOTRE API) : vérification du numéro,
+    // connexion par téléphone OU inscription par téléphone.
     if (smsOtp) {
       let tokenHash: string | undefined;
+      const otpPurpose = isVerifyPhone ? 'verify-phone' : isSmsRegister ? 'register' : 'login';
       try {
         const resp = await apiClient.post<{ verified: boolean; tokenHash?: string }>(
           '/api/v1/auth/phone/verify-otp',
-          { phone: phone ?? '', code, purpose: isVerifyPhone ? 'verify-phone' : 'login' },
+          {
+            phone: phone ?? '',
+            code,
+            purpose: otpPurpose,
+            ...(isSmsRegister && params.fullName ? { fullName: params.fullName } : {}),
+          },
         );
         tokenHash = resp.data?.tokenHash;
       } catch (e: unknown) {
@@ -144,7 +154,9 @@ export default function OtpScreen() {
           useAuthStore.getState().setSession(sess.session);
         }
       } else {
-        // Connexion : on ouvre la session avec le jeton renvoyé par le backend.
+        // Connexion / inscription : on ouvre la session avec le jeton renvoyé
+        // par le backend (le compte est créé à la vérification pour
+        // l'inscription).
         if (!tokenHash) {
           setLoading(false);
           Alert.alert('Connexion impossible', 'Réessaie dans un instant.');
@@ -184,9 +196,13 @@ export default function OtpScreen() {
 
     setResending(true);
     try {
-      // SMS Orange (vérif. numéro ou connexion) : renvoi via NOTRE API.
+      // SMS Orange (vérif. numéro, connexion ou inscription) : renvoi via NOTRE API.
       if (smsOtp) {
-        await apiClient.post('/api/v1/auth/phone/request-otp', { phone: phone as string, purpose: isVerifyPhone ? 'verify-phone' : 'login' });
+        await apiClient.post('/api/v1/auth/phone/request-otp', {
+          phone: phone as string,
+          purpose: isVerifyPhone ? 'verify-phone' : isSmsRegister ? 'register' : 'login',
+          ...(isSmsRegister && email ? { email } : {}),
+        });
         setDigits(Array(length).fill(''));
         inputRefs.current[0]?.focus();
         setCountdown(60);

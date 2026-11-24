@@ -86,13 +86,13 @@ export default function RegisterScreen() {
       Alert.alert('Champs requis', 'Renseigne prénom, nom et téléphone.');
       return;
     }
-    // L'e-mail est facultatif (la version publique utilisera la vérification par
-    // SMS via Orange). En attendant cette intégration, le code de vérification
-    // est envoyé par e-mail : il reste donc nécessaire pour l'instant.
+    // L'e-mail sert d'identifiant au compte : il reste requis. Le code de
+    // vérification, lui, part par SMS (voir ci-dessous), comme pour la
+    // connexion par téléphone et la vérification du numéro après Apple/Google.
     if (!email.trim()) {
       Alert.alert(
-        'E-mail temporairement nécessaire',
-        'La vérification par SMS arrive bientôt. Pour l’instant, renseigne un e-mail pour recevoir ton code de vérification.',
+        'Adresse e-mail requise',
+        'Ton e-mail sert d’identifiant à ton compte. Le code de vérification sera envoyé par SMS sur ton numéro.',
       );
       return;
     }
@@ -115,13 +115,35 @@ export default function RegisterScreen() {
       // l'inscription : l'unicité de l'e-mail reste garantie par Supabase.
     }
 
-    // Canal actuel : code OTP par e-mail (6 chiffres). Le numéro est conservé en
-    // métadonnée pour la future vérification SMS.
+    // Vérification par SMS (Orange, via notre API — même canal que la connexion
+    // par téléphone et la vérification du numéro après Apple/Google, qui
+    // fonctionnaient déjà). Si le SMS n'est pas disponible (service non
+    // configuré), on replie sur le code par e-mail au lieu de bloquer
+    // l'inscription.
+    const fullName = `${prenom} ${nom}`;
+    try {
+      await apiClient.post('/api/v1/auth/phone/request-otp', { phone, email, purpose: 'register' });
+      setLoading(false);
+      Alert.alert('Code envoyé par SMS', `Saisis le code à 6 chiffres envoyé au ${phone} par SMS.`);
+      await setPendingOtp({ email, phone, channel: 'sms', purpose: 'register' });
+      router.push({ pathname: '/(auth)/otp', params: { email, phone, channel: 'sms', purpose: 'register', fullName } });
+      return;
+    } catch (e: unknown) {
+      const status = (e as { response?: { status?: number } })?.response?.status;
+      if (status !== 503) {
+        setLoading(false);
+        const raw = (e as { response?: { data?: { message?: string | string[] } } }).response?.data?.message;
+        Alert.alert('Envoi du code impossible', Array.isArray(raw) ? raw.join('\n') : raw ?? 'Réessaie dans un instant.');
+        return;
+      }
+      // SMS indisponible : repli sur le code par e-mail (comportement historique).
+    }
+
     const { error } = await supabase.auth.signInWithOtp({
       email,
       options: {
         shouldCreateUser: true,
-        data: { full_name: `${prenom} ${nom}`, phone },
+        data: { full_name: fullName, phone },
       },
     });
     setLoading(false);
@@ -131,7 +153,7 @@ export default function RegisterScreen() {
     }
     Alert.alert(
       'Code envoyé par e-mail',
-      'La vérification par SMS sera activée prochainement. Pour le moment, utilise le code envoyé à ton adresse e-mail.',
+      'Le SMS est momentanément indisponible : utilise le code envoyé à ton adresse e-mail.',
     );
     await setPendingOtp({ email, phone, channel: 'email' });
     router.push({ pathname: '/(auth)/otp', params: { email, phone } });
@@ -206,10 +228,10 @@ export default function RegisterScreen() {
               />
             </View>
 
-            {/* E-mail (top 53.3 %) */}
+            {/* E-mail (top 53.3 %) — requis : il sert d'identifiant au compte. */}
             <TextInput
               style={[FIELD, { top: '53.2%' }]}
-              placeholder="Adresse e-mail (facultatif)"
+              placeholder="Adresse e-mail *"
               placeholderTextColor={PH_COLOR}
               value={email}
               onChangeText={setEmail}
