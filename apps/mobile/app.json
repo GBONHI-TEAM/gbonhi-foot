@@ -15,7 +15,7 @@
     },
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "com.gbonhifoot.app",
+      "bundleIdentifier": "com.genius21.gbonhifoot",
       "buildNumber": "1",
       "usesAppleSignIn": true,
       "infoPlist": {
@@ -56,6 +56,7 @@
     },
     "plugins": [
       "./plugins/withFmtConstevalFix",
+       "./plugins/withPodsDeploymentTargetFloor",
       [
         "expo-build-properties",
         {
@@ -63,7 +64,10 @@
             "compileSdkVersion": 36,
             "targetSdkVersion": 36,
             "buildToolsVersion": "36.0.0"
-          }
+          },
+          "ios": {
+      "deploymentTarget": "15.1"
+    }
         }
       ],
       "expo-router",
