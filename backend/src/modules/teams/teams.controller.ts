@@ -100,7 +100,25 @@ export class TeamsController {
   }
 
   @Get('lookup/code/:code')
-  findByCode(@Param('code') code: string) {
-    return this.teamsService.findByInvitationCode(code);
+  findByCode(@Param('code') code: string, @CurrentUser() user: UserPayload) {
+    return this.teamsService.findByInvitationCode(code, user);
+  }
+
+  /** Ma demande d'adhésion pour une équipe (en attente ou membre). */
+  @Get(':id/requests/me')
+  getMyJoinRequest(@Param('id') id: string, @CurrentUser() user: UserPayload) {
+    return this.teamsService.getMyJoinRequest(id, user);
+  }
+
+  /** Relancer ma demande d'adhésion en attente (renotifie le capitaine). */
+  @Post(':id/requests/resend')
+  resendJoinRequest(@Param('id') id: string, @CurrentUser() user: UserPayload) {
+    return this.teamsService.resendJoinRequest(id, user);
+  }
+
+  /** Annuler ma demande d'adhésion en attente. */
+  @Delete(':id/requests/me')
+  cancelMyJoinRequest(@Param('id') id: string, @CurrentUser() user: UserPayload) {
+    return this.teamsService.cancelMyJoinRequest(id, user);
   }
 }
