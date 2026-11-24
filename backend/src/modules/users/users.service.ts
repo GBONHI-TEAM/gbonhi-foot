@@ -215,6 +215,35 @@ export class UsersService {
   }
 
   /**
+   * Équipes dont je suis capitaine, avec leurs membres actifs — pour choisir
+   * un successeur avant de supprimer mon compte (A8). Une équipe sans autre
+   * membre n'a pas besoin de successeur : elle sera supprimée/anonymisée
+   * avec le compte (voir deleteMe).
+   */
+  async getMyCaptaincies(user: UserPayload) {
+    const teams = await this.prisma.team.findMany({
+      where: { coach_id: user.id },
+      select: {
+        id: true,
+        name: true,
+        members: {
+          where: { status: 'active', user_id: { not: user.id } },
+          select: {
+            user: { select: { id: true, full_name: true, avatar_url: true } },
+          },
+          orderBy: { created_at: 'asc' },
+        },
+      },
+      orderBy: { name: 'asc' },
+    });
+    return teams.map((team) => ({
+      id: team.id,
+      name: team.name,
+      members: team.members.map((member) => member.user),
+    }));
+  }
+
+  /**
    * Résumé personnel du joueur connecté pour l'accueil mobile : ses équipes,
    * ses prochains matchs, ses ligues, ses stats et le nb de notifications non
    * lues. Tout est strictement rattaché au compte connecté.

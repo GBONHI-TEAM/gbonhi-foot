@@ -40,6 +40,12 @@ const Chevron = () => <Text style={{ color: 'rgba(255,255,255,0.4)', fontSize: 1
 
 const LANGUAGES = ['Français', 'English (bientôt)'] as const;
 
+interface Captaincy {
+  id: string;
+  name: string;
+  members: { id: string; full_name: string | null; avatar_url?: string | null }[];
+}
+
 const CGU_TEXT = `Bienvenue sur GBONHI FOOT.
 
 En utilisant l'application, tu acceptes les présentes conditions.
@@ -75,6 +81,13 @@ export default function SettingsScreen() {
   const [langModal, setLangModal] = useState(false);
   const [cguModal, setCguModal] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  // Capitanat (A8) : avant de supprimer son compte, un capitaine doit nommer
+  // un successeur dans chaque équipe qui a encore des membres.
+  const [captainModal, setCaptainModal] = useState(false);
+  const [captaincies, setCaptaincies] = useState<Captaincy[]>([]);
+  const [captainLoading, setCaptainLoading] = useState(false);
+  const [successors, setSuccessors] = useState<Record<string, string>>({});
+  const [transferring, setTransferring] = useState(false);
 
   async function toggleNotifications(v: boolean) {
     setNotifications(v);
@@ -113,47 +126,96 @@ export default function SettingsScreen() {
     router.replace('/(auth)/login');
   }
 
-  function deleteAccount() {
+  // Suppression définitive, après confirmation serveur uniquement : tant que
+  // l'API n'a pas confirmé, aucun message de succès n'est affiché (A7).
+  async function performDelete() {
+    setDeleting(true);
+    try {
+      await apiClient.delete('/api/v1/users/me');
+      // Le compte n'existe plus côté serveur : on signale une sortie
+      // VOLONTAIRE (l'AuthGate ne forcera plus « vérifie ton numéro »/OTP),
+      // on purge les parcours en cours et on force l'effacement LOCAL de la
+      // session (scope 'local'), sinon un JWT en cache pouvait laisser l'app
+      // coincée sur « vérifie ton numéro » même après redémarrage.
+      useAuthStore.getState().beginAuthReset('/(auth)/login');
+      await clearPendingOtp();
+      await clearPendingDeepRoute();
+      await supabase.auth.signOut({ scope: 'local' });
+      router.replace('/(auth)/login');
+    } catch (e: unknown) {
+      const raw = (e as { response?: { data?: { message?: string | string[] } } }).response?.data?.message;
+      const message = Array.isArray(raw) ? raw.join('\n') : raw ?? 'Réessaie dans quelques instants.';
+      // Si le blocage concerne le capitanat (ex. un membre a rejoint entre
+      // l'ouverture du choix du successeur et la suppression), on relance le
+      // parcours de transfert au lieu d'afficher une impasse.
+      if (/capitan|capitaine|équipe/i.test(message)) {
+        void deleteAccount();
+      } else {
+        Alert.alert('Suppression impossible', message);
+      }
+    } finally {
+      setDeleting(false);
+    }
+  }
+
+  function confirmDelete() {
     Alert.alert(
       'Supprimer mon compte',
-      'Cette action est irréversible. Tes réservations, participations et données personnelles seront supprimées. Si tu es capitaine avec des membres, partenaire ou organisateur, transfère d’abord tes responsabilités. Continuer ?',
+      'Cette action est irréversible. Tes réservations, participations et données personnelles seront supprimées. Si tu es partenaire ou organisateur, transfère d’abord tes responsabilités. Continuer ?',
       [
         { text: 'Annuler', style: 'cancel' },
-        {
-          text: 'Supprimer définitivement', style: 'destructive', onPress: async () => {
-            setDeleting(true);
-            try {
-              await apiClient.delete('/api/v1/users/me');
-              // Le compte n'existe plus côté serveur : on signale une sortie
-              // VOLONTAIRE (l'AuthGate ne forcera plus « vérifie ton numéro »/OTP),
-              // on purge les parcours en cours et on force l'effacement LOCAL de la
-              // session (scope 'local'), sinon un JWT en cache pouvait laisser l'app
-              // coincée sur « vérifie ton numéro » même après redémarrage.
-              useAuthStore.getState().beginAuthReset('/(auth)/login');
-              await clearPendingOtp();
-              await clearPendingDeepRoute();
-              await supabase.auth.signOut({ scope: 'local' });
-              router.replace('/(auth)/login');
-            } catch (e: unknown) {
-              const raw = (e as { response?: { data?: { message?: string | string[] } } }).response?.data?.message;
-              const message = Array.isArray(raw) ? raw.join('\n') : raw ?? 'Réessaie dans quelques instants.';
-              // Si le blocage concerne le capitanat, on propose d'aller gérer l'équipe.
-              if (/capitan|capitaine|équipe/i.test(message)) {
-                Alert.alert('Transfère d’abord ton capitanat', message, [
-                  { text: 'Plus tard', style: 'cancel' },
-                  { text: 'Gérer mon équipe', onPress: () => router.push('/team') },
-                ]);
-              } else {
-                Alert.alert('Suppression impossible', message);
-              }
-            } finally {
-              setDeleting(false);
-            }
-          },
-        },
+        { text: 'Supprimer définitivement', style: 'destructive', onPress: performDelete },
       ],
     );
   }
+
+  /** Point d'entrée de la suppression (A8) : un capitaine nomme d'abord un
+   *  successeur dans chaque équipe qui a encore des membres ; sinon on passe
+   *  directement à la confirmation classique. */
+  async function deleteAccount() {
+    setCaptainLoading(true);
+    try {
+      const { data } = await apiClient.get<Captaincy[]>('/api/v1/users/me/captaincies');
+      const list = Array.isArray(data) ? data : [];
+      if (!list.some((t) => t.members.length > 0)) {
+        confirmDelete();
+        return;
+      }
+      setCaptaincies(list);
+      setSuccessors({});
+      setCaptainModal(true);
+    } catch {
+      Alert.alert('Suppression impossible', 'Impossible de vérifier tes équipes. Réessaie dans quelques instants.');
+    } finally {
+      setCaptainLoading(false);
+    }
+  }
+
+  /** Transfère chaque capitanat au successeur choisi, puis supprime le compte. */
+  async function transferAndDelete() {
+    const withMembers = captaincies.filter((t) => t.members.length > 0);
+    if (withMembers.some((t) => !successors[t.id])) return;
+    setTransferring(true);
+    try {
+      for (const team of withMembers) {
+        await apiClient.patch(`/api/v1/teams/${team.id}/captain`, { user_id: successors[team.id] });
+      }
+      setCaptainModal(false);
+      await performDelete();
+    } catch (e: unknown) {
+      const raw = (e as { response?: { data?: { message?: string | string[] } } }).response?.data?.message;
+      const message = Array.isArray(raw) ? raw.join('\n') : raw ?? 'Réessaie dans quelques instants.';
+      Alert.alert('Transfert impossible', message);
+    } finally {
+      setTransferring(false);
+    }
+  }
+
+  // Le choix du successeur est obligatoire tant que chaque équipe avec des
+  // membres n'a pas de successeur choisi. Une équipe sans autre membre n'en
+  // a pas besoin : elle sera supprimée avec le compte.
+  const transferReady =
+    captaincies.filter((t) => t.members.length > 0).every((t) => !!successors[t.id]);
 
   return (
     <ScreenBackground>
@@ -192,8 +254,8 @@ export default function SettingsScreen() {
           <Pressable onPress={signOut} className="h-14 rounded-xl items-center justify-center mb-3" style={{ borderWidth: 1, borderColor: 'rgba(248,113,113,0.6)' }}>
             <Text className="font-bold text-base" style={{ color: '#F87171' }}>Se déconnecter</Text>
           </Pressable>
-          <Pressable onPress={deleteAccount} disabled={deleting} className="h-14 rounded-xl items-center justify-center" style={{ backgroundColor: '#EF4444', opacity: deleting ? 0.6 : 1 }}>
-            {deleting ? <ActivityIndicator color="#fff" /> : <Text className="text-white font-bold text-base">Supprimer mon compte</Text>}
+          <Pressable onPress={deleteAccount} disabled={deleting || captainLoading} className="h-14 rounded-xl items-center justify-center" style={{ backgroundColor: '#EF4444', opacity: deleting || captainLoading ? 0.6 : 1 }}>
+            {deleting || captainLoading ? <ActivityIndicator color="#fff" /> : <Text className="text-white font-bold text-base">Supprimer mon compte</Text>}
           </Pressable>
         </View>
 
@@ -238,6 +300,59 @@ export default function SettingsScreen() {
             })}
           </Pressable>
         </Pressable>
+      </Modal>
+
+      {/* Modal — Nommer un successeur avant suppression (A8) */}
+      <Modal visible={captainModal} transparent animationType="slide" onRequestClose={() => setCaptainModal(false)}>
+        <View className="flex-1 justify-end" style={{ backgroundColor: 'rgba(0,0,0,0.6)' }}>
+          <View className="rounded-t-3xl" style={{ backgroundColor: '#0D1F0D', maxHeight: '85%', borderTopWidth: 1, borderColor: 'rgba(255,255,255,0.12)' }}>
+            <View className="flex-row items-center justify-between px-5 pt-5 pb-3">
+              <Text className="text-white font-black text-lg">Nommer un successeur</Text>
+              <Pressable onPress={() => setCaptainModal(false)} hitSlop={8}><Text className="text-white text-2xl">✕</Text></Pressable>
+            </View>
+            <ScrollView contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 40 }}>
+              <Text className="text-white/70 text-sm leading-5 mb-4">
+                Tu es capitaine d&apos;une ou plusieurs équipes. Choisis un nouveau capitaine pour chaque équipe avant de pouvoir supprimer ton compte.
+              </Text>
+              {captaincies.map((team) => (
+                <View key={team.id} className="mb-5">
+                  <Text className="text-white font-bold text-base mb-2">{team.name}</Text>
+                  {team.members.length === 0 ? (
+                    <Text className="text-white/50 text-sm">Aucun autre membre — l&apos;équipe sera supprimée avec ton compte.</Text>
+                  ) : (
+                    team.members.map((m) => {
+                      const selected = successors[team.id] === m.id;
+                      return (
+                        <Pressable
+                          key={m.id}
+                          onPress={() => setSuccessors((s) => ({ ...s, [team.id]: m.id }))}
+                          className="flex-row items-center justify-between py-3 px-3 rounded-xl mb-1"
+                          style={{ backgroundColor: selected ? 'rgba(30,122,58,0.35)' : 'rgba(255,255,255,0.05)', borderWidth: 1, borderColor: selected ? '#1E7A3A' : 'rgba(255,255,255,0.1)' }}
+                        >
+                          <Text className="text-white text-sm font-semibold">{m.full_name ?? 'Joueur sans nom'}</Text>
+                          {selected ? <Text style={{ color: '#4ADE80', fontSize: 16 }}>✓</Text> : null}
+                        </Pressable>
+                      );
+                    })
+                  )}
+                </View>
+              ))}
+              <View className="flex-row gap-3 mt-2">
+                <Pressable onPress={() => setCaptainModal(false)} className="flex-1 h-12 rounded-xl items-center justify-center" style={{ borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)' }}>
+                  <Text className="text-white font-semibold text-sm">Annuler</Text>
+                </Pressable>
+                <Pressable
+                  onPress={transferAndDelete}
+                  disabled={!transferReady || transferring}
+                  className="flex-1 h-12 rounded-xl items-center justify-center"
+                  style={{ backgroundColor: '#EF4444', opacity: !transferReady || transferring ? 0.5 : 1 }}
+                >
+                  {transferring ? <ActivityIndicator color="#fff" /> : <Text className="text-white font-bold text-sm">Transférer et supprimer</Text>}
+                </Pressable>
+              </View>
+            </ScrollView>
+          </View>
+        </View>
       </Modal>
 
       {/* Modal — Conditions d'utilisation */}

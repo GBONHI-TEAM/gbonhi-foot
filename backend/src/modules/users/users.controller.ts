@@ -71,6 +71,12 @@ export class UsersController {
     return this.usersService.getSummary(user);
   }
 
+  /** Équipes dont je suis capitaine (choix d'un successeur avant suppression). */
+  @Get('me/captaincies')
+  getMyCaptaincies(@CurrentUser() user: UserPayload) {
+    return this.usersService.getMyCaptaincies(user);
+  }
+
   /** Mon activité récente : buts, passes, cartons (flux profil mode Leagues). */
   @Get('me/activity')
   getMyActivity(@CurrentUser() user: UserPayload) {
