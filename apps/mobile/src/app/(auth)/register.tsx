@@ -12,11 +12,9 @@ import {
   Alert,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { supabase } from '../../lib/supabase';
 import { apiClient } from '../../lib/api';
 import { KB_DONE_ID } from '../../components/ui/keyboard-done-bar';
 import { setPendingOtp } from '../../lib/pending-flow';
-import { frenchAuthError } from '../../lib/auth-errors';
 import { signInWithGoogle } from '../../lib/auth-google';
 import { signInWithApple, isAppleCancel } from '../../lib/auth-apple';
 
@@ -115,11 +113,11 @@ export default function RegisterScreen() {
       // l'inscription : l'unicité de l'e-mail reste garantie par Supabase.
     }
 
-    // Vérification par SMS (Orange, via notre API — même canal que la connexion
-    // par téléphone et la vérification du numéro après Apple/Google, qui
-    // fonctionnaient déjà). Si le SMS n'est pas disponible (service non
-    // configuré), on replie sur le code par e-mail au lieu de bloquer
-    // l'inscription.
+    // Vérification par SMS Orange, SEUL canal de vérification (décision
+    // 24/11 : les SMS Orange sont disponibles et fonctionnels). Aucun repli
+    // sur le code par e-mail : si le SMS est indisponible, on affiche une
+    // erreur explicite et l'utilisateur réessaie. L'e-mail reste
+    // l'identifiant du compte, pas un canal de vérification.
     const fullName = `${prenom} ${nom}`;
     try {
       await apiClient.post('/api/v1/auth/phone/request-otp', { phone, email, purpose: 'register' });
@@ -129,34 +127,20 @@ export default function RegisterScreen() {
       router.push({ pathname: '/(auth)/otp', params: { email, phone, channel: 'sms', purpose: 'register', fullName } });
       return;
     } catch (e: unknown) {
+      setLoading(false);
       const status = (e as { response?: { status?: number } })?.response?.status;
-      if (status !== 503) {
-        setLoading(false);
-        const raw = (e as { response?: { data?: { message?: string | string[] } } }).response?.data?.message;
-        Alert.alert('Envoi du code impossible', Array.isArray(raw) ? raw.join('\n') : raw ?? 'Réessaie dans un instant.');
+      const raw = (e as { response?: { data?: { message?: string | string[] } } }).response?.data?.message;
+      const msg = Array.isArray(raw) ? raw.join('\n') : raw;
+      if (status === 503) {
+        Alert.alert(
+          'Vérification par SMS indisponible',
+          msg ?? 'Vérification par SMS indisponible pour le moment, réessaie.',
+        );
         return;
       }
-      // SMS indisponible : repli sur le code par e-mail (comportement historique).
-    }
-
-    const { error } = await supabase.auth.signInWithOtp({
-      email,
-      options: {
-        shouldCreateUser: true,
-        data: { full_name: fullName, phone },
-      },
-    });
-    setLoading(false);
-    if (error) {
-      Alert.alert('Envoi du code impossible', frenchAuthError(error.message));
+      Alert.alert('Envoi du code impossible', msg ?? 'Réessaie dans un instant.');
       return;
     }
-    Alert.alert(
-      'Code envoyé par e-mail',
-      'Le SMS est momentanément indisponible : utilise le code envoyé à ton adresse e-mail.',
-    );
-    await setPendingOtp({ email, phone, channel: 'email' });
-    router.push({ pathname: '/(auth)/otp', params: { email, phone } });
   }
 
   return (

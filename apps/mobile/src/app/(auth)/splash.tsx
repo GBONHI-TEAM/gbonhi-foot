@@ -37,7 +37,7 @@ export default function SplashScreen() {
   const [animDone, setAnimDone] = useState(false);
   // Contexte OTP en cours (SecureStore). `undefined` = pas encore lu.
   // Sur Android, l'app peut être détruite quand l'utilisateur va chercher son
-  // code dans Gmail : au redémarrage, on doit revenir sur l'écran de saisie du
+  // code SMS : au redémarrage, on doit revenir sur l'écran de saisie du
   // code plutôt que de repartir de la connexion.
   const [otpCtx, setOtpCtx] = useState<PendingOtp | null | undefined>(undefined);
   // Lien partagé (match / publication / invitation) à ouvrir au lancement.
