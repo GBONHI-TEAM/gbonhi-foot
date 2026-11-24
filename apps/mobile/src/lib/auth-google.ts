@@ -32,9 +32,24 @@ export async function signInWithGoogle(): Promise<void> {
   // L'utilisateur a fermé la fenêtre sans terminer : on n'affiche pas d'erreur.
   if (result.type !== 'success' || !result.url) return;
 
+  // Google / Supabase ont refusé (ex. `access_denied`, redirect non autorisée) :
+  // on remonte la vraie raison au lieu du message générique « n'a pas pu être
+  // finalisée », qui ne permettait pas de diagnostiquer l'échec du testeur.
+  const oauthError = oauthErrorFromUrl(result.url);
+  if (oauthError) throw new Error(oauthError);
+
   // Échange le code renvoyé dans l'URL contre une session Supabase.
   const exchanged = await handleOAuthDeepLink(result.url);
   if (!exchanged) throw new Error('La connexion Google n’a pas pu être finalisée. Réessaie.');
+}
+
+/** Raison du refus OAuth renvoyée dans l'URL de retour (`error_description`, sinon `error`). */
+function oauthErrorFromUrl(url: string): string | null {
+  const parsed = Linking.parse(url);
+  const error = parsed.queryParams?.error;
+  if (typeof error !== 'string' || !error) return null;
+  const description = parsed.queryParams?.error_description;
+  return typeof description === 'string' && description ? description : error;
 }
 
 /**

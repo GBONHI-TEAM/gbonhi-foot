@@ -53,7 +53,15 @@ enabled = true
 # in emails.
 site_url = "http://127.0.0.1:3000"
 # A list of *exact* URLs that auth providers are permitted to redirect to post authentication.
-additional_redirect_urls = ["https://127.0.0.1:3000"]
+# `gbonhi://` est la redirection OAuth de l'app mobile (Google via Supabase,
+# `OAUTH_REDIRECT` dans apps/mobile/src/lib/auth-google.ts) : elle DOIT aussi
+# être autorisée dans le dashboard Supabase distant (Authentication → URL
+# Configuration → Redirect URLs), ce fichier ne configurant que le local.
+# Le nom affiché dans le pop-up iOS / l'écran de consentement Google
+# (« GBONHI FOOT » au lieu de l'URL brute *.supabase.co) se règle lui aussi
+# côté dashboard : écran de consentement OAuth Google Cloud + configuration
+# du provider dans Supabase — pas dans ce dépôt.
+additional_redirect_urls = ["https://127.0.0.1:3000", "gbonhi://"]
 # How long tokens are valid for, in seconds. Defaults to 3600 (1 hour), maximum 604,800 (1 week).
 jwt_expiry = 3600
 # If disabled, the refresh token will never expire.
