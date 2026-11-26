@@ -7,6 +7,7 @@ import {
   ActivityIndicator,
   Animated,
   Share,
+  AppState,
 } from 'react-native';
 import { useLocalSearchParams, useRouter, useFocusEffect, type Href } from 'expo-router';
 import { apiClient, matchShareLink } from '../../../lib/api';
@@ -305,6 +306,11 @@ export default function MatchDetailPage() {
   const [flash, setFlash] = useState<{ icon: string; title: string; sub: string } | null>(null);
   const seenEventIds = useRef<Set<string>>(new Set());
   const primedRef = useRef(false);
+  // true dès qu'un match a été chargé : un échec de rafraîchissement
+  // silencieux ne doit jamais remplacer l'écran par une erreur (L1).
+  const hasMatchRef = useRef(false);
+  // L5 : bascule Faits de jeu / Compositions en haut de l'écran.
+  const [section, setSection] = useState<'faits' | 'compos'>('faits');
 
   useEffect(() => {
     if (!match) return;
@@ -350,10 +356,16 @@ export default function MatchDetailPage() {
       try {
         if (!opts?.silent) setLoading(true);
         const { data } = await apiClient.get<MatchDetail>(`/api/v1/matches/${id}`);
+        hasMatchRef.current = true;
         setMatch(data);
         setError(null);
       } catch {
-        setError('Impossible de charger le match.');
+        // Rafraîchissement silencieux (focus, intervalle, retour d'app) :
+        // si le match est déjà affiché, on garde les dernières données
+        // connues au lieu d'un écran d'erreur (retour testeur 23/11, L1).
+        if (!opts?.silent || !hasMatchRef.current) {
+          setError('Impossible de charger le match.');
+        }
       } finally {
         if (!opts?.silent) setLoading(false);
       }
@@ -372,6 +384,17 @@ export default function MatchDetailPage() {
   // additionnel) même si un événement temps réel est manqué (reconnexion…).
   const isLiveMatch = !!match && matchStatusMeta(match.status).live;
   useFocusEffect(useCallback(() => { void fetchMatch({ silent: true }); }, [fetchMatch]));
+  // Retour au premier plan (app rouverte après une sortie) : useFocusEffect
+  // ne couvre pas ce cas quand l'écran reste monté — on recharge ici (L1).
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') {
+        void fetchMatch({ silent: true });
+        void fetchLineups();
+      }
+    });
+    return () => sub.remove();
+  }, [fetchMatch, fetchLineups]);
   useEffect(() => {
     if (!id || !isLiveMatch) return;
     const timer = setInterval(() => { void fetchMatch({ silent: true }); void fetchLineups(); }, 8000);
@@ -548,36 +571,52 @@ export default function MatchDetailPage() {
         </View>
       </PatternedGreenHeader>
 
-      {/* Timeline des faits de jeu */}
+      {/* Bascule Faits de jeu / Compositions (L5) */}
       <ScrollView className="flex-1 px-5" contentContainerStyle={{ paddingVertical: 20, paddingBottom: 40 }}>
-        <Text className="text-white font-black text-lg mb-2">Faits de jeu</Text>
-        {events.length === 0 ? (
-          <View className="items-center justify-center py-16">
-            <Text style={{ fontSize: 34, marginBottom: 8 }}>⚽</Text>
-            <Text className="text-white/50 text-sm text-center">
-              {upcoming ? 'Le match n\'a pas encore commencé.' : 'Aucun fait de jeu enregistré.'}
-            </Text>
-          </View>
-        ) : (
-          <View>
-            {events.map((ev, idx) => (
-              <View
-                key={ev.id}
-                style={{
-                  borderTopWidth: idx > 0 ? 1 : 0,
-                  borderTopColor: 'rgba(255,255,255,0.06)',
-                }}
-              >
-                <EventRow event={ev} homeTeamId={match.home_team.id} />
-              </View>
-            ))}
-          </View>
-        )}
+        <View className="flex-row gap-2 mb-4">
+          {([['faits', 'Faits de jeu'], ['compos', 'Compositions']] as const).map(([key, label]) => (
+            <Pressable
+              key={key}
+              onPress={() => setSection(key)}
+              className="flex-1 h-11 rounded-full items-center justify-center"
+              style={{ backgroundColor: section === key ? '#F7921E' : 'rgba(255,255,255,0.08)' }}
+            >
+              <Text className="font-bold text-sm" style={{ color: section === key ? '#FFFFFF' : 'rgba(255,255,255,0.65)' }}>{label}</Text>
+            </Pressable>
+          ))}
+        </View>
 
-        {/* Composition des équipes */}
-        <Text className="text-white font-black text-lg mb-3 mt-8">Composition des équipes</Text>
-        <LineupCard side={lineups?.home ?? null} onEdit={(teamId) => router.push(`/match/${id}/lineup?team=${teamId}`)} onPlayerPress={(uid) => router.push(`/player/${uid}` as Href)} />
-        <LineupCard side={lineups?.away ?? null} onEdit={(teamId) => router.push(`/match/${id}/lineup?team=${teamId}`)} onPlayerPress={(uid) => router.push(`/player/${uid}` as Href)} />
+        {section === 'faits' ? (
+          <>
+            {events.length === 0 ? (
+              <View className="items-center justify-center py-16">
+                <Text style={{ fontSize: 34, marginBottom: 8 }}>⚽</Text>
+                <Text className="text-white/50 text-sm text-center">
+                  {upcoming ? 'Le match n\'a pas encore commencé.' : 'Aucun fait de jeu enregistré.'}
+                </Text>
+              </View>
+            ) : (
+              <View>
+                {events.map((ev, idx) => (
+                  <View
+                    key={ev.id}
+                    style={{
+                      borderTopWidth: idx > 0 ? 1 : 0,
+                      borderTopColor: 'rgba(255,255,255,0.06)',
+                    }}
+                  >
+                    <EventRow event={ev} homeTeamId={match.home_team.id} />
+                  </View>
+                ))}
+              </View>
+            )}
+          </>
+        ) : (
+          <>
+            <LineupCard side={lineups?.home ?? null} onEdit={(teamId) => router.push(`/match/${id}/lineup?team=${teamId}`)} onPlayerPress={(uid) => router.push(`/player/${uid}` as Href)} />
+            <LineupCard side={lineups?.away ?? null} onEdit={(teamId) => router.push(`/match/${id}/lineup?team=${teamId}`)} onPlayerPress={(uid) => router.push(`/player/${uid}` as Href)} />
+          </>
+        )}
       </ScrollView>
 
       {/* Bannière animée à chaque nouveau fait de jeu en direct */}
