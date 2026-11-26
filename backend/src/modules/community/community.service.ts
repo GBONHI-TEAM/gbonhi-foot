@@ -98,7 +98,7 @@ export class CommunityService {
   async createPost(user: UserPayload, dto: { content: string; image_url?: string; team_id?: string; category?: string }) {
     const allowed = ['general', 'equipe', 'league', 'terrain'];
     const category = allowed.includes(dto.category ?? '') ? (dto.category as string) : 'general';
-    return this.prisma.communityPost.create({
+    const post = await this.prisma.communityPost.create({
       data: {
         author_id: user.id,
         content: dto.content,
@@ -108,6 +108,26 @@ export class CommunityService {
       },
       include: { author: { select: AUTHOR_SELECT }, team: { select: { id: true, name: true } } },
     });
+
+    // L6 (retour testeur 23/11) : une publication rattachée à une équipe
+    // notifie ses membres actifs (sauf l'auteur). Les publications générales
+    // ne déclenchent pas de diffusion à tous (anti-spam).
+    if (post.team_id) {
+      const members = await this.prisma.teamMember.findMany({
+        where: { team_id: post.team_id, status: 'active', user_id: { not: user.id } },
+        select: { user_id: true },
+      });
+      if (members.length > 0) {
+        const who = await this.displayName(user.id);
+        await this.notifications.notify(members.map((m) => m.user_id), {
+          type: 'community_post',
+          title: 'Nouvelle publication',
+          body: `${who} a publié dans ${post.team?.name ?? 'ton équipe'}.`,
+          data: { post_id: post.id, team_id: post.team_id },
+        });
+      }
+    }
+    return post;
   }
 
   async getPost(id: string, user: UserPayload) {
