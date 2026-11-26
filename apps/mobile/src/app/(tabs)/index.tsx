@@ -16,6 +16,7 @@ import { getCached } from '../../lib/api-cache';
 import { supabase } from '../../lib/supabase';
 import { imageThumb } from '../../lib/image';
 import { ScreenBackground } from '../../components/ui/screen-background';
+import { LeagueStatusBadge } from '../../components/ui/league-status-badge';
 import { AppHeader, HeaderAction } from '../../components/ui/app-header';
 import { RemoteImage } from '../../components/ui/remote-image';
 import {
@@ -200,7 +201,7 @@ function HomeLeagues({ summary, matches, loading }: { summary: Summary | null; m
                 <Card>
                   <View className="flex-row items-center justify-between">
                     <Text className="text-white text-base font-bold flex-1" numberOfLines={1}>{l.name}</Text>
-                    <Text className="text-white/45 text-xs">{l.status}</Text>
+                    <LeagueStatusBadge status={l.status} />
                   </View>
                 </Card>
               </Pressable>

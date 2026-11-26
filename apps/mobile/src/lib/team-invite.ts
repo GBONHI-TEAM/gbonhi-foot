@@ -18,7 +18,7 @@ export function buildTeamInviteMessage(teamName: string, _code: string, joinLink
   return (
     `⚽ ${teamName} t'attend sur GBONHI FOOT !\n\n` +
     `Rejoins l'équipe directement dans l'application 👇\n${joinLink}\n\n` +
-    `En cas de soucis avec le lien, ouvre l'app GBONHI FOOT, va dans « Rejoindre une équipe » dans le mode ligue et saisis le code d'invitation reçu.`
+    `En cas de soucis avec le lien, ouvre l'app GBONHI FOOT, choisis le mode « participer aux ligues », puis va dans « Rejoindre une équipe » dans l'onglet profil et saisis le code d'invitation reçu.`
   );
 }
 
@@ -33,7 +33,7 @@ export function buildTeamInviteCodeMessage(teamName: string, code: string, joinL
     `🔑 Code d'invitation :\n${code}\n\n` +
     `👉 Comment nous rejoindre :\n` +
     `1️⃣ Ouvre ou télécharge l'app GBONHI FOOT : ${APP_DOWNLOAD_URL}\n` +
-    `2️⃣ Va dans « Rejoindre une équipe » (mode Ligue)\n` +
+    `2️⃣ Choisis le mode « participer aux ligues », puis va dans « Rejoindre une équipe » dans l'onglet profil\n` +
     `3️⃣ Saisis le code : ${code}\n\n` +
     `⚡ Ou rejoins directement en un clic 👇\n${joinLink}\n\n` +
     `On t'attend sur le terrain ! 🏆`

@@ -5,6 +5,7 @@ import { ScreenBackground } from '../../components/ui/screen-background';
 import { AppHeader } from '../../components/ui/app-header';
 import { RemoteImage } from '../../components/ui/remote-image';
 import { getCached } from '../../lib/api-cache';
+import { LeagueStatusBadge } from '../../components/ui/league-status-badge';
 import { imageThumb } from '../../lib/image';
 
 interface ApiLeague {
@@ -46,7 +47,7 @@ function fmtDay(iso?: string | null) {
   return Number.isNaN(d.getTime()) ? '—' : `${d.getDate()} ${MONTH_SHORT[d.getMonth()]}`;
 }
 
-function LeagueCard({ league }: { league: ApiLeague }) {
+function LeagueCard({ league, alreadyRegistered }: { league: ApiLeague; alreadyRegistered: boolean }) {
   const router = useRouter();
   const cat = categoryOf(league.status);
   const badge = CAT_BADGE[cat];
@@ -63,6 +64,14 @@ function LeagueCard({ league }: { league: ApiLeague }) {
         {banner ? <RemoteImage uri={banner} contentFit="cover" style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} /> : null}
         <View style={{ position: 'absolute', top: 10, right: 10, backgroundColor: badge.bg, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4 }}>
           <Text className="font-black text-[11px] tracking-widest text-white">{badge.label}</Text>
+        </View>
+        <View style={{ position: 'absolute', top: 10, left: 10, gap: 6 }}>
+          <LeagueStatusBadge status={league.status} />
+          {alreadyRegistered ? (
+            <View className="self-start px-2.5 py-0.5 rounded-full" style={{ backgroundColor: 'rgba(13,31,13,0.85)', borderWidth: 1, borderColor: 'rgba(74,222,128,0.6)' }}>
+              <Text className="text-xs font-bold" style={{ color: '#86EFAC' }}>✓ Déjà inscrit</Text>
+            </View>
+          ) : null}
         </View>
       </View>
 
@@ -95,9 +104,9 @@ function LeagueCard({ league }: { league: ApiLeague }) {
           <Text className="text-white/80 text-sm">🎟 {teams}{max ? ` / ${max}` : ''} inscrites</Text>
           {full ? (
             <View className="px-2 py-0.5 rounded-full" style={{ backgroundColor: 'rgba(220,38,38,0.2)' }}>
-              <Text className="text-xs font-bold" style={{ color: '#F87171' }}>COMPLET</Text>
+              <Text className="text-xs font-bold" style={{ color: '#F87171' }}>Complète</Text>
             </View>
-          ) : max ? (
+          ) : max && league.status === 'INSCRIPTIONS_OUVERTES' ? (
             <Text className="text-sm" style={{ color: '#4ADE80' }}>— {spotsLeft} places restantes</Text>
           ) : null}
         </View>
@@ -117,6 +126,8 @@ function LeagueCard({ league }: { league: ApiLeague }) {
 
 export default function LeagueScreen() {
   const [leagues, setLeagues] = useState<ApiLeague[]>([]);
+  // Ligues auxquelles l'utilisateur participe déjà (badge « Déjà inscrit », L3).
+  const [myLeagueIds, setMyLeagueIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [activeFilter, setActiveFilter] = useState<Cat | 'all'>('all');
@@ -125,6 +136,12 @@ export default function LeagueScreen() {
     try {
       const data = await getCached<ApiLeague[]>('/api/v1/leagues', 30_000, force);
       setLeagues(Array.isArray(data) ? data : []);
+      try {
+        const summary = await getCached<{ leagues?: { id: string }[] }>('/api/v1/users/me/summary', 20_000, force);
+        setMyLeagueIds(new Set((summary?.leagues ?? []).map((l) => l.id)));
+      } catch {
+        /* badge simplement absent en cas d'échec */
+      }
     } catch {
       setLeagues([]);
     } finally {
@@ -165,7 +182,7 @@ export default function LeagueScreen() {
         <FlatList
           data={filtered}
           keyExtractor={(l) => l.id}
-          renderItem={({ item }) => <LeagueCard league={item} />}
+          renderItem={({ item }) => <LeagueCard league={item} alreadyRegistered={myLeagueIds.has(item.id)} />}
           contentContainerStyle={{ padding: 16, paddingTop: 8, paddingBottom: 24 }}
           showsVerticalScrollIndicator={false}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(true); }} tintColor="#F7921E" />}
