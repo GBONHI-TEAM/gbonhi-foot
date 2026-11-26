@@ -36,6 +36,81 @@ export class MatchesService {
     private readonly bracket: BracketService,
   ) {}
 
+  /**
+   * Notifications de match (L7, retour testeur 23/11) : 1 h avant le coup
+   * d'envoi + au coup d'envoi, aux joueurs actifs des deux équipes.
+   * Déclenché par un cron externe (même mécanisme que les rappels de
+   * réservation : Render gratuit s'endort, pas de @Cron interne).
+   * Idempotent : dédoublonnage via l'existence d'une notification du même
+   * type portant le match_id, donc appelable aussi souvent que voulu.
+   */
+  async sendMatchReminders() {
+    const now = new Date();
+    const in65Min = new Date(now.getTime() + 65 * 60_000);
+    const ago25Min = new Date(now.getTime() - 25 * 60_000);
+
+    // Fenêtres : « 1 h avant » = match qui commence dans les 65 prochaines
+    // minutes ; « coup d'envoi » = match commencé depuis moins de 25 minutes.
+    const matches = await this.prisma.match.findMany({
+      where: {
+        scheduled_at: { gte: ago25Min, lte: in65Min },
+        status: { notIn: ['TERMINÉ', 'finished', 'completed', 'ANNULÉ', 'cancelled'] },
+      },
+      select: {
+        id: true,
+        scheduled_at: true,
+        tournament_id: true,
+        home_team_id: true,
+        away_team_id: true,
+        home_team: { select: { name: true } },
+        away_team: { select: { name: true } },
+      },
+    });
+    if (matches.length === 0) return { sent: 0 };
+
+    const recent = await this.prisma.notification.findMany({
+      where: {
+        type: { in: ['match_reminder_1h', 'match_kickoff'] },
+        created_at: { gte: new Date(now.getTime() - 2 * 86_400_000) },
+      },
+      select: { type: true, data: true },
+    });
+    const alreadySent = new Set(
+      recent
+        .map((n) => {
+          const mid = (n.data as { match_id?: string } | null)?.match_id;
+          return mid ? `${n.type}:${mid}` : null;
+        })
+        .filter((k): k is string => !!k),
+    );
+
+    let sent = 0;
+    for (const m of matches) {
+      if (!m.scheduled_at) continue;
+      const startsAt = new Date(m.scheduled_at);
+      const isKickoff = startsAt <= now;
+      const type = isKickoff ? 'match_kickoff' : 'match_reminder_1h';
+      if (alreadySent.has(`${type}:${m.id}`)) continue;
+
+      const memberIds = await this.matchMemberIds(m.home_team_id, m.away_team_id);
+      if (memberIds.length === 0) continue;
+
+      const home = m.home_team?.name ?? 'Domicile';
+      const away = m.away_team?.name ?? 'Extérieur';
+      const hhmm = startsAt.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+      await this.notifications.notify(memberIds, {
+        type,
+        title: isKickoff ? 'Coup d’envoi ! ⚽' : 'Match dans 1 heure ⚽',
+        body: isKickoff
+          ? `${home} vs ${away} : le match vient de commencer. Bon match !`
+          : `${home} vs ${away} commence à ${hhmm}. Prépare-toi !`,
+        data: { match_id: m.id, tournament_id: m.tournament_id },
+      });
+      sent += 1;
+    }
+    return { sent };
+  }
+
   /** IDs des membres actifs des deux équipes d'un match. */
   private async matchMemberIds(homeTeamId?: string | null, awayTeamId?: string | null): Promise<string[]> {
     const ids = [homeTeamId, awayTeamId].filter((v): v is string => !!v);
