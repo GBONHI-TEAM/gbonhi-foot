@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, useCallback } from 'react';
 import { View, Text, ScrollView, Pressable, ActivityIndicator } from 'react-native';
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import { ScreenBackground } from '../../../components/ui/screen-background';
+import { LeagueStatusBadge } from '../../../components/ui/league-status-badge';
 import { apiClient } from '../../../lib/api';
 import { supabase } from '../../../lib/supabase';
 import { imageThumb } from '../../../lib/image';
@@ -37,16 +38,6 @@ function shortDate(iso: string): string {
   if (Number.isNaN(d.getTime())) return '';
   return `${d.getDate()} ${MONTHS_FULL[d.getMonth()]} ${d.getFullYear()}`;
 }
-
-const LEAGUE_STATUS_LABEL: Record<string, string> = {
-  BROUILLON: 'Brouillon',
-  INSCRIPTIONS_OUVERTES: 'Inscriptions ouvertes',
-  INSCRIPTIONS_CLOSES: 'Inscriptions closes',
-  EN_COURS: 'En cours',
-  SUSPENDUE: 'Suspendue',
-  TERMINÉE: 'Terminée',
-  ARCHIVÉE: 'Archivée',
-};
 
 /* ───────────────────────── Onglet Infos ───────────────────────── */
 
@@ -913,7 +904,6 @@ export default function LeagueDetailPage() {
     return true;
   });
 
-  const statusLabel = LEAGUE_STATUS_LABEL[league.status] ?? league.status;
   const canRegister = league.status === 'INSCRIPTIONS_OUVERTES' && !myRegistration?.league_full;
   const alreadyRegistered = myRegistration?.already_registered === true;
   const participatingTeam = myRegistration?.participation?.team ?? myRegistration?.registrations[0]?.team;
@@ -932,8 +922,8 @@ export default function LeagueDetailPage() {
           <Pressable onPress={() => (router.canGoBack() ? router.back() : router.replace('/(tabs)/league'))} hitSlop={8}>
             <Text className="text-white text-2xl">←</Text>
           </Pressable>
-          <View className="self-start px-2.5 py-0.5 rounded-full ml-2" style={{ backgroundColor: '#0F3D1E' }}>
-            <Text className="text-xs font-black tracking-widest text-white">{statusLabel.toUpperCase()}</Text>
+          <View className="ml-2">
+            <LeagueStatusBadge status={league.status} />
           </View>
           {alreadyRegistered ? (
             <View className="self-start px-2.5 py-0.5 rounded-full" style={{ backgroundColor: 'rgba(74,222,128,0.18)', borderWidth: 1, borderColor: 'rgba(74,222,128,0.45)' }}>
@@ -995,6 +985,14 @@ export default function LeagueDetailPage() {
 
       {/* CTA inscription. Un membre déjà engagé dans cette ligue ne peut jamais
           ouvrir un second parcours avec une autre équipe. */}
+      {activeTab === 'Infos' && league.status === 'INSCRIPTIONS_OUVERTES' && myRegistration?.league_full && !alreadyRegistered && (
+        <View className="px-5 pb-8 pt-3" style={{ backgroundColor: '#0D1F0D' }}>
+          <View className="rounded-2xl px-5 py-4" style={{ backgroundColor: 'rgba(220,38,38,0.14)', borderWidth: 1, borderColor: 'rgba(248,113,113,0.45)' }}>
+            <Text className="text-center font-black text-base" style={{ color: '#FCA5A5' }}>Ligue complète</Text>
+            <Text className="text-center text-sm mt-1" style={{ color: 'rgba(255,255,255,0.72)' }}>Toutes les places sont prises.</Text>
+          </View>
+        </View>
+      )}
       {activeTab === 'Infos' && canRegister && (
         <View className="px-5 pb-8 pt-3" style={{ backgroundColor: '#0D1F0D' }}>
           {alreadyRegistered ? (
