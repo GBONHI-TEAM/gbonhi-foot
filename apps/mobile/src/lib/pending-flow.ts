@@ -5,8 +5,12 @@ import * as SecureStore from 'expo-secure-store';
  * arrière-plan / une fermeture de l'app par le système (fréquent sur Android à
  * faible mémoire). On y stocke :
  *  - le contexte OTP (email/téléphone/canal) pour revenir sur l'écran de code
- *    quand l'utilisateur va chercher son code dans sa boîte mail ;
+ *    quand l'utilisateur va chercher son code SMS ;
  *  - la route d'un lien d'invitation/contenu (deep link) à ouvrir après auth.
+ *
+ * Vérification SMS Orange uniquement (décision 24/11) : un contexte e-mail
+ * stocké par une ancienne version est ignoré et purgé à la lecture, pour ne
+ * jamais rouvrir un écran de code e-mail.
  */
 const OTP_KEY = 'gbonhi_pending_otp';
 const DEEP_KEY = 'gbonhi_pending_deep_route';
@@ -29,6 +33,9 @@ export async function getPendingOtp(): Promise<PendingOtp | null> {
     if (!raw) return null;
     const parsed = JSON.parse(raw) as PendingOtp;
     if (!parsed?.ts || Date.now() - parsed.ts > OTP_TTL_MS) { await clearPendingOtp(); return null; }
+    // Canal e-mail : parcours historique supprimé. Un contexte e-mail restauré
+    // rouvrirait un écran de code e-mail : on l'ignore et on le purge.
+    if (parsed.channel === 'email') { await clearPendingOtp(); return null; }
     return parsed;
   } catch { return null; }
 }

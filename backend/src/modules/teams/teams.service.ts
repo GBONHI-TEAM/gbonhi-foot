@@ -158,7 +158,16 @@ export class TeamsService {
     const existing = await this.prisma.teamMember.findUnique({
       where: { team_id_user_id: { team_id: team.id, user_id: user.id } },
     });
-    if (existing) throw new ConflictException('Tu es déjà membre de cette équipe');
+    // Une demande EN ATTENTE n'est pas une adhésion : on ne la confond plus
+    // avec « déjà membre ». La demande est renvoyée telle quelle (idempotent :
+    // pas de doublon, pas de 2e notification — la relance explicite est gérée
+    // par resendJoinRequest).
+    if (existing?.status === 'active') {
+      throw new ConflictException('Tu es déjà membre de cette équipe');
+    }
+    if (existing?.status === 'pending') {
+      return { team: { id: team.id, name: team.name }, member: existing, alreadyPending: true };
+    }
 
     const member = await this.prisma.teamMember.create({
       data: {
@@ -170,21 +179,73 @@ export class TeamsService {
     });
 
     // Notifier le capitaine de la nouvelle demande.
-    if (team.coach_id) {
-      const requester = await this.prisma.profile.findUnique({
-        where: { id: user.id },
-        select: { full_name: true },
-      });
-      const who = requester?.full_name?.trim() || 'Un joueur';
-      await this.notifications.notify(team.coach_id, {
-        type: 'team_join_request',
-        title: 'Nouvelle demande d\'adhésion',
-        body: `${who} souhaite rejoindre ${team.name}.`,
-        data: { team_id: team.id, member_id: member.id },
-      });
-    }
+    await this.notifyCaptainOfJoinRequest(team, member.id, user.id);
 
     return { team: { id: team.id, name: team.name }, member };
+  }
+
+  /** Ma demande d'adhésion pour une équipe (vue par le demandeur). */
+  async getMyJoinRequest(teamId: string, user: UserPayload) {
+    const member = await this.prisma.teamMember.findUnique({
+      where: { team_id_user_id: { team_id: teamId, user_id: user.id } },
+    });
+    if (!member) return null;
+    return {
+      id: member.id,
+      team_id: member.team_id,
+      status: member.status,
+      created_at: member.created_at,
+    };
+  }
+
+  /** Relancer une demande en attente : renotifie le capitaine. */
+  async resendJoinRequest(teamId: string, user: UserPayload) {
+    const team = await this.prisma.team.findUnique({ where: { id: teamId } });
+    if (!team) throw new NotFoundException('Équipe introuvable');
+    const member = await this.prisma.teamMember.findUnique({
+      where: { team_id_user_id: { team_id: teamId, user_id: user.id } },
+    });
+    if (!member) throw new NotFoundException('Aucune demande en attente pour cette équipe');
+    if (member.status === 'active') {
+      throw new ConflictException('Tu es déjà membre de cette équipe');
+    }
+    await this.notifyCaptainOfJoinRequest(team, member.id, user.id);
+    return { team: { id: team.id, name: team.name }, member };
+  }
+
+  /** Annuler ma demande en attente (ne quitte pas une équipe dont on est membre). */
+  async cancelMyJoinRequest(teamId: string, user: UserPayload) {
+    const member = await this.prisma.teamMember.findUnique({
+      where: { team_id_user_id: { team_id: teamId, user_id: user.id } },
+    });
+    if (!member) throw new NotFoundException('Aucune demande en attente pour cette équipe');
+    if (member.status === 'active') {
+      throw new BadRequestException(
+        'Tu es déjà membre de cette équipe. Utilise « Quitter l’équipe » pour partir.',
+      );
+    }
+    await this.prisma.teamMember.delete({ where: { id: member.id } });
+    return { message: 'Demande annulée' };
+  }
+
+  /** Notifie le capitaine qu'un joueur souhaite rejoindre son équipe. */
+  private async notifyCaptainOfJoinRequest(
+    team: { id: string; name: string; coach_id: string | null },
+    memberId: string,
+    requesterId: string,
+  ) {
+    if (!team.coach_id) return;
+    const requester = await this.prisma.profile.findUnique({
+      where: { id: requesterId },
+      select: { full_name: true },
+    });
+    const who = requester?.full_name?.trim() || 'Un joueur';
+    await this.notifications.notify(team.coach_id, {
+      type: 'team_join_request',
+      title: 'Nouvelle demande d\'adhésion',
+      body: `${who} souhaite rejoindre ${team.name}.`,
+      data: { team_id: team.id, member_id: memberId },
+    });
   }
 
   async leaveTeam(teamId: string, user: UserPayload) {
@@ -339,7 +400,7 @@ export class TeamsService {
     return { message: 'Demande refusée' };
   }
 
-  async findByInvitationCode(code: string) {
+  async findByInvitationCode(code: string, user?: UserPayload) {
     const team = await this.prisma.team.findUnique({
       where: { invitation_code: code },
       include: {
@@ -348,7 +409,19 @@ export class TeamsService {
       },
     });
     if (!team) throw new NotFoundException('Code d\'invitation invalide');
-    return team;
+    // Statut du demandeur vis-à-vis de cette équipe : null (jamais demandé),
+    // 'pending' (demande en attente) ou 'active' (déjà membre). L'écran
+    // « Rejoindre une équipe » s'en sert pour afficher le bon état au lieu de
+    // « déjà membre » pour une simple demande en attente.
+    let myMembership: { id: string; status: string } | null = null;
+    if (user?.id) {
+      const mine = await this.prisma.teamMember.findUnique({
+        where: { team_id_user_id: { team_id: team.id, user_id: user.id } },
+        select: { id: true, status: true },
+      });
+      if (mine) myMembership = { id: mine.id, status: mine.status };
+    }
+    return { ...team, my_membership: myMembership };
   }
 
   /**

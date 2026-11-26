@@ -289,24 +289,9 @@ export default function CreateTeamPage() {
           )}
         </View>
 
-        {/* Invite section */}
-        <View className="mb-8">
-          <Text className="text-white font-semibold text-sm mb-2">Inviter des joueurs</Text>
-          <Pressable
-            onPress={() => Alert.alert('Invitation', "Un code et un lien d'invitation uniques sont générés dès la création de l'équipe. Tu pourras les partager à l'écran suivant (par code ou par lien).")}
-            className="flex-row items-center gap-3 px-4 py-3.5 rounded-xl"
-            style={{ borderWidth: 1.5, borderStyle: 'dashed', borderColor: 'rgba(255,255,255,0.2)' }}
-          >
-            <View className="w-9 h-9 rounded-xl items-center justify-center" style={{ backgroundColor: '#1E7A3A' }}>
-              <Text className="text-white">👤</Text>
-            </View>
-            <View className="flex-1">
-              <Text className="text-white text-sm font-medium">Par code ou par lien</Text>
-              <Text className="text-xs mt-0.5" style={{ color: 'rgba(255,255,255,0.4)' }}>Généré à la création · partage à l&apos;écran suivant</Text>
-            </View>
-            <Text style={{ color: 'rgba(255,255,255,0.35)' }}>ℹ</Text>
-          </Pressable>
-        </View>
+        {/* CTA — l'invitation (code + lien) est générée à la création et
+            affichée sur l'écran suivant ; la section « Inviter des joueurs »
+            ne servait qu'à répéter cela dans un pop-up. (A4) */}
 
         {/* CTA */}
         <Pressable

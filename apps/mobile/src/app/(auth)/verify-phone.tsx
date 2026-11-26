@@ -12,7 +12,7 @@ const CIV_PHONE = /^\d{8,10}$/;
 /**
  * Vérification du numéro pour les comptes créés via Apple / Google (qui ne
  * fournissent pas de numéro). Étape obligatoire avant d'accéder à l'app.
- * En attendant l'intégration SMS (Orange), le code OTP est envoyé par e-mail.
+ * Le code OTP est envoyé par SMS (Orange, via notre API).
  */
 export default function VerifyPhoneScreen() {
   const router = useRouter();
@@ -158,7 +158,7 @@ export default function VerifyPhoneScreen() {
           </Pressable>
 
           <Text className="text-white/40 text-center text-xs mt-4 leading-5">
-            Un code de vérification te sera envoyé (par e-mail pour l’instant, par SMS prochainement).
+            Un code de vérification te sera envoyé par SMS.
           </Text>
         </ScrollView>
       </ImageBackground>

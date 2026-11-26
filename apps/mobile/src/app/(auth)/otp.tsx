@@ -22,14 +22,11 @@ import { frenchAuthError } from '../../lib/auth-errors';
  * Écran 4 — Vérification OTP. Fond = maquette `s04_otp.png` retravaillée
  * (numéro + cases gravés retirés par recopie du filigrane, période 57 px).
  *
- * Deux canaux :
- *  - `email` (depuis l'inscription) : code 6 chiffres → 6 cases dessinées,
- *    fond `otp-bg-email.png`, `verifyOtp(type:'email')`.
- *  - `sms` (depuis la connexion, Twilio Verify 4 chiffres) : 4 cases posées sur
- *    les cases de la maquette, fond `otp-bg.png`, `verifyOtp(type:'sms')`.
+ * Un seul canal : SMS Orange (code maison à 6 chiffres, envoyé/vérifié par
+ * NOTRE API) — inscription, connexion par téléphone et vérification du numéro
+ * après Apple/Google. Aucune vérification par e-mail : l'e-mail reste
+ * l'identifiant du compte, pas un canal de vérification (décision 24/11).
  */
-
-const SMS_COLS = ['7.4%', '29.7%', '52.0%', '74.3%'] as const;
 
 function formatPhone(p?: string) {
   if (!p) return '';
@@ -39,7 +36,7 @@ function formatPhone(p?: string) {
 
 export default function OtpScreen() {
   const router = useRouter();
-  const params = useLocalSearchParams<{ email?: string; phone?: string; channel?: string; purpose?: string }>();
+  const params = useLocalSearchParams<{ email?: string; phone?: string; channel?: string; purpose?: string; fullName?: string }>();
   const email = params.email;
   const phone = params.phone;
   const channel: 'email' | 'sms' = params.channel === 'sms' ? 'sms' : 'email';
@@ -48,11 +45,16 @@ export default function OtpScreen() {
   // numéro (et tout ajout/vérification de numéro).
   const isVerifyPhone = params.purpose === 'verify-phone';
   const isSmsLogin = params.purpose === 'login'; // connexion par téléphone via SMS Orange
-  // Code SMS « maison » (6 chiffres, envoyé/vérifié par NOTRE API) : vérif. numéro OU connexion.
-  const smsOtp = isVerifyPhone || isSmsLogin;
-  const length = smsOtp ? 6 : channel === 'sms' ? 4 : 6;
-  // Disposition à 6 cases (e-mail OU SMS Orange) vs 4 cases (SMS Supabase).
-  const sixBox = smsOtp || channel === 'email';
+  // « register » : inscription — le code part par SMS sur le numéro, l'e-mail
+  // restant l'identifiant du compte (A6).
+  const isSmsRegister = params.purpose === 'register' && channel === 'sms';
+  // Code SMS « maison » (6 chiffres, envoyé/vérifié par NOTRE API) : vérif.
+  // numéro, connexion OU inscription par téléphone.
+  const smsOtp = isVerifyPhone || isSmsLogin || isSmsRegister;
+  // Code SMS Orange : toujours 6 chiffres, 6 cases. Aucun autre canal
+  // (ni code e-mail, ni SMS Supabase) : un contexte sans purpose SMS ne peut
+  // venir que d'un ancien parcours e-mail — il est refusé plus bas.
+  const length = 6;
 
   const [digits, setDigits] = useState<string[]>(Array(length).fill(''));
   const [loading, setLoading] = useState(false);
@@ -68,15 +70,15 @@ export default function OtpScreen() {
 
   // Persiste le contexte de CET écran OTP (inscription, connexion ou vérif. de
   // numéro) afin de pouvoir le restaurer si l'app est tuée par le système —
-  // typiquement quand l'utilisateur va chercher son code dans sa boîte mail.
+  // typiquement quand l'utilisateur va chercher son code SMS.
   useEffect(() => {
     void setPendingOtp({
       ...(email ? { email } : {}),
       ...(phone ? { phone } : {}),
       channel,
-      ...(isVerifyPhone ? { purpose: 'verify-phone' } : {}),
+      ...(params.purpose ? { purpose: params.purpose } : {}),
     });
-  }, [email, phone, channel, isVerifyPhone]);
+  }, [email, phone, channel, params.purpose]);
 
   function goBack() {
     // L'utilisateur abandonne la saisie du code → on oublie le contexte OTP.
@@ -120,14 +122,20 @@ export default function OtpScreen() {
     }
     setLoading(true);
 
-    // Code SMS Orange (vérifié par NOTRE API) : vérification du numéro OU
-    // connexion par téléphone.
+    // Code SMS Orange (vérifié par NOTRE API) : vérification du numéro,
+    // connexion par téléphone OU inscription par téléphone.
     if (smsOtp) {
       let tokenHash: string | undefined;
+      const otpPurpose = isVerifyPhone ? 'verify-phone' : isSmsRegister ? 'register' : 'login';
       try {
         const resp = await apiClient.post<{ verified: boolean; tokenHash?: string }>(
           '/api/v1/auth/phone/verify-otp',
-          { phone: phone ?? '', code, purpose: isVerifyPhone ? 'verify-phone' : 'login' },
+          {
+            phone: phone ?? '',
+            code,
+            purpose: otpPurpose,
+            ...(isSmsRegister && params.fullName ? { fullName: params.fullName } : {}),
+          },
         );
         tokenHash = resp.data?.tokenHash;
       } catch (e: unknown) {
@@ -144,7 +152,9 @@ export default function OtpScreen() {
           useAuthStore.getState().setSession(sess.session);
         }
       } else {
-        // Connexion : on ouvre la session avec le jeton renvoyé par le backend.
+        // Connexion / inscription : on ouvre la session avec le jeton renvoyé
+        // par le backend (le compte est créé à la vérification pour
+        // l'inscription).
         if (!tokenHash) {
           setLoading(false);
           Alert.alert('Connexion impossible', 'Réessaie dans un instant.');
@@ -162,56 +172,41 @@ export default function OtpScreen() {
       return;
     }
 
-    // Inscription / connexion : OTP e-mail Supabase (inchangé).
-    const { error } =
-      channel === 'sms'
-        ? await supabase.auth.verifyOtp({ phone: phone ?? '', token: code, type: 'sms' })
-        : await supabase.auth.verifyOtp({ email: email ?? '', token: code, type: 'email' });
-    if (error) {
-      setLoading(false);
-      Alert.alert('Code invalide', frenchAuthError(error.message));
-      return;
-    }
-    await clearPendingOtp();
+    // Aucun autre canal : un contexte sans purpose SMS ne peut venir que d'un
+    // ancien parcours e-mail restauré. On refuse plutôt que de vérifier un
+    // code e-mail — la vérification se fait uniquement par SMS Orange.
     setLoading(false);
-    // Succès → redirection auto (onAuthStateChange / AuthGate dans le root layout).
+    Alert.alert(
+      'Vérification par SMS uniquement',
+      'La vérification se fait par SMS. Recommence ton inscription ou ta connexion pour recevoir un code par SMS.',
+    );
+    return;
   }
 
   async function handleResend() {
     if (countdown > 0 || resending) return;
-    if ((smsOtp || channel === 'sms') && !phone) { Alert.alert('Erreur', 'Numéro manquant, reviens en arrière.'); return; }
-    if (!smsOtp && channel === 'email' && !email) { Alert.alert('Erreur', 'Email manquant, reviens en arrière.'); return; }
+    // Vérification par SMS Orange uniquement : aucun renvoi par e-mail.
+    if (!smsOtp) {
+      Alert.alert(
+        'Vérification par SMS uniquement',
+        'La vérification se fait par SMS. Recommence ton inscription ou ta connexion pour recevoir un code par SMS.',
+      );
+      return;
+    }
+    if (!phone) { Alert.alert('Erreur', 'Numéro manquant, reviens en arrière.'); return; }
 
     setResending(true);
     try {
-      // SMS Orange (vérif. numéro ou connexion) : renvoi via NOTRE API.
-      if (smsOtp) {
-        await apiClient.post('/api/v1/auth/phone/request-otp', { phone: phone as string, purpose: isVerifyPhone ? 'verify-phone' : 'login' });
-        setDigits(Array(length).fill(''));
-        inputRefs.current[0]?.focus();
-        setCountdown(60);
-        Alert.alert('Code renvoyé', `Un nouveau code a été envoyé au ${formatPhone(phone)} par SMS.`);
-        return;
-      }
-
-      const { error } =
-        channel === 'sms'
-          ? await supabase.auth.signInWithOtp({ phone: phone as string })
-          : await supabase.auth.signInWithOtp({ email: email as string, options: { shouldCreateUser: true } });
-
-      if (error) {
-        Alert.alert('Renvoi impossible', frenchAuthError(error.message));
-        return;
-      }
+      // SMS Orange (vérif. numéro, connexion ou inscription) : renvoi via NOTRE API.
+      await apiClient.post('/api/v1/auth/phone/request-otp', {
+        phone: phone as string,
+        purpose: isVerifyPhone ? 'verify-phone' : isSmsRegister ? 'register' : 'login',
+        ...(isSmsRegister && email ? { email } : {}),
+      });
       setDigits(Array(length).fill(''));
       inputRefs.current[0]?.focus();
       setCountdown(60);
-      Alert.alert(
-        'Code renvoyé',
-        channel === 'sms'
-          ? `Un nouveau code a été envoyé au ${formatPhone(phone)}.`
-          : `Un nouveau code a été envoyé à ${email}.`,
-      );
+      Alert.alert('Code renvoyé', `Un nouveau code a été envoyé au ${formatPhone(phone)} par SMS.`);
     } catch (e: unknown) {
       const raw = (e as { response?: { data?: { message?: string | string[] } } }).response?.data?.message;
       const msg = Array.isArray(raw) ? raw.join('\n') : raw ?? (e instanceof Error ? e.message : 'Vérifie ta connexion et réessaie.');
@@ -235,11 +230,7 @@ export default function OtpScreen() {
           bounces={false}
         >
           <ImageBackground
-            source={
-              sixBox
-                ? require('../../../assets/images/otp-bg-email.png')
-                : require('../../../assets/images/otp-bg.png')
-            }
+            source={require('../../../assets/images/otp-bg-email.png')}
             resizeMode="cover"
             style={{ width: '100%', aspectRatio: 754 / 1628 }}
           >
@@ -260,19 +251,29 @@ export default function OtpScreen() {
               <Text style={{ color: '#FFFFFF', fontSize: 22, marginTop: -2 }}>←</Text>
             </Pressable>
 
-            {/* Sous-titre dynamique — vrai destinataire */}
+            {/* Sous-titre dynamique — le code part toujours par SMS */}
             <View style={{ position: 'absolute', top: '35.9%', left: '5%', right: '5%', alignItems: 'center' }}>
               <Text style={{ color: 'rgba(255,255,255,0.55)', fontSize: 15 }}>
-                Code envoyé {smsOtp || channel === 'sms' ? 'au ' : 'à '}
+                Code envoyé au{' '}
                 <Text style={{ color: '#FFFFFF', fontWeight: '700' }}>
-                  {smsOtp || channel === 'sms' ? formatPhone(phone) : email}
+                  {formatPhone(phone)}
                 </Text>
               </Text>
             </View>
 
-            {!sixBox ? (
-              /* 4 cases transparentes sur les cases gravées de la maquette */
-              digits.map((d, i) => (
+            {/* 6 cases dessinées au style de la maquette (code SMS Orange) */}
+            <View
+              style={{
+                position: 'absolute',
+                left: '6%',
+                right: '6%',
+                top: '42.5%',
+                height: '8.3%',
+                flexDirection: 'row',
+                justifyContent: 'space-between',
+              }}
+            >
+              {digits.map((d, i) => (
                 <TextInput
                   key={i}
                   ref={(ref) => { if (ref) inputRefs.current[i] = ref; }}
@@ -285,59 +286,20 @@ export default function OtpScreen() {
                   autoComplete={i === 0 ? 'sms-otp' : 'off'}
                   selectionColor="#F7921E"
                   style={{
-                    position: 'absolute',
-                    left: SMS_COLS[i],
-                    top: '42.5%',
-                    width: '18.6%',
-                    height: '8.3%',
+                    width: '14.5%',
+                    height: '100%',
                     textAlign: 'center',
                     color: '#FFFFFF',
-                    fontSize: 30,
+                    fontSize: 26,
                     fontWeight: '700',
+                    backgroundColor: 'rgba(255,255,255,0.05)',
+                    borderWidth: 1,
+                    borderColor: d ? '#F7921E' : 'rgba(255,255,255,0.22)',
+                    borderRadius: 16,
                   }}
                 />
-              ))
-            ) : (
-              /* 6 cases dessinées au style de la maquette */
-              <View
-                style={{
-                  position: 'absolute',
-                  left: '6%',
-                  right: '6%',
-                  top: '42.5%',
-                  height: '8.3%',
-                  flexDirection: 'row',
-                  justifyContent: 'space-between',
-                }}
-              >
-                {digits.map((d, i) => (
-                  <TextInput
-                    key={i}
-                    ref={(ref) => { if (ref) inputRefs.current[i] = ref; }}
-                    value={d}
-                    onChangeText={(v) => handleDigit(v, i)}
-                    onKeyPress={({ nativeEvent }) => handleKeyPress(nativeEvent.key, i)}
-                    keyboardType="number-pad"
-                    maxLength={i === 0 ? length : 1}
-                    textContentType="oneTimeCode"
-                    autoComplete={i === 0 ? 'sms-otp' : 'off'}
-                    selectionColor="#F7921E"
-                    style={{
-                      width: '14.5%',
-                      height: '100%',
-                      textAlign: 'center',
-                      color: '#FFFFFF',
-                      fontSize: 26,
-                      fontWeight: '700',
-                      backgroundColor: 'rgba(255,255,255,0.05)',
-                      borderWidth: 1,
-                      borderColor: d ? '#F7921E' : 'rgba(255,255,255,0.22)',
-                      borderRadius: 16,
-                    }}
-                  />
-                ))}
-              </View>
-            )}
+              ))}
+            </View>
 
             {/* Bouton dynamique — « Renvoyer le code » (recouvre le texte gravé) */}
             <Pressable

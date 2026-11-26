@@ -1,24 +1,128 @@
 import * as Linking from 'expo-linking';
 import * as WebBrowser from 'expo-web-browser';
+import { GoogleSignin, statusCodes } from '@react-native-google-signin/google-signin';
 import { supabase } from './supabase';
 
 /**
- * Connexion Google via Supabase OAuth.
- * - `signInWithOAuth` (skipBrowserRedirect) renvoie l'URL d'autorisation Google.
- * - On ouvre cette URL dans une SESSION d'authentification (ASWebAuthenticationSession
- *   sur iOS / Custom Tab sur Android) via `openAuthSessionAsync`. Contrairement à
- *   `Linking.openURL` + Safari, cette session CAPTURE de façon fiable la redirection
- *   vers `gbonhi://?code=...` et nous rend l'URL directement — sans dépendre du fait
- *   que le navigateur système accepte de rouvrir l'app (ce qui échouait sur iOS et
- *   renvoyait l'utilisateur à l'écran d'accueil sans session).
- * - On échange ensuite le `code` contre une session (PKCE).
+ * Connexion Google NATIVE (décision Abraham, 26/11/2026) :
+ * le SDK Google natif affiche le sélecteur de compte système, puis on échange
+ * le jeton d'identité contre une session Supabase via `signInWithIdToken`
+ * (même schéma que `signInWithApple` dans auth-apple.ts).
  *
- * Redirection = `gbonhi://` (déjà autorisée dans Supabase → Redirect URLs).
- * Le handler de deep link global (root _layout) reste un filet de secours.
+ * Objectif : faire disparaître le pop-up iOS « "GbonhiFoot" Wants to Use
+ * "yeapyq…supabase.co" » et la barre d'adresse *.supabase.co du navigateur
+ * intégré — retour testeur A1 du 23/11/2026. Le Branding Google Cloud
+ * (nom + logo) reste utile pour l'écran de consentement web, mais seul le
+ * natif supprime toute URL Supabase visible.
+ *
+ * Configuration requise (aucun secret dans le code, ce sont des IDs publics) :
+ * - `EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID` : ID client OAuth « Web » existant
+ *   (celui déjà utilisé par le provider Google de Supabase).
+ * - `EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID` : ID client OAuth « iOS » créé dans
+ *   Google Cloud pour le bundle `com.genius21.gbonhifoot`.
+ * - app.json → plugin `@react-native-google-signin/google-signin` :
+ *   `iosUrlScheme` = ID client iOS inversé (`com.googleusercontent.apps.…`).
+ * - Supabase → Authentication → Providers → Google : ajouter l'ID client
+ *   iOS aux Client IDs autorisés, à côté de l'ID Web existant.
+ *
+ * Repli : si le module natif est absent (Expo Go, build sans le plugin) ou
+ * si les IDs ne sont pas configurés, on retombe sur l'ancien flux web
+ * (ASWebAuthenticationSession + PKCE) pour ne jamais casser la connexion.
+ * `handleOAuthDeepLink` reste exporté pour le handler global (_layout) et
+ * les liens `gbonhi://?code=…` déjà en circulation.
  */
 export const OAUTH_REDIRECT = 'gbonhi://';
 
+const GOOGLE_WEB_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID;
+const GOOGLE_IOS_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID;
+
+let googleConfigured = false;
+
+function configureGoogleNative(): boolean {
+  if (googleConfigured) return true;
+  if (!GOOGLE_WEB_CLIENT_ID || !GOOGLE_IOS_CLIENT_ID) return false;
+  try {
+    GoogleSignin.configure({
+      webClientId: GOOGLE_WEB_CLIENT_ID,
+      iosClientId: GOOGLE_IOS_CLIENT_ID,
+      offlineAccess: false,
+    });
+    googleConfigured = true;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Extrait le jeton d'identité des deux formes de réponse du SDK (v12 / v13+). */
+function idTokenFromSignInResult(result: unknown): string | null {
+  if (!result || typeof result !== 'object') return null;
+  const record = result as Record<string, unknown>;
+  if (typeof record.idToken === 'string' && record.idToken) return record.idToken;
+  const data = record.data;
+  if (data && typeof data === 'object') {
+    const dataRecord = data as Record<string, unknown>;
+    if (typeof dataRecord.idToken === 'string' && dataRecord.idToken) return dataRecord.idToken;
+  }
+  return null;
+}
+
+function isCancelledResult(result: unknown): boolean {
+  if (!result || typeof result !== 'object') return false;
+  return (result as Record<string, unknown>).type === 'cancelled';
+}
+
+/** L'utilisateur a fermé le sélecteur de compte Google : pas d'erreur à afficher. */
+export function isGoogleCancel(e: unknown): boolean {
+  return (
+    !!e &&
+    typeof e === 'object' &&
+    'code' in e &&
+    (e as { code?: string }).code === statusCodes.SIGN_IN_CANCELLED
+  );
+}
+
+async function signInWithGoogleNative(): Promise<boolean> {
+  if (!configureGoogleNative()) return false;
+
+  // Android uniquement (Google Play Services) ; sans effet sur iOS.
+  await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
+
+  const result: unknown = await GoogleSignin.signIn();
+  if (isCancelledResult(result)) return true; // annulé par l'utilisateur : rien à faire
+
+  const idToken = idTokenFromSignInResult(result);
+  if (!idToken) throw new Error("Jeton d'identité Google manquant.");
+
+  const { error } = await supabase.auth.signInWithIdToken({
+    provider: 'google',
+    token: idToken,
+  });
+  if (error) throw error;
+  return true;
+}
+
 export async function signInWithGoogle(): Promise<void> {
+  // 1) Flux natif (aucune URL Supabase visible).
+  try {
+    if (await signInWithGoogleNative()) return;
+  } catch (e) {
+    if (isGoogleCancel(e)) return;
+    // Module natif absent / non configuré → repli web ci-dessous.
+    // Toute autre erreur (réseau, Supabase…) est remontée telle quelle.
+    const code = e && typeof e === 'object' && 'code' in e ? String((e as { code?: unknown }).code) : '';
+    const message = e instanceof Error ? e.message : '';
+    const nativeUnavailable =
+      code === statusCodes.PLAY_SERVICES_NOT_AVAILABLE ||
+      /native module|not linked|RNGoogleSignin/i.test(message);
+    if (!nativeUnavailable) throw e;
+  }
+
+  // 2) Repli web historique (ASWebAuthenticationSession + PKCE).
+  await signInWithGoogleWeb();
+}
+
+async function signInWithGoogleWeb(): Promise<void> {
   const { data, error } = await supabase.auth.signInWithOAuth({
     provider: 'google',
     options: { redirectTo: OAUTH_REDIRECT, skipBrowserRedirect: true },
@@ -32,9 +136,23 @@ export async function signInWithGoogle(): Promise<void> {
   // L'utilisateur a fermé la fenêtre sans terminer : on n'affiche pas d'erreur.
   if (result.type !== 'success' || !result.url) return;
 
+  // Google / Supabase ont refusé (ex. `access_denied`, redirect non autorisée) :
+  // on remonte la vraie raison au lieu du message générique.
+  const oauthError = oauthErrorFromUrl(result.url);
+  if (oauthError) throw new Error(oauthError);
+
   // Échange le code renvoyé dans l'URL contre une session Supabase.
   const exchanged = await handleOAuthDeepLink(result.url);
   if (!exchanged) throw new Error('La connexion Google n’a pas pu être finalisée. Réessaie.');
+}
+
+/** Raison du refus OAuth renvoyée dans l'URL de retour (`error_description`, sinon `error`). */
+function oauthErrorFromUrl(url: string): string | null {
+  const parsed = Linking.parse(url);
+  const error = parsed.queryParams?.error;
+  if (typeof error !== 'string' || !error) return null;
+  const description = parsed.queryParams?.error_description;
+  return typeof description === 'string' && description ? description : error;
 }
 
 /**

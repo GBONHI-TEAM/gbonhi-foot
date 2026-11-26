@@ -1,6 +1,7 @@
 import {
   ConflictException,
   Injectable,
+  Logger,
   NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
@@ -14,6 +15,8 @@ import type { CreateAdminInvitationDto } from './dto/create-admin-invitation.dto
 
 @Injectable()
 export class UsersService {
+  private readonly logger = new Logger(UsersService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly supabase: SupabaseService,
@@ -209,6 +212,35 @@ export class UsersService {
     });
     await this.recordActivity(user, 'LOGIN');
     return profile;
+  }
+
+  /**
+   * Équipes dont je suis capitaine, avec leurs membres actifs — pour choisir
+   * un successeur avant de supprimer mon compte (A8). Une équipe sans autre
+   * membre n'a pas besoin de successeur : elle sera supprimée/anonymisée
+   * avec le compte (voir deleteMe).
+   */
+  async getMyCaptaincies(user: UserPayload) {
+    const teams = await this.prisma.team.findMany({
+      where: { coach_id: user.id },
+      select: {
+        id: true,
+        name: true,
+        members: {
+          where: { status: 'active', user_id: { not: user.id } },
+          select: {
+            user: { select: { id: true, full_name: true, avatar_url: true } },
+          },
+          orderBy: { created_at: 'asc' },
+        },
+      },
+      orderBy: { name: 'asc' },
+    });
+    return teams.map((team) => ({
+      id: team.id,
+      name: team.name,
+      members: team.members.map((member) => member.user),
+    }));
   }
 
   /**
@@ -679,7 +711,20 @@ export class UsersService {
       throw new ServiceUnavailableException('La suppression est temporairement indisponible. Réessaie dans quelques instants.');
     }
 
-    const deletedTeamIds = await this.prisma.$transaction(async (tx) => {
+    // Suppression du compte Auth D'ABORD (avec un nouvel essai en cas d'erreur
+    // transitoire). Un compte Auth qui survit à la suppression locale
+    // ressuscite le compte à la prochaine connexion : le même identifiant
+    // Apple/Google retrouve le même utilisateur Supabase et `upsertOnLogin`
+    // recrée le profil — c'est le bug signalé (« mes anciennes données sont
+    // là »). À l'inverse, un profil local orphelin n'est plus joignable par
+    // aucun identifiant et peut être nettoyé par le support. Les contrôles
+    // de responsabilités ci-dessus ont déjà validé que la suppression peut
+    // avoir lieu ; seul un échec base de données peut encore survenir après.
+    await this.deleteAuthUserOrThrow(user.id);
+
+    let deletedTeamIds: string[];
+    try {
+      deletedTeamIds = await this.prisma.$transaction(async (tx) => {
       // La vérification est répétée dans la transaction afin de ne jamais
       // effacer une équipe qu'un autre joueur viendrait de rejoindre.
       const ownedTeams = await tx.team.findMany({
@@ -747,16 +792,41 @@ export class UsersService {
       await tx.teamMember.deleteMany({ where: { user_id: user.id } });
       await tx.profile.delete({ where: { id: user.id } });
       return removableTeamIds;
-    });
-
-    const authDeletion = await this.supabase.client.auth.admin.deleteUser(user.id);
-    if (authDeletion.error) {
-      throw new ServiceUnavailableException('Les données ont été retirées mais la fermeture Auth a échoué. Contacte le support pour finaliser la déconnexion.');
+      });
+    } catch (error) {
+      // Le compte Auth est déjà fermé : l'utilisateur ne peut plus se
+      // reconnecter avec cet identifiant, donc ses anciennes données ne
+      // peuvent pas « revenir ». On ne prétend pas que tout est supprimé :
+      // on journalise pour que le support finisse le nettoyage local.
+      this.logger.error(
+        `Suppression locale incomplète après fermeture Auth pour ${user.id} : ${error instanceof Error ? error.message : String(error)}`,
+      );
+      throw new ServiceUnavailableException(
+        'Ton compte a été fermé, mais le nettoyage de certaines données n’a pas abouti. Contacte le support si tes données réapparaissent.',
+      );
     }
 
     await this.removeStorageFolder('avatars', user.id);
     await Promise.all(deletedTeamIds.map((teamId) => this.removeStorageFolder('teams', teamId)));
     return { deleted: true };
+  }
+
+  /**
+   * Ferme le compte Supabase Auth, avec un nouvel essai en cas d'erreur
+   * transitoire (5xx / réseau). Une erreur définitive lève avant toute
+   * mutation locale : on ne supprime jamais les données applicatives si
+   * l'identité survit.
+   */
+  private async deleteAuthUserOrThrow(userId: string): Promise<void> {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const { error } = await this.supabase.client.auth.admin.deleteUser(userId);
+      if (!error) return;
+      const status = (error as { status?: number }).status;
+      if (attempt === 0 && (!status || status >= 500)) continue;
+      throw new ServiceUnavailableException(
+        'La fermeture du compte a échoué. Réessaie dans quelques instants.',
+      );
+    }
   }
 
   private async removeStorageFolder(bucket: string, folder: string) {

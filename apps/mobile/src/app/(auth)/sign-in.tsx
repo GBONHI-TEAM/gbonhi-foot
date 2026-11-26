@@ -14,13 +14,14 @@ import {
 import { useRouter } from 'expo-router';
 import { apiClient } from '../../lib/api';
 import { setPendingOtp } from '../../lib/pending-flow';
-import { signInWithGoogle } from '../../lib/auth-google';
+import { signInWithGoogle, isGoogleCancel } from '../../lib/auth-google';
 import { signInWithApple, isAppleCancel } from '../../lib/auth-apple';
 
 async function handleGoogle() {
   try {
     await signInWithGoogle();
   } catch (e) {
+    if (isGoogleCancel(e)) return;
     Alert.alert('Connexion Google impossible', e instanceof Error ? e.message : 'Réessaie.');
   }
 }
@@ -44,8 +45,8 @@ async function handleApple() {
  * Le champ téléphone gravé est recouvert par un champ opaque reproduisant
  * « 🇨🇮 +225 | » avec un `TextInput` natif (placeholder « Numéro de téléphone * »).
  *
- * « Continuer » envoie un code SMS au numéro (`type: 'sms'`) → écran OTP (canal
- * sms, 4 cases). Actif dès que Twilio Verify est configuré dans Supabase.
+ * « Continuer » envoie un code SMS Orange à 6 chiffres au numéro (via notre
+ * API) → écran OTP (canal sms, 6 cases). Aucune vérification par e-mail.
  *
  * Géométrie mesurée (754×1628) : champ top 31.8 % / hauteur 7.1 % (L 7.7 / R 7.8),
  * Continuer 40.9 %, Google 54.8 %, Apple 62.8 %, « S'inscrire » ~93.8 %.

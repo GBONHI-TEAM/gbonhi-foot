@@ -83,7 +83,9 @@ export class PhoneOtpService {
       return { sent: true, expiresInSeconds: Math.round(OTP_TTL_MS / 1000) };
     }
     if (!this.orangeSms.configured) {
-      throw new ServiceUnavailableException('La vérification par SMS n’est pas encore configurée.');
+      // SMS Orange indisponible : erreur explicite, sans repli e-mail —
+      // la vérification de compte se fait uniquement par SMS (décision 24/11).
+      throw new ServiceUnavailableException('Vérification par SMS indisponible pour le moment, réessaie.');
     }
     const purpose: Purpose = (['register', 'login', 'verify-phone'] as const).includes(input.purpose as Purpose)
       ? (input.purpose as Purpose)
