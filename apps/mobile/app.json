@@ -74,6 +74,12 @@
       "expo-font",
       "expo-apple-authentication",
       [
+        "@react-native-google-signin/google-signin",
+        {
+          "iosUrlScheme": "com.googleusercontent.apps.REMPLACER_PAR_ID_CLIENT_IOS"
+        }
+      ],
+      [
         "expo-notifications",
         {
           "icon": "./assets/images/notification-icon.png",

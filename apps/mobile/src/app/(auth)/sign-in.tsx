@@ -14,13 +14,14 @@ import {
 import { useRouter } from 'expo-router';
 import { apiClient } from '../../lib/api';
 import { setPendingOtp } from '../../lib/pending-flow';
-import { signInWithGoogle } from '../../lib/auth-google';
+import { signInWithGoogle, isGoogleCancel } from '../../lib/auth-google';
 import { signInWithApple, isAppleCancel } from '../../lib/auth-apple';
 
 async function handleGoogle() {
   try {
     await signInWithGoogle();
   } catch (e) {
+    if (isGoogleCancel(e)) return;
     Alert.alert('Connexion Google impossible', e instanceof Error ? e.message : 'Réessaie.');
   }
 }

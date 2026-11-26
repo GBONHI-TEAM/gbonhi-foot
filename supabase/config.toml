@@ -61,6 +61,12 @@ site_url = "http://127.0.0.1:3000"
 # (« GBONHI FOOT » au lieu de l'URL brute *.supabase.co) se règle lui aussi
 # côté dashboard : écran de consentement OAuth Google Cloud + configuration
 # du provider dans Supabase — pas dans ce dépôt.
+# Connexion Google NATIVE (26/11/2026, auth-google.ts) : plus aucun pop-up
+# ni navigateur — mais le dashboard distant doit autoriser l'ID client iOS
+# (Authentication → Providers → Google → Client IDs : Web + iOS), et
+# Google Cloud doit avoir un client OAuth iOS pour com.genius21.gbonhifoot.
+# Le Branding Google Cloud (site gbonhifoot.com, logo, pages légales) est
+# enregistré depuis le 26/11/2026.
 additional_redirect_urls = ["https://127.0.0.1:3000", "gbonhi://"]
 # How long tokens are valid for, in seconds. Defaults to 3600 (1 hour), maximum 604,800 (1 week).
 jwt_expiry = 3600
