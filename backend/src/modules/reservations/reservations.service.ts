@@ -257,6 +257,50 @@ export class ReservationsService {
     return reservation;
   }
 
+  /**
+   * T1 — Vérifie que [startHour, endHour) tient dans les horaires
+   * d'ouverture du partenaire pour le jour demandé (terrain_slots,
+   * day_of_week : 0 = lundi .. 6 = dimanche).
+   *
+   * - Aucun horaire renseigné pour le terrain → aucune restriction
+   *   (compatibilité avec les terrains historiques ; les horaires se
+   *   renseignent dans le portail partenaire / l'admin).
+   * - Horaires renseignés mais aucun créneau ce jour-là → terrain fermé.
+   * - Créneau qui déborde avant l'ouverture ou après la fermeture → refusé.
+   */
+  private async assertWithinOpeningHours(
+    terrainId: string,
+    reservationDate: Date,
+    startHour: number,
+    endHour: number,
+  ): Promise<void> {
+    const slots = await this.prisma.terrainSlot.findMany({
+      where: { terrain_id: terrainId, is_active: true },
+      select: { day_of_week: true, start_hour: true, end_hour: true },
+    });
+    if (slots.length === 0) return;
+
+    const dayOfWeek = (reservationDate.getUTCDay() + 6) % 7; // lundi = 0 en base
+    const daySlots = slots.filter((slot) => slot.day_of_week === dayOfWeek);
+    if (daySlots.length === 0) {
+      throw new BadRequestException('Le terrain est fermé ce jour-là. Choisis un autre jour.');
+    }
+
+    const open = new Set<number>();
+    for (const slot of daySlots) {
+      for (let hour = slot.start_hour; hour < slot.end_hour; hour += 0.5) {
+        open.add(Number(hour.toFixed(1)));
+      }
+    }
+    for (let cursor = startHour; cursor < endHour; cursor += 0.5) {
+      if (!open.has(Number(cursor.toFixed(1)))) {
+        throw new BadRequestException(
+          "Ce créneau dépasse les horaires d'ouverture du terrain. Choisis un horaire dans les heures d'ouverture.",
+        );
+      }
+    }
+  }
+
   /** Création d'une réservation (côté joueur / app mobile). */
   async create(dto: CreateReservationDto, user: UserPayload) {
     await this.releaseExpiredPendingReservations(user.id, true);
@@ -277,6 +321,13 @@ export class ReservationsService {
     }
 
     const reservationDate = new Date(`${dto.reservation_date}T00:00:00.000Z`);
+
+    // T1 — Le créneau doit tenir dans les horaires d'ouverture du partenaire
+    // (terrain_slots). Sans aucun horaire renseigné pour le terrain, on garde
+    // le comportement historique (pas de restriction) : les horaires se
+    // renseignent dans le portail partenaire / l'admin, jamais en dur ici.
+    await this.assertWithinOpeningHours(dto.terrain_id, reservationDate, dto.start_hour, dto.end_hour);
+
     const conflictingReservation = await this.prisma.reservation.findFirst({
       where: {
         terrain_id: dto.terrain_id,

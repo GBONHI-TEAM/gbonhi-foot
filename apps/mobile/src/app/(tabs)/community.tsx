@@ -7,6 +7,7 @@ import { ScreenBackground } from '../../components/ui/screen-background';
 import { AutoImage } from '../../components/ui/auto-image';
 import { RemoteImage } from '../../components/ui/remote-image';
 import { PatternedGreenHeader } from '../../components/ui/patterned-green-header';
+import { useUserModeStore } from '../../store/user-mode.store';
 
 interface Author { id: string; full_name: string | null; avatar_url: string | null }
 export type ReactionType = 'goal' | 'fire' | 'clap' | 'strong';
@@ -51,8 +52,13 @@ function isOfficial(post: Post) {
   return (post.author.full_name ?? '').trim().toUpperCase() === 'GBONHI FOOT';
 }
 
-const TABS = ['Tout', 'Mon équipe', 'Ligues', 'Terrains'] as const;
-type Tab = (typeof TABS)[number];
+// T5 — L'ordre des filtres suit le volet actif (décision du 23/11) :
+// volet Terrain (mode 'reservation') → Tout / Terrains / Mon équipe / Ligues ;
+// volet Ligue (mode 'leagues') → Tout / Mon équipe / Ligues / Terrains.
+// « Tout » reste toujours en première position.
+const TABS_TERRAIN = ['Tout', 'Terrains', 'Mon équipe', 'Ligues'] as const;
+const TABS_LIGUE = ['Tout', 'Mon équipe', 'Ligues', 'Terrains'] as const;
+type Tab = (typeof TABS_LIGUE)[number];
 
 export function PostCard({ post, onPress, onReact }: { post: Post; onPress?: () => void; onReact?: (type: ReactionType) => void }) {
   const official = isOfficial(post);
@@ -123,6 +129,8 @@ export function PostCard({ post, onPress, onReact }: { post: Post; onPress?: () 
 
 export default function CommunityScreen() {
   const router = useRouter();
+  const mode = useUserModeStore((state) => state.mode);
+  const tabs = mode === 'reservation' ? TABS_TERRAIN : TABS_LIGUE;
   const [posts, setPosts] = useState<Post[]>([]);
   const [myTeamId, setMyTeamId] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>('Tout');
@@ -205,7 +213,7 @@ export default function CommunityScreen() {
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={{ gap: 10, paddingHorizontal: 16, alignItems: 'center' }}
         >
-          {TABS.map((t) => {
+          {tabs.map((t) => {
             const active = tab === t;
             return (
               <Pressable

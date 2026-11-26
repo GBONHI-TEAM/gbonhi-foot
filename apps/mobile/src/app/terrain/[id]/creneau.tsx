@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { View, Text, ScrollView, Pressable, ActivityIndicator, Alert } from 'react-native';
+import { View, Text, ScrollView, Pressable, ActivityIndicator } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { ScreenBackground } from '../../../components/ui/screen-background';
 import { AppHeader } from '../../../components/ui/app-header';
@@ -136,13 +136,20 @@ export default function CreneauPage() {
       }
     }
 
-    if (open.size === 0) {
+    // T1 — Le repli 06h–23h ne vaut que pour les terrains SANS aucun horaire
+    // renseigné. Si le partenaire a défini ses horaires mais aucun créneau
+    // pour ce jour-là, le terrain est fermé : on ne propose rien (voir le
+    // message « fermé » plus bas) au lieu d'inventer des heures d'ouverture.
+    const hasAnySlots = (terrain?.slots?.length ?? 0) > 0;
+    if (open.size === 0 && !hasAnySlots) {
       for (let hour = 6; hour < 23; hour += 0.5) open.add(Number(hour.toFixed(1)));
     }
     return open;
   }, [selectedDate, terrain?.slots]);
 
   const hours = useMemo(() => [...openingHours].sort((a, b) => a - b), [openingHours]);
+  // Jour fermé : le partenaire a des horaires, mais aucun pour ce jour-là.
+  const closedDay = terrain != null && (terrain.slots?.length ?? 0) > 0 && hours.length === 0;
 
   const isToday = toYmd(selectedDate) === toYmd(new Date());
   const now = new Date();
@@ -166,19 +173,12 @@ export default function CreneauPage() {
   }
 
   function onSelectHour(h: number) {
-    const state = slotState(h);
-    if (state === 'available') {
+    // T2 — Un créneau qui ne peut pas accueillir la durée choisie s'affiche
+    // « Réservé », grisé et non cliquable (avant : « trop court » + alerte).
+    // La logique de disponibilité ne change pas : avec une durée plus
+    // courte, le même créneau peut redevenir disponible.
+    if (slotState(h) === 'available') {
       setStartHour(h === startHour ? null : h);
-      return;
-    }
-    // Un créneau « trop court » est libre mais ne peut pas accueillir la durée
-    // choisie : on l'explique clairement au lieu de ne rien faire.
-    if (state === 'tooShort') {
-      const durLabel = DURATIONS.find((o) => o.value === duration)?.label ?? `${duration} h`;
-      Alert.alert(
-        'Ce créneau est trop court',
-        `${hh(h)} est libre, mais une réservation de ${durLabel} ne tient pas à partir d'ici : le créneau suivant est déjà pris ou le terrain ferme avant la fin.\n\nChoisis un horaire plus tôt, ou réduis la durée.`,
-      );
     }
   }
 
@@ -261,6 +261,14 @@ export default function CreneauPage() {
           <View className="items-center justify-center py-12">
             <ActivityIndicator color="#F7921E" />
           </View>
+        ) : closedDay ? (
+          <View className="rounded-card p-5 items-center" style={{ backgroundColor: 'rgba(255,255,255,0.04)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)' }}>
+            <Text style={{ fontSize: 28 }}>🔒</Text>
+            <Text className="text-white font-bold text-base mt-2">Terrain fermé ce jour-là</Text>
+            <Text className="text-white/60 text-sm text-center mt-1 leading-5">
+              {terrain?.name ?? 'Ce terrain'} n'ouvre pas le {formatLongDate(selectedDate)}. Choisis un autre jour ci-dessus.
+            </Text>
+          </View>
         ) : availabilityError ? (
           <View className="rounded-card p-5 items-center" style={{ backgroundColor: 'rgba(248,113,113,0.08)', borderWidth: 1, borderColor: 'rgba(248,113,113,0.35)' }}>
             <Text className="text-white/75 text-center leading-5">{availabilityError}</Text>
@@ -274,49 +282,39 @@ export default function CreneauPage() {
               const state = slotState(h);
               const available = state === 'available';
               const occupied = state === 'occupied';
+              const tooShort = state === 'tooShort';
               const selected = startHour === h;
               return (
                 <View key={h} style={{ width: '33.333%', padding: 6 }}>
                   <Pressable
                     onPress={() => onSelectHour(h)}
-                    disabled={occupied}
+                    disabled={!available}
                     className="h-14 rounded-btn items-center justify-center"
                     style={{
                       backgroundColor: selected
                         ? '#F7921E'
                         : available
                           ? 'rgba(30,122,58,0.18)'
-                          : occupied
-                            ? 'rgba(255,255,255,0.04)'
-                            : 'rgba(247,146,30,0.06)',
+                          : 'rgba(255,255,255,0.04)',
                       borderWidth: 1,
-                      borderStyle: state === 'tooShort' ? 'dashed' : 'solid',
                       borderColor: selected
                         ? '#F7921E'
                         : available
                           ? 'rgba(46,158,79,0.5)'
-                          : occupied
-                            ? 'rgba(255,255,255,0.08)'
-                            : 'rgba(247,146,30,0.35)',
+                          : 'rgba(255,255,255,0.08)',
                     }}
                   >
                     <Text
                       className="text-base font-bold"
                       style={{
-                        color: selected
-                          ? '#fff'
-                          : available
-                            ? '#4ADE80'
-                            : occupied
-                              ? 'rgba(255,255,255,0.3)'
-                              : 'rgba(247,146,30,0.7)',
+                        color: selected ? '#fff' : available ? '#4ADE80' : 'rgba(255,255,255,0.3)',
                         textDecorationLine: occupied ? 'line-through' : 'none',
                       }}
                     >
                       {hh(h)}
                     </Text>
-                    {state === 'tooShort' ? (
-                      <Text style={{ color: 'rgba(247,146,30,0.7)', fontSize: 9, marginTop: 1 }}>trop court</Text>
+                    {tooShort ? (
+                      <Text style={{ color: 'rgba(255,255,255,0.45)', fontSize: 9, marginTop: 1 }}>Réservé</Text>
                     ) : null}
                   </Pressable>
                 </View>
@@ -330,8 +328,7 @@ export default function CreneauPage() {
           {[
             { c: '#2E9E4F', l: 'Disponible' },
             { c: '#F7921E', l: 'Sélectionné' },
-            { c: 'rgba(247,146,30,0.6)', l: 'Trop court' },
-            { c: 'rgba(255,255,255,0.25)', l: 'Occupé' },
+            { c: 'rgba(255,255,255,0.25)', l: 'Réservé' },
           ].map((leg) => (
             <View key={leg.l} className="flex-row items-center gap-2">
               <View style={{ width: 12, height: 12, borderRadius: 3, backgroundColor: leg.c }} />
@@ -340,7 +337,7 @@ export default function CreneauPage() {
           ))}
         </View>
         <Text className="text-white/45 text-xs mt-3 leading-5">
-          « Trop court » : le créneau est libre, mais ta durée de {DURATIONS.find((o) => o.value === duration)?.label ?? `${duration} h`} n'y tient pas (une réservation suit ou le terrain ferme). Touche-le pour plus de détails, ou réduis la durée.
+          Un créneau « Réservé » ne peut pas accueillir ta durée de {DURATIONS.find((o) => o.value === duration)?.label ?? `${duration} h`} (une réservation suit ou le terrain ferme). Réduis la durée pour le libérer.
         </Text>
       </ScrollView>
 

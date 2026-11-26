@@ -409,6 +409,13 @@ export class TeamsService {
       },
     });
     if (!team) throw new NotFoundException('Code d\'invitation invalide');
+    // Le compteur affiché (« X joueurs ») ne compte que les membres ACTIFS :
+    // une demande en attente n'est pas un joueur de l'équipe (constaté le
+    // 26/11 : 11 joueurs affichés pour 10 membres + 1 demande en attente).
+    const activeMembers = await this.prisma.teamMember.count({
+      where: { team_id: team.id, status: 'active' },
+    });
+    team._count.members = activeMembers;
     // Statut du demandeur vis-à-vis de cette équipe : null (jamais demandé),
     // 'pending' (demande en attente) ou 'active' (déjà membre). L'écran
     // « Rejoindre une équipe » s'en sert pour afficher le bon état au lieu de
