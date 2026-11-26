@@ -132,7 +132,25 @@ export default function CartPaymentScreen() {
     ]);
   }
 
-  async function onPay() {
+  // T4 — Confirmation avant paiement : récapitulatif complet, le paiement
+  // ne part qu'après « Confirmer ». « Annuler » ne paie rien.
+  function onPay() {
+    if (!reservation || busy || expired) return;
+    const methodLabel = methods.find((m) => m.code === selectedMethod)?.label ?? selectedMethod;
+    const durLabel = reservation.duration_hours % 1 === 0
+      ? `${reservation.duration_hours} h`
+      : `${reservation.duration_hours.toFixed(1).replace('.', ',')} h`;
+    Alert.alert(
+      'Confirmer le paiement ?',
+      `${reservation.terrain?.name ?? 'Terrain'}\n${formatDate(reservation.reservation_date)} · ${time(reservation.start_hour)} – ${time(reservation.end_hour)} (${durLabel})\nPaiement : ${methodLabel}\nMontant total : ${formatFcfa(reservation.total_price)}`,
+      [
+        { text: 'Annuler', style: 'cancel' },
+        { text: 'Confirmer', onPress: () => { void executePay(); } },
+      ],
+    );
+  }
+
+  async function executePay() {
     if (!reservation || busy || expired) return;
     try {
       setBusy(true);
