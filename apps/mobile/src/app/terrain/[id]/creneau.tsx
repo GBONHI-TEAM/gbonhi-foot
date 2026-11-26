@@ -136,13 +136,20 @@ export default function CreneauPage() {
       }
     }
 
-    if (open.size === 0) {
+    // T1 — Le repli 06h–23h ne vaut que pour les terrains SANS aucun horaire
+    // renseigné. Si le partenaire a défini ses horaires mais aucun créneau
+    // pour ce jour-là, le terrain est fermé : on ne propose rien (voir le
+    // message « fermé » plus bas) au lieu d'inventer des heures d'ouverture.
+    const hasAnySlots = (terrain?.slots?.length ?? 0) > 0;
+    if (open.size === 0 && !hasAnySlots) {
       for (let hour = 6; hour < 23; hour += 0.5) open.add(Number(hour.toFixed(1)));
     }
     return open;
   }, [selectedDate, terrain?.slots]);
 
   const hours = useMemo(() => [...openingHours].sort((a, b) => a - b), [openingHours]);
+  // Jour fermé : le partenaire a des horaires, mais aucun pour ce jour-là.
+  const closedDay = terrain != null && (terrain.slots?.length ?? 0) > 0 && hours.length === 0;
 
   const isToday = toYmd(selectedDate) === toYmd(new Date());
   const now = new Date();
@@ -260,6 +267,14 @@ export default function CreneauPage() {
         {loadingAvail ? (
           <View className="items-center justify-center py-12">
             <ActivityIndicator color="#F7921E" />
+          </View>
+        ) : closedDay ? (
+          <View className="rounded-card p-5 items-center" style={{ backgroundColor: 'rgba(255,255,255,0.04)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)' }}>
+            <Text style={{ fontSize: 28 }}>🔒</Text>
+            <Text className="text-white font-bold text-base mt-2">Terrain fermé ce jour-là</Text>
+            <Text className="text-white/60 text-sm text-center mt-1 leading-5">
+              {terrain?.name ?? 'Ce terrain'} n'ouvre pas le {formatLongDate(selectedDate)}. Choisis un autre jour ci-dessus.
+            </Text>
           </View>
         ) : availabilityError ? (
           <View className="rounded-card p-5 items-center" style={{ backgroundColor: 'rgba(248,113,113,0.08)', borderWidth: 1, borderColor: 'rgba(248,113,113,0.35)' }}>
