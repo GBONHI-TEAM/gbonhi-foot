@@ -163,8 +163,9 @@ export function createReservationReceiptPdf(input: ReceiptPdfInput): Buffer {
     '0.118 0.478 0.227 rg 0 745 595 97 re f',
     // Motif ivoirien couvrant tout le bandeau vert
     HEADER_BAND,
-    // Logo GBONHI FOOT (à droite du bandeau vert)
-    drawLogo(474, 758, 64),
+    // Logo GBONHI FOOT (à droite du bandeau vert) — T3 : agrandi (64 → 84 pt,
+    // bord droit et centrage vertical du bandeau conservés ; source 220 px).
+    drawLogo(454, 752, 84),
     '1 1 1 rg',
     text(42, 804, 21, 'GBONHI FOOT', 'F2'),
     text(42, 778, 10, 'Le football amateur commence ici'),
@@ -206,7 +207,8 @@ export function createLeagueRegistrationReceiptPdf(input: LeagueReceiptPdfInput)
     backgroundMotif(),
     '0.118 0.478 0.227 rg 0 745 595 97 re f',
     HEADER_BAND,
-    drawLogo(474, 758, 64),
+    // T3 : même agrandissement que le reçu de réservation.
+    drawLogo(454, 752, 84),
     '1 1 1 rg',
     text(42, 804, 21, 'GBONHI FOOT', 'F2'),
     text(42, 778, 10, 'Le football amateur commence ici'),
