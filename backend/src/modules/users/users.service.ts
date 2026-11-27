@@ -723,7 +723,18 @@ export class UsersService {
     // pour l'archive comptable des paiements (voir transaction plus bas).
     const authUser = authCheck.data.user;
     const metadataPhone: unknown = authUser.user_metadata?.phone;
-    const payerPhone = authUser.phone ?? (typeof metadataPhone === 'string' ? metadataPhone : null);
+    let payerPhone = authUser.phone ?? (typeof metadataPhone === 'string' ? metadataPhone : null);
+    if (!payerPhone && authUser.email) {
+      // Repli : les comptes Google/Apple vérifiés par SMS n'ont pas toujours
+      // le numéro dans les métadonnées Auth ; le dernier OTP envoyé à cet
+      // e-mail porte le numéro vérifié.
+      const lastOtp = await this.prisma.phoneOtp.findFirst({
+        where: { email: authUser.email },
+        orderBy: { created_at: 'desc' },
+        select: { phone: true },
+      });
+      payerPhone = lastOtp?.phone ?? null;
+    }
 
     // Nettoyage local D'ABORD, fermeture Auth ENSUITE. L'ordre inverse
     // (Auth d'abord) échouait pour tout capitaine ou inscrit à une ligue
