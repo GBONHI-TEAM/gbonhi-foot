@@ -675,7 +675,16 @@ export class UsersService {
       where: { id: user.id },
       select: { id: true, role: true },
     });
-    if (!profile) throw new NotFoundException('Compte introuvable');
+    if (!profile) {
+      // Reprise d'une suppression interrompue après le nettoyage local :
+      // le profil est déjà parti, il ne reste que l'identité Auth à fermer.
+      const orphan = await this.supabase.client.auth.admin.getUserById(user.id);
+      if (orphan.error || !orphan.data.user) {
+        throw new NotFoundException('Compte introuvable');
+      }
+      await this.deleteAuthUserOrThrow(user.id);
+      return { deleted: true };
+    }
 
     // Tout compte peut demander sa suppression. Les responsabilités actives
     // (terrains, ligues, capitanat d'une équipe avec membres) doivent d'abord
@@ -711,17 +720,19 @@ export class UsersService {
       throw new ServiceUnavailableException('La suppression est temporairement indisponible. Réessaie dans quelques instants.');
     }
 
-    // Suppression du compte Auth D'ABORD (avec un nouvel essai en cas d'erreur
-    // transitoire). Un compte Auth qui survit à la suppression locale
-    // ressuscite le compte à la prochaine connexion : le même identifiant
-    // Apple/Google retrouve le même utilisateur Supabase et `upsertOnLogin`
-    // recrée le profil — c'est le bug signalé (« mes anciennes données sont
-    // là »). À l'inverse, un profil local orphelin n'est plus joignable par
-    // aucun identifiant et peut être nettoyé par le support. Les contrôles
-    // de responsabilités ci-dessus ont déjà validé que la suppression peut
-    // avoir lieu ; seul un échec base de données peut encore survenir après.
-    await this.deleteAuthUserOrThrow(user.id);
-
+    // Nettoyage local D'ABORD, fermeture Auth ENSUITE. L'ordre inverse
+    // (Auth d'abord) échouait pour tout capitaine ou inscrit à une ligue
+    // payante : la suppression Auth cascade vers `profiles`, bloquée par
+    // les clés étrangères `teams.coach_id` et
+    // `league_registration_payments.user_id` (Restrict) — le nettoyage qui
+    // détache ces références tournait trop tard (bug A7 constaté le
+    // 27/11/2026 : « La fermeture du compte a échoué »).
+    // Risque de résurrection maîtrisé : si la fermeture Auth échoue après
+    // le nettoyage, `upsertOnLogin` ne peut recréer qu'un profil VIDE —
+    // les anciennes données ne reviennent pas — et une nouvelle demande
+    // de suppression termine le travail (branche « profil introuvable »
+    // en tête de méthode). Les contrôles de responsabilités ci-dessus ont
+    // déjà validé que la suppression peut avoir lieu.
     let deletedTeamIds: string[];
     try {
       deletedTeamIds = await this.prisma.$transaction(async (tx) => {
@@ -788,21 +799,37 @@ export class UsersService {
         await tx.team.deleteMany({ where: { id: { in: removableTeamIds } } });
       }
 
+      await tx.supportTicket.updateMany({ where: { user_id: user.id }, data: { user_id: null } });
+
       await tx.leaguePlayerRegistration.deleteMany({ where: { user_id: user.id } });
       await tx.teamMember.deleteMany({ where: { user_id: user.id } });
       await tx.profile.delete({ where: { id: user.id } });
       return removableTeamIds;
       });
     } catch (error) {
-      // Le compte Auth est déjà fermé : l'utilisateur ne peut plus se
-      // reconnecter avec cet identifiant, donc ses anciennes données ne
-      // peuvent pas « revenir ». On ne prétend pas que tout est supprimé :
-      // on journalise pour que le support finisse le nettoyage local.
+      if (error instanceof ConflictException) throw error;
+      // La transaction a été annulée : rien n'a été supprimé, ni localement
+      // ni côté Auth. On journalise pour le support et on répond honnêtement.
       this.logger.error(
-        `Suppression locale incomplète après fermeture Auth pour ${user.id} : ${error instanceof Error ? error.message : String(error)}`,
+        `Nettoyage local de suppression échoué pour ${user.id} : ${error instanceof Error ? error.message : String(error)}`,
       );
       throw new ServiceUnavailableException(
-        'Ton compte a été fermé, mais le nettoyage de certaines données n’a pas abouti. Contacte le support si tes données réapparaissent.',
+        'La suppression n’a pas abouti. Réessaie dans quelques instants ou contacte le support.',
+      );
+    }
+
+    // Fermeture Auth en dernier : à ce stade plus aucune clé étrangère ne
+    // référence le profil, la cascade ne peut plus être bloquée. En cas
+    // d'échec, les données sont déjà parties ; une nouvelle demande de
+    // suppression fermera l'identité (branche « profil introuvable »).
+    try {
+      await this.deleteAuthUserOrThrow(user.id);
+    } catch (error) {
+      this.logger.error(
+        `Fermeture Auth échouée après nettoyage local pour ${user.id} : ${error instanceof Error ? error.message : String(error)}`,
+      );
+      throw new ServiceUnavailableException(
+        'Tes données ont été supprimées, mais la fermeture de ton identifiant a échoué. Réessaie la suppression pour la terminer.',
       );
     }
 
@@ -813,9 +840,9 @@ export class UsersService {
 
   /**
    * Ferme le compte Supabase Auth, avec un nouvel essai en cas d'erreur
-   * transitoire (5xx / réseau). Une erreur définitive lève avant toute
-   * mutation locale : on ne supprime jamais les données applicatives si
-   * l'identité survit.
+   * transitoire (5xx / réseau). Appelé après le nettoyage local (voir
+   * deleteMe) : à ce stade, plus aucune clé étrangère ne bloque la
+   * cascade `auth.users → profiles`.
    */
   private async deleteAuthUserOrThrow(userId: string): Promise<void> {
     for (let attempt = 0; attempt < 2; attempt++) {
