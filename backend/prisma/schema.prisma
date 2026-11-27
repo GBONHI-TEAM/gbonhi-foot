@@ -297,6 +297,31 @@ model LeagueRegistrationPayment {
   @@map("league_registration_payments")
 }
 
+// Archive comptable des paiements de ligue des comptes supprimés.
+// Aucune clé étrangère : la ligne survit à la suppression du profil,
+// de l'équipe et de l'inscription, pour permettre la vérification
+// d'une demande de remboursement (n° de transaction, montant, payeur).
+model DeletedAccountPayment {
+  id                  String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  transaction_id      String    @unique
+  amount              Int
+  currency            String    @default("XOF")
+  status              String
+  payment_method      String?
+  league_name         String?
+  team_name           String?
+  payer_name          String?
+  payer_phone         String?
+  original_created_at DateTime  @db.Timestamptz(6)
+  archived_at         DateTime  @default(now()) @db.Timestamptz(6)
+  refund_status       String    @default("none")
+  refund_note         String?
+  refunded_at         DateTime? @db.Timestamptz(6)
+
+  @@index([payer_phone])
+  @@map("deleted_account_payments")
+}
+
 /**
  * Verrou métier de participation : un joueur actif ne représente qu'une seule
  * équipe dans une même ligue, quelle que soit la manière dont il a rejoint

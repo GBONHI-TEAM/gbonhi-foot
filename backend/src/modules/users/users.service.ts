@@ -673,7 +673,7 @@ export class UsersService {
   async deleteMe(user: UserPayload) {
     const profile = await this.prisma.profile.findUnique({
       where: { id: user.id },
-      select: { id: true, role: true },
+      select: { id: true, role: true, full_name: true },
     });
     if (!profile) {
       // Reprise d'une suppression interrompue après le nettoyage local :
@@ -719,6 +719,11 @@ export class UsersService {
     if (authCheck.error || !authCheck.data.user) {
       throw new ServiceUnavailableException('La suppression est temporairement indisponible. Réessaie dans quelques instants.');
     }
+    // Le téléphone vit dans Auth (pas dans `profiles`) : on le récupère ici
+    // pour l'archive comptable des paiements (voir transaction plus bas).
+    const authUser = authCheck.data.user;
+    const metadataPhone: unknown = authUser.user_metadata?.phone;
+    const payerPhone = authUser.phone ?? (typeof metadataPhone === 'string' ? metadataPhone : null);
 
     // Nettoyage local D'ABORD, fermeture Auth ENSUITE. L'ordre inverse
     // (Auth d'abord) échouait pour tout capitaine ou inscrit à une ligue
@@ -788,6 +793,35 @@ export class UsersService {
       // le nom du client reste figé dans `client_name`.
       await tx.payment.updateMany({ where: { user_id: user.id }, data: { user_id: null } });
       await tx.reservation.updateMany({ where: { user_id: user.id }, data: { user_id: null } });
+
+      // Archive comptable AVANT suppression : les paiements de ligue sont
+      // copiés (transaction, montant, ligue, équipe, payeur) dans
+      // `deleted_account_payments`, sans clé étrangère, pour qu'une demande
+      // de remboursement reste vérifiable après la suppression du compte.
+      const leaguePayments = await tx.leagueRegistrationPayment.findMany({
+        where: { user_id: user.id },
+        include: {
+          tournament: { select: { name: true } },
+          team: { select: { name: true } },
+        },
+      });
+      if (leaguePayments.length > 0) {
+        await tx.deletedAccountPayment.createMany({
+          data: leaguePayments.map((payment) => ({
+            transaction_id: payment.transaction_id,
+            amount: payment.amount,
+            currency: payment.currency,
+            status: payment.status,
+            payment_method: payment.payment_method,
+            league_name: payment.tournament.name,
+            team_name: payment.team.name,
+            payer_name: profile.full_name,
+            payer_phone: payerPhone,
+            original_created_at: payment.created_at,
+          })),
+          skipDuplicates: true,
+        });
+      }
       await tx.leagueRegistrationPayment.deleteMany({ where: { user_id: user.id } });
 
       // Les historiques de match sont gardés mais ne pointent plus vers la
